@@ -243,26 +243,248 @@ await bookTool({ date: "2026-07-15", time: "18:00", partySize: 2, name: "Alice" 
 
 ---
 
+## How the platform exposes its functions
+
+Every operation in this project has a `module` field — a dot-path string that places it in a navigable tree. The tree is defined in `lib/modules.ts` and is the mechanism by which an agent discovers what the platform can do without receiving the entire schema catalogue upfront.
+
+### The module tree
+
+```
+(platform root)
+└── reservation                    "Create and manage table reservations"
+    ├── reservation.availability   "Search for open time slots"
+    │     searchAvailability         read, parallelSafe
+    ├── reservation.booking        "Create and cancel reservations"
+    │     createReservation          write
+    │     cancelReservation          write, requiresConfirmation
+    ├── reservation.search         "Look up existing reservations"
+    │     listReservations           read, parallelSafe
+    │     getReservation             read, parallelSafe
+    └── reservation.admin          "Cross-user management (support/admin only)"
+          listAllReservations        read, parallelSafe
+          cancelAnyReservation       write, requiresConfirmation
+```
+
+Modules are pure metadata — a flat list of `{ path, title, description }` entries in `lib/modules.ts`. Parent/child relationships are inferred from dot-path prefixes: `reservation.booking` is a child of `reservation` because it starts with `reservation.`. You never declare a parent explicitly; the tree builds itself.
+
+An operation is placed in the tree by setting `module: "reservation.booking"` in its `defineOperation` descriptor. That is the only coupling between an operation and the tree.
+
+### What the agent sees when it connects
+
+When an agent first connects to the MCP HTTP endpoint, **only the always-on tools appear in `tools/list`**:
+
+```
+explore          describe_tool    invoke
+load_tools       unload_tools     getContext    getCapabilities
+```
+
+That is 7 tools. The 7 business operations (`searchAvailability`, `createReservation`, etc.) are not visible. This is intentional: dumping every tool schema into the agent's context on connection wastes tokens on capabilities the agent may never need. The always-on tools are the navigation layer — they let the agent discover exactly what it needs.
+
+Token cost of the default tools/list: **~180 tokens** for 7 lean meta-tool schemas.  
+Token cost if all 14 ops were loaded upfront: **~700 tokens** — and those tokens are paid on every single request.
+
+---
+
 ## Progressive tool disclosure (MCP HTTP surface)
 
-The MCP HTTP surface intentionally keeps the tool list lean. Only always-on meta-tools appear in `tools/list` by default — business operations are hidden until discovered. This prevents context-window bloat when an agent connects.
+The agent navigates the platform in a small number of structured calls, loading only the tools it will actually use. There are two paths.
 
-**Path A — load for the session (repeated calls):**
-```
-explore()                           → see the module tree
-explore("reservation.booking")      → see functions in that module
-load_tools({ names: ["book", ...] }) → promote to native tools
-# re-fetch tools/list — book now appears
-book({ date, time, partySize, name })
+### Step 1 — understand the platform
+
+```json
+// Agent calls: explore()  (no arguments)
+{
+  "app": "AgentBridge Booking",
+  "description": "A booking platform for managing reservations. Navigate the module tree with explore() to discover available functions before invoking them.",
+  "modules": [
+    {
+      "path": "reservation",
+      "title": "Reservation",
+      "description": "Create and manage table reservations, search availability, and handle cancellations."
+    }
+  ]
+}
 ```
 
-**Path B — invoke once without loading:**
-```
-explore("reservation.booking")
-invoke({ name: "book", args: { date, time, partySize, name } })
+Cost: **~92 tokens**. The agent now knows the platform has one top-level domain (`reservation`) and what it covers. It has not paid for any operation schema yet.
+
+### Step 2 — navigate to a module
+
+```json
+// Agent calls: explore({ path: "reservation" })
+{
+  "path": "reservation",
+  "title": "Reservation",
+  "submodules": [
+    { "path": "reservation.availability", "title": "Availability", "description": "Search for open time slots by date and party size." },
+    { "path": "reservation.booking",      "title": "Booking",      "description": "Create and cancel reservations. Write operations — confirmation required for destructive actions." },
+    { "path": "reservation.search",       "title": "Search",       "description": "Look up existing reservations by ID or list all reservations for the current user." },
+    { "path": "reservation.admin",        "title": "Admin",        "description": "Cross-user reservation management. Available to support and admin roles only." }
+  ],
+  "functions": []
+}
 ```
 
-The always-on `invoke` tool is a zero-overhead escape hatch — no session state, no re-fetch required.
+Cost: **~194 tokens** cumulative. The agent can see all four sub-modules and their descriptions. No schemas yet.
+
+### Step 3 — inspect a leaf module
+
+```json
+// Agent calls: explore({ path: "reservation.booking" })
+{
+  "path": "reservation.booking",
+  "title": "Booking",
+  "submodules": [],
+  "functions": [
+    {
+      "name": "createReservation",
+      "title": "Create Reservation",
+      "description": "Book a specific available slot. Requires a slotId from searchAvailability, the guest name, and party size.",
+      "permission": "write",
+      "parallelSafe": false
+    },
+    {
+      "name": "cancelReservation",
+      "title": "Cancel Reservation",
+      "description": "Cancel an existing reservation by ID. This is a destructive action — confirmation is required.",
+      "permission": "write",
+      "parallelSafe": false,
+      "requiresConfirmation": true
+    }
+  ]
+}
+```
+
+Cost: **~385 tokens** cumulative (all three explore calls). The agent now knows what functions exist, their permission level, and which require confirmation — without receiving a single `inputSchema`.
+
+**Wildcard shortcut** — skip straight to all sub-modules at once:
+
+```json
+// Agent calls: explore({ path: "reservation.*" })
+// Returns all four sub-module nodes with their functions in one response
+// Cost: ~446 tokens — useful when the task spans multiple modules
+```
+
+**Multi-path shortcut** — fetch several nodes in one call:
+
+```json
+// Agent calls: explore({ path: ["reservation.booking", "reservation.search"] })
+// Returns both nodes. One round-trip, two modules.
+```
+
+### Step 4 — get the full schema before calling
+
+`explore()` returns a lightweight function summary (name, description, permission, parallelSafe). To get the exact `inputSchema` before invoking, call `describe_tool`:
+
+```json
+// Agent calls: describe_tool({ name: "searchAvailability" })
+{
+  "name": "searchAvailability",
+  "description": "Search available booking slots for a given date and party size.",
+  "permission": "read",
+  "parallelSafe": true,
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "date":      { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "Date to search in YYYY-MM-DD format" },
+      "partySize": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Number of people in the party" }
+    },
+    "required": ["date", "partySize"]
+  }
+}
+```
+
+You can describe multiple tools in one call: `describe_tool({ name: ["searchAvailability", "createReservation"] })`.
+
+### Path A — load tools for the session
+
+Use this when the agent will call the same operations repeatedly. After loading, the operations appear as native MCP tools in `tools/list` and the agent can call them directly.
+
+```
+1. explore()                                    → see platform manifest (92 tokens)
+2. explore({ path: "reservation.booking" })     → see booking functions (191 tokens)
+3. load_tools({ names: ["createReservation",    → promote to native tools
+                         "searchAvailability"] })
+4. [re-fetch tools/list]                        → both ops now appear
+5. searchAvailability({ date, partySize })       → call natively
+6. createReservation({ slotId, name, partySize }) → call natively
+```
+
+Load state is **per-token, per-session**. Loaded tools persist for the duration of the agent's bearer token (8 hours) and survive across multiple requests in the same session. Different agents get independent load states even if they connect simultaneously.
+
+To clean up: `unload_tools({ names: ["createReservation"] })` removes the tool from `tools/list` for that session. Useful when an agent finishes a task and wants to reduce its active surface area.
+
+**Token cost of Path A:**  
+- Discovery: ~385 tokens (3 explore calls)  
+- Per-call after loading: only the call itself — no schema overhead  
+- Total for 5 subsequent calls: 385 + (5 × ~50) = ~635 tokens
+
+### Path B — invoke once without loading
+
+Use this for one-off calls where loading and re-fetching tools/list would cost more than it saves. `invoke` is always-on and requires no session state.
+
+```json
+// Single call:
+invoke({ "name": "searchAvailability", "args": { "date": "2026-07-15", "partySize": 2 } })
+
+// Batch — read operations run in parallel, writes run sequentially:
+invoke({
+  "calls": [
+    { "name": "searchAvailability", "args": { "date": "2026-07-15", "partySize": 2 } },
+    { "name": "listReservations",   "args": {} }
+  ]
+})
+// → { "results": [ <availability>, <reservations> ] }
+// Both read ops ran concurrently — one round-trip, two results.
+```
+
+The batch form is smart about ordering: `parallelSafe: true` operations (all reads) run concurrently; `parallelSafe: false` operations (writes) run sequentially in submission order. Mixed batches are fine — reads fire in parallel while writes queue.
+
+**Token cost of Path B (single call):**  
+- No discovery needed if the agent already knows the function name  
+- One call, one response: ~50 input tokens + ~150 output tokens  
+- Total: ~200 tokens
+
+### Choosing between Path A and Path B
+
+| Situation | Use |
+|---|---|
+| Agent will call the same operations 3+ times in a session | Path A — load once, call cheaply |
+| Agent needs one result and moves on | Path B — invoke directly |
+| Agent doesn't know what the platform offers yet | `explore()` first, then either path |
+| Agent knows the function name, not the schema | `describe_tool()` then Path B |
+| Agent needs two read results simultaneously | Path B batch — one round-trip |
+
+### Token cost: progressive vs dump-all
+
+The reason this matters at scale:
+
+| Strategy | Tokens in context (7-op platform) | Tokens in context (50-op platform) |
+|---|---|---|
+| Dump all ops at connect | ~700 every request | ~5,000 every request |
+| Progressive — load 2 ops | ~385 discovery + ~100 per call | ~385 discovery + ~100 per call |
+| Progressive — invoke once | ~200 for the call | ~200 for the call |
+
+A 50-operation enterprise platform (CRM, finance, housekeeping, front-office) costs **5,000 tokens per request** if all tools are loaded. With progressive disclosure, an agent doing a single booking task pays ~200 tokens regardless of how large the platform grows.
+
+### Adding a module to the tree
+
+In `lib/modules.ts`, add an entry to `MODULE_DEFS`:
+
+```typescript
+{
+  path: "crm",
+  title: "CRM",
+  description: "Guest profiles, loyalty status, and communication history.",
+},
+{
+  path: "crm.guests",
+  title: "Guests",
+  description: "Search and update guest records.",
+},
+```
+
+Then set `module: "crm.guests"` on each operation that belongs there. The tree builds automatically — `explore({ path: "crm" })` will return `crm.guests` as a submodule, and `explore({ path: "crm.guests" })` will list its functions.
 
 ---
 
@@ -462,7 +684,8 @@ lib/
   result.ts              ← ok() / fail() result envelope
 
 benchmark.mjs            ← 3-call vs book() token + timing benchmark
-infographic-book-comparison.html  ← visual benchmark results
+docs/
+  infographic-book-comparison.html  ← visual benchmark results (open in browser)
 ```
 
 ---
