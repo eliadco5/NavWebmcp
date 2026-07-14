@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useBridge } from "@/app/providers";
+import { book } from "@/lib/ui-tools/book";
 import { AvailabilityList } from "./AvailabilityList";
 import { ReservationList } from "./ReservationList";
 import { ActivityLog } from "./ActivityLog";
@@ -93,19 +94,21 @@ export function BookingApp() {
     setBookingLoading(true);
     setBookingError(null);
     try {
-      const result = await call("createReservation", {
-        slotId: bookingSlot.id,
-        name: guestName.trim(),
+      const result = await book({
+        date: searchDate,
+        time: bookingSlot.time,
         partySize,
-      }) as { success: boolean; error?: { message: string } };
+        name: guestName.trim(),
+      });
 
       if (result.success) {
         setBookingSlot(null);
         setGuestName("");
+        // Refresh availability to reflect the now-booked slot
         const searchResult = await call("searchAvailability", { date: searchDate, partySize }) as { success: boolean; data?: { slots: Slot[] } };
         if (searchResult.success && searchResult.data) setSlots(searchResult.data.slots);
       } else {
-        setBookingError(result.error?.message ?? "Failed to create reservation");
+        setBookingError(result.error.message);
       }
     } finally {
       setBookingLoading(false);
