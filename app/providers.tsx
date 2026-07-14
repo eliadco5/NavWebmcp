@@ -4,6 +4,8 @@ import { useEffect, useRef, createContext, useContext, useState, useCallback } f
 import { useRouter } from "next/navigation";
 import type { StoreEvent } from "@/lib/store";
 import type { AuditEntry } from "@/lib/auditlog";
+import { installWebMCPPolyfill } from "@/lib/webmcp-polyfill";
+import { book } from "@/lib/ui-tools/book";
 
 interface AuthUser {
   id: string;
@@ -77,6 +79,38 @@ export function Providers({ children }: { children: React.ReactNode }) {
       })
       .catch(() => router.replace("/login"));
   }, [router]);
+
+  // Register the composite `book` tool into document.modelContext once the user is known.
+  // The same function is used by the UI button — one code path, business logic in the page.
+  useEffect(() => {
+    if (!user) return;
+    installWebMCPPolyfill();
+    const mc = document.modelContext;
+    if (mc.getTools().some((t) => t.name === "book")) return; // already registered (hot-reload guard)
+    mc.registerTool({
+      name: "book",
+      title: "Book a Table",
+      description:
+        "Book a table in ONE step: finds the matching open slot for the date and time, " +
+        "reserves it, and validates the booking. Prefer this over calling " +
+        "searchAvailability + createReservation separately.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "Date in YYYY-MM-DD format" },
+          time: { type: "string", description: "Desired time slot, e.g. '18:00'" },
+          partySize: { type: "number", description: "Number of guests (1–20)" },
+          name: { type: "string", description: "Guest name for the reservation" },
+        },
+        required: ["date", "time", "partySize", "name"],
+      },
+      execute: (input) => book(input as unknown as Parameters<typeof book>[0]),
+    });
+    // Expose on window for console inspection (mirrors README pattern)
+    if (typeof window !== "undefined") {
+      (window as unknown as Record<string, unknown>)["bookTool"] = (input: Parameters<typeof book>[0]) => book(input);
+    }
+  }, [user]);
 
   // Load initial audit log entries
   useEffect(() => {
