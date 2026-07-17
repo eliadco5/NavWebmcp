@@ -44,19 +44,21 @@ The deeper problem with raw tool calls: **the agent carries your business logic 
 
 Websites already contain business logic — it lives in the frontend, wired to the same backend your users interact with. Instead of asking agents to re-derive that logic from tool schemas, **register it as a callable function**.
 
-The result:
+The result (measured with `node benchmark.mjs`, localhost, in-memory store, 10 bookings each):
 
-| Metric | 3-call MCP | book() | Saving |
-|---|---|---|---|
-| Agent-facing HTTP calls | 3 | 1 | 66.7% |
-| Input tokens | 58 | 24 | 58.5% |
-| Output tokens | 184 | 56 | 69.6% |
-| Context accumulation | 325 | 0 | 100% |
-| Reasoning tokens (est.) | 180 | 0 | 100% |
-| **Total tokens** | **747** | **80** | **89.3%** |
-| Wall-clock (100ms RTT + reasoning) | 2,100ms | 310ms | 6.8× faster |
+| Metric | 3-call MCP | book() WebMCP | book-op MCP | Saving (vs 3-call) |
+|---|---|---|---|---|
+| Agent-facing HTTP calls | 30 | 10 | 10 | 66.7% |
+| Input tokens | 581 | 250 | 250 | 57.0% |
+| Output tokens | 1,842 | 561 | 561 | 69.5% |
+| Cumulative context tokens | 3,251 | 0 | 0 | 100.0% |
+| **Total tokens** | **5,674** | **811** | **811** | **85.7%** |
+| Wall-clock total (ms) | 911 | 984 | **300** | **67.1%** |
+| Wall-clock avg per booking | 91ms | 98ms | **30ms** | **67.1%** |
 
-*Measured with the included [benchmark](#benchmark), timing adjusted for 100ms network RTT and 900ms LLM reasoning gap per tool call.*
+**book() WebMCP** and **book-op MCP** are token-identical to the agent (same single-call schema, same compact response). Wall-clock differs: WebMCP still makes 3 HTTP sub-calls internally from the browser; book-op MCP dispatches all 3 ops in-process with zero additional network hops — **3× faster** than the WebMCP path, **3× faster** than 3-call MCP.
+
+*Token model: 1 token ≈ 4 characters. Cumulative = prior tool results the model re-reads on each subsequent call.*
 
 ### Two surfaces, one registry
 
@@ -64,23 +66,28 @@ The same operation registry exposes tools on two surfaces simultaneously:
 
 | Surface | How agents connect | What's exposed |
 |---|---|---|
-| **In-page WebMCP** | Browser / in-page agents via `document.modelContext` | Composite frontend tools (e.g. `book`) + atomic ops |
-| **MCP Streamable HTTP** | Claude Code, Claude Desktop, MCP Inspector | Atomic ops via progressive disclosure |
+| **In-page WebMCP** | Browser / in-page agents via `document.modelContext` | All ops + composite tools (e.g. `book`) |
+| **MCP Streamable HTTP** | Claude Code, Claude Desktop, MCP Inspector | All ops including `book` via progressive disclosure |
 
-Frontend-orchestrated tools like `book()` live exclusively on the in-page surface — that's where business logic belongs. The HTTP surface exposes atomic ops for external agents that lack page context.
+Both surfaces expose `book()`. The same orchestration logic runs on both — the only difference is how sub-operations are dispatched: `fetch("/api/call")` with a session cookie in the browser, in-process handler calls on the server. Business logic lives in one place (`lib/core/book.ts`) and is injected with the appropriate caller.
 
 ---
 
 ## Architecture
 
 ```
+lib/core/                ← surface-agnostic business logic
+  book.ts                ← bookOrchestration() — the 3-step booking logic, caller-injected
+
 lib/operations/          ← single source of truth for all operations
   types.ts               ← Operation descriptor type + defineOperation helper
   index.ts               ← registry array
   *.ts                   ← one file per operation
+  book-op.ts             ← book as an MCP-registered operation (uses lib/core/book.ts)
+  dispatch.ts            ← in-process dispatcher: runOne(), makeDispatch(ctx)
 
-lib/ui-tools/            ← frontend-orchestrated composite tools
-  book.ts                ← book() — chains availability + create + validate
+lib/ui-tools/            ← thin browser wrappers over lib/core/
+  book.ts                ← book() — injects serverCall into bookOrchestration
 
 lib/adapters/
   mcp.ts                 ← registry → MCP tools (McpServer.registerTool)
@@ -89,7 +96,7 @@ lib/adapters/
 app/
   providers.tsx          ← registers book() into document.modelContext after auth
   api/[transport]/       ← MCP Streamable HTTP endpoint
-  api/call/              ← UI call route (used by frontend + book())
+  api/call/              ← UI call route (used by frontend book wrapper)
 
 lib/agentbridge.ts       ← AgentBridge SDK (register, call, describe, subscribe)
 lib/webmcp-polyfill.ts   ← document.modelContext shim for pre-standard browsers
@@ -102,26 +109,37 @@ lib/capabilities.ts      ← version-hashed capability manifest
 
 ### How book() works
 
+The same three-step orchestration runs on both surfaces. The only difference is the `call` function injected into the shared core:
+
 ```
 book({ date, time, partySize, name })
   │
-  ├─ 1. AVAILABILITY  → searchAvailability(date, partySize)
+  ├─ 1. AVAILABILITY  → call("searchAvailability", { date, partySize })
   │                       pick slot matching time
   │                       none? → fail("NO_AVAILABILITY")
   │
-  ├─ 2. RESERVATION   → createReservation(slotId, name, partySize)
+  ├─ 2. RESERVATION   → call("createReservation", { slotId, name, partySize })
   │                       fail? → propagate error
   │
   └─ 3. VALIDATE      → Promise.all([
-                           getReservation(reservationId),    // exists?
-                           searchAvailability(date, partySize) // slot gone?
+                           call("getReservation", { reservationId }),  // exists?
+                           call("searchAvailability", { date, partySize }) // slot gone?
                          ])
-                         inconsistent? → cancelReservation (rollback)
+                         inconsistent? → call("cancelReservation", ...) (rollback)
                                        → fail("VALIDATION_FAILED")
                          ok? → return { reservation, validated: true }
 ```
 
 The agent sees none of steps 1–3. It sends one `book()` call and receives a validated booking.
+
+**How `call` is wired per surface:**
+
+| Surface | `call` implementation | Auth |
+|---|---|---|
+| In-page WebMCP | `serverCall` → `fetch("/api/call")` | Session cookie |
+| MCP Streamable HTTP | `makeDispatch(ctx)` → handler called in-process | Bearer token (ctx) |
+
+Both use the same core in `lib/core/book.ts`. RBAC, validation, and audit logging apply on every sub-call regardless of surface.
 
 ---
 
@@ -152,7 +170,7 @@ The agent sees none of steps 1–3. It sends one `book()` call and receives a va
 | `listAllReservations` | read | support, admin |
 | `cancelAnyReservation` | write ⚠️ confirm | admin |
 
-### Frontend-orchestrated composite tools (in-page WebMCP only)
+### Composite tools (both surfaces)
 
 | Name | Description |
 |---|---|
@@ -225,7 +243,7 @@ After signing in, the page registers all tools into `document.modelContext`. Ope
 document.modelContext.getTools().map(t => t.name)
 // → [..., "book", "searchAvailability", "createReservation", ...]
 
-// Use the composite book() tool (one call — full orchestration)
+// Use the composite book() tool (one call — full orchestration runs in the browser)
 await document.modelContext.executeTool("book", {
   date: "2026-07-15",
   time: "18:00",
@@ -590,7 +608,7 @@ initAgentBridge({ instructions: "Your custom instructions here." });
 
 ## Benchmark
 
-Run a live comparison of the 3-call MCP approach vs the composite `book()` tool:
+Run a live three-way comparison: 3-call MCP vs book() WebMCP vs book-op MCP:
 
 ```bash
 # Start the server
@@ -600,21 +618,28 @@ npm run dev
 node benchmark.mjs <session-cookie>
 ```
 
-Results from a typical run (local, near-zero latency):
+Results from a typical run (local, in-memory store, 10 bookings per approach):
 
 ```
   TOTALS (10 reservations each)
-  ─────────────────────────────────────────────────────────────────────────────────────
-  Metric                           3-call MCP         book()        Savings
-  ─────────────────────────────────────────────────────────────────────────────────────
-  HTTP calls (total)                       30             10          66.7%
-  Input tokens (new per call)             581            241          58.5%
-  Output tokens                          1842            560          69.6%
-  Cumulative context tokens              3251              0         100.0%
-  TOTAL TOKENS                           5674            801          85.9%
+  ──────────────────────────────────────────────────────────────────────────────────────────
+  Metric                              3-call MCP   book() WebMCP   book-op MCP   vs 3-call
+  ──────────────────────────────────────────────────────────────────────────────────────────
+  Wall-clock total (ms)                      911             984           300      67.1%
+  Wall-clock avg (ms)                       91.1            98.4          30.0      67.1%
+  HTTP calls (total)                          30              10            10      66.7%
+  Input tokens                               581             250           250      57.0%
+  Output tokens                             1842             561           561      69.5%
+  Cumulative context toks                   3251               0             0     100.0%
+  TOTAL TOKENS                              5674             811           811      85.7%
 ```
 
-Token model: 1 token ≈ 4 characters. Cumulative = prior context the model re-reads on each subsequent call. Timing in the infographic uses 100ms RTT + 900ms LLM reasoning per inter-call gap.
+Token model: 1 token ≈ 4 characters. Cumulative = prior tool results the model re-reads on each subsequent call.
+
+**What the numbers show:**
+- Both `book()` approaches save ~85.7% of total tokens vs 3-call, and eliminate all context accumulation.
+- `book-op MCP` is the fastest path (30ms avg): all 3 sub-operations run in-process with no additional HTTP hops.
+- `book() WebMCP` (98ms avg) still makes 3 HTTP sub-calls internally from the browser, so wall-clock is similar to 3-call MCP despite the token savings.
 
 Open `docs/infographic-book-comparison.html` in a browser for a visual breakdown with annotated call timelines.
 
@@ -622,27 +647,43 @@ Open `docs/infographic-book-comparison.html` in a browser for a visual breakdown
 
 ## Adding your own composite tool
 
-1. **Create `lib/ui-tools/your-tool.ts`** — a plain async function that calls `serverCall()` and returns `Result<T>`:
+A composite tool has three layers: a surface-agnostic core, a thin browser wrapper, and an MCP operation. All three share the same orchestration logic.
+
+### 1. Create `lib/core/your-tool.ts` — no `"use client"`, takes a `call` dependency
 
 ```typescript
-"use client";
-import { serverCall } from "@/app/providers";
 import { ok, fail } from "@/lib/result";
+import type { Result } from "@/lib/result";
 
-export async function yourTool(input: YourInput) {
-  // step 1
-  const a = await serverCall("existingOp", { ...input });
-  if (!a.success) return fail(a.error.code, a.error.message);
+export interface YourInput { /* ... */ }
+export interface YourResult { /* ... */ }
 
-  // step 2
-  const b = await serverCall("anotherOp", { id: a.data.id });
-  if (!b.success) return fail(b.error.code, b.error.message);
+export async function yourToolOrchestration(
+  input: YourInput,
+  call: (name: string, params: Record<string, unknown>) => Promise<unknown>
+): Promise<Result<YourResult>> {
+  const a = await call("existingOp", { ...input }) as { success: boolean; data?: ...; error?: ... };
+  if (!a.success) return fail(a.error?.code ?? "ERR", a.error?.message ?? "Failed");
+
+  const b = await call("anotherOp", { id: a.data!.id }) as { success: boolean; data?: ...; error?: ... };
+  if (!b.success) return fail(b.error?.code ?? "ERR", b.error?.message ?? "Failed");
 
   return ok({ result: b.data, validated: true });
 }
 ```
 
-2. **Register it in `app/providers.tsx`** — inside the `useEffect` that fires after auth:
+### 2. Create `lib/ui-tools/your-tool.ts` — thin browser wrapper
+
+```typescript
+"use client";
+import { serverCall } from "@/app/providers";
+import { yourToolOrchestration } from "@/lib/core/your-tool";
+export type { YourInput, YourResult } from "@/lib/core/your-tool";
+
+export const yourTool = (input: YourInput) => yourToolOrchestration(input, serverCall);
+```
+
+### 3. Register it in `app/providers.tsx` — inside the `useEffect` that fires after auth
 
 ```typescript
 import { yourTool } from "@/lib/ui-tools/your-tool";
@@ -657,9 +698,37 @@ document.modelContext.registerTool({
 });
 ```
 
-3. **Use the same function in your UI** — one code path, one source of business logic.
+### 4. Create `lib/operations/your-tool-op.ts` — MCP surface
 
-That's it. The tool is now discoverable by in-page agents via `document.modelContext.getTools()` and callable via `document.modelContext.executeTool("yourTool", {...})`.
+```typescript
+import { z } from "zod";
+import { defineOperation } from "./types";
+import { yourToolOrchestration } from "@/lib/core/your-tool";
+import { makeDispatch } from "./dispatch";
+
+export const yourToolOp = defineOperation({
+  name: "yourTool",
+  title: "Your Tool",
+  description: "Does X in one step.",
+  permission: "write",
+  roles: ["customer", "admin"],
+  module: "your.module",
+  tags: ["your-tag"],
+  inputSchema: { /* zod shape */ },
+  async handler(input, ctx) {
+    return yourToolOrchestration(input, makeDispatch(ctx));
+  },
+});
+```
+
+### 5. Register in `lib/operations/index.ts`
+
+```typescript
+import { yourToolOp } from "./your-tool-op";
+registry.push(yourToolOp);
+```
+
+The tool is now callable on both surfaces: in-page agents use `document.modelContext.executeTool("yourTool", {...})`; external agents discover it via `explore()`/`search()` and call it via `invoke()` or after `load_tools()`.
 
 ---
 
@@ -768,9 +837,13 @@ components/
   UsersPanel.tsx
 
 lib/
+  core/
+    book.ts              ← surface-agnostic booking orchestration (shared by both surfaces)
   operations/            ← server-side op registry (see above)
+    book-op.ts           ← book as an MCP operation; injects makeDispatch(ctx)
+    dispatch.ts          ← in-process dispatcher: runOne(), makeDispatch(ctx)
   ui-tools/
-    book.ts              ← composite frontend-orchestrated booking tool
+    book.ts              ← thin browser wrapper; injects serverCall into lib/core/book
   adapters/
     mcp.ts               ← registry → MCP server tools
     webmcp.ts            ← registry → document.modelContext

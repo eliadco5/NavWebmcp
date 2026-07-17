@@ -7,6 +7,7 @@ import { getReservation } from "./getReservation";
 import { getContext } from "./getContext";
 import { listAllReservations } from "./listAllReservations";
 import { cancelAnyReservation } from "./cancelAnyReservation";
+import { bookOp } from "./book-op";
 import { getCapabilities } from "./getCapabilities";
 import { explore } from "./explore";
 import { search } from "./search";
@@ -62,7 +63,7 @@ registry.push(
   explore, search, describeTool, invoke, loadTools, unloadTools, getContext, getCapabilities,
   // Reservation
   searchAvailability, createReservation, cancelReservation,
-  listReservations, getReservation, listAllReservations, cancelAnyReservation,
+  listReservations, getReservation, listAllReservations, cancelAnyReservation, bookOp,
   // CRM
   searchGuests, getGuest, createGuest, updateGuest,
   getGuestPreferences, updateGuestPreferences,
