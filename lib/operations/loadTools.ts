@@ -3,7 +3,7 @@ import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { addLoaded } from "@/lib/loadedTools";
-import { registry } from "./registry";
+import { getOpByName } from "./dispatch";
 
 export const loadTools = defineOperation({
   name: "load_tools",
@@ -21,7 +21,7 @@ export const loadTools = defineOperation({
     const results: { name: string; status: string; message?: string }[] = [];
     const toLoad: string[] = [];
     for (const name of names) {
-      const op = registry.find((o) => o.name === name);
+      const op = getOpByName().get(name);
       if (!op) { results.push({ name, status: "UNKNOWN_TOOL", message: `No operation named '${name}'.` }); continue; }
       if (op.alwaysOn) { results.push({ name, status: "NO_OP", message: "Already always-on." }); continue; }
       if (!roleSatisfies(ctx.role, op.roles)) { results.push({ name, status: "FORBIDDEN", message: `Role '${ctx.role}' cannot access '${name}'.` }); continue; }

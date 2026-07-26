@@ -18,7 +18,7 @@ class AuditLog {
     source: "ui" | "agent" = "ui"
   ): AuditEntry {
     const entry: AuditEntry = {
-      id: Math.random().toString(36).slice(2, 10),
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       operation,
       input,

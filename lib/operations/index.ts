@@ -1,4 +1,5 @@
 import { registry } from "./registry";
+import { invalidateOpCache } from "./dispatch";
 import { searchAvailability } from "./searchAvailability";
 import { createReservation } from "./createReservation";
 import { cancelReservation } from "./cancelReservation";
@@ -82,6 +83,10 @@ registry.push(
   getPaymentRecord, listPayments,
   issueRefund, applyNoShowFee, logManualAdjustment,
 );
+
+// registry is filled in-place above; rebuild the name index once so dispatchers
+// see a fully-populated Map rather than caching an empty registry on first call.
+invalidateOpCache();
 
 export { registry };
 export type { Operation } from "./types";

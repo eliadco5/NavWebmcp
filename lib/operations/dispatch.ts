@@ -32,7 +32,6 @@ export async function runOne(
   args: Record<string, unknown>,
   ctx: OperationContext
 ): Promise<Result<unknown>> {
-  invalidateOpCache();
   const op = getOpByName().get(name);
   if (!op) {
     auditLog.record(name, args, false, "agent");

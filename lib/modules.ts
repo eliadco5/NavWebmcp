@@ -107,9 +107,29 @@ function topLevelModules(): ModuleNode[] {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function fnsForModule(path: string, role: Role, ops: Operation<any, any>[]): FnSummary[] {
-  return ops
-    .filter((op) => op.module === path && !op.alwaysOn && roleSatisfies(role, op.roles))
+type AnyOp = Operation<any, any>;
+// Keyed by the ops array reference — self-clears between test realms without
+// explicit invalidation. Not used for the dispatch name cache (that cache would
+// see an empty Map because registry.push mutates the array in place).
+const opsByModuleCache = new WeakMap<AnyOp[], Map<string, AnyOp[]>>();
+
+function groupByModule(ops: AnyOp[]): Map<string, AnyOp[]> {
+  const cached = opsByModuleCache.get(ops);
+  if (cached) return cached;
+  const map = new Map<string, AnyOp[]>();
+  for (const op of ops) {
+    if (op.alwaysOn || !op.module) continue;
+    let bucket = map.get(op.module);
+    if (!bucket) { bucket = []; map.set(op.module, bucket); }
+    bucket.push(op);
+  }
+  opsByModuleCache.set(ops, map);
+  return map;
+}
+
+function fnsForModule(path: string, role: Role, ops: AnyOp[]): FnSummary[] {
+  return (groupByModule(ops).get(path) ?? [])
+    .filter((op) => roleSatisfies(role, op.roles))
     .map(fnSummary);
 }
 
@@ -182,6 +202,7 @@ export interface SearchResult {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function searchTree(pattern: string, role: Role, ops: Operation<any, any>[]): SearchResult {
   const re = globToRegExp(pattern);
+  const grouped = groupByModule(ops);
 
   const functions = ops
     .filter((op) => !op.alwaysOn && op.module && roleSatisfies(role, op.roles))
@@ -194,7 +215,12 @@ export function searchTree(pattern: string, role: Role, ops: Operation<any, any>
 
   const modules = MODULE_DEFS
     .filter((m) => re.test(m.path.replace(/\./g, "/")))
-    .filter((m) => ops.some((op) => op.module && isChildOf(op.module, m.path) && !op.alwaysOn && roleSatisfies(role, op.roles)));
+    .filter((m) => {
+      for (const [modPath, bucket] of grouped) {
+        if (isChildOf(modPath, m.path) && bucket.some((op) => roleSatisfies(role, op.roles))) return true;
+      }
+      return false;
+    });
 
   return { functions, modules };
 }

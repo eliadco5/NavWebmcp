@@ -2,11 +2,11 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
-import { registry } from "./registry";
+import { getOpByName } from "./dispatch";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 function describeOne(name: string, role: string) {
-  const op = registry.find((o) => o.name === name);
+  const op = getOpByName().get(name);
   if (!op) return { name, error: "UNKNOWN_TOOL", message: `No operation named '${name}'.` };
   if (!roleSatisfies(role as never, op.roles)) return { name, error: "FORBIDDEN", message: `Role '${role}' cannot access '${name}'.` };
   const jsonSchema = zodToJsonSchema(z.object(op.inputSchema as Record<string, z.ZodTypeAny>), { $refStrategy: "none" });
