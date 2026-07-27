@@ -6,6 +6,7 @@ import { auditLog } from "./auditlog";
 import type { OperationContext } from "./operations/types";
 import type { Role } from "./auth";
 import { roleSatisfies } from "./auth";
+import { PROTOCOL_NAME, PROTOCOL_VERSION } from "./protocol";
 
 export interface AgentBridgeRegistration {
   name: string;
@@ -48,6 +49,7 @@ export class AgentBridge {
     if (options.instructions !== undefined) {
       document.modelContext.instructions = options.instructions;
     }
+    document.modelContext.protocolVersion = PROTOCOL_VERSION;
   }
 
   register(reg: AgentBridgeRegistration): void {
@@ -134,7 +136,8 @@ export class AgentBridge {
   describe(): object {
     return {
       bridge: "AgentBridge",
-      version: "1.0",
+      protocol: PROTOCOL_NAME,
+      protocolVersion: PROTOCOL_VERSION,
       operations: this.registrations.map((r) => ({
         name: r.name,
         title: r.title,

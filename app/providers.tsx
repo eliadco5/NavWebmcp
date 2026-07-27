@@ -6,6 +6,8 @@ import type { StoreEvent } from "@/lib/store";
 import type { AuditEntry } from "@/lib/auditlog";
 import { installWebMCPPolyfill } from "@/lib/webmcp-polyfill";
 import { book } from "@/lib/ui-tools/book";
+import { PROTOCOL_VERSION } from "@/lib/protocol";
+import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 
 interface AuthUser {
   id: string;
@@ -86,6 +88,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     if (!user) return;
     installWebMCPPolyfill();
     const mc = document.modelContext;
+    mc.protocolVersion = PROTOCOL_VERSION;
+    mc.instructions ??= AGENT_INSTRUCTIONS;
     if (mc.getTools().some((t) => t.name === "book")) return; // already registered (hot-reload guard)
     mc.registerTool({
       name: "book",

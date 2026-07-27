@@ -303,3 +303,28 @@ describe("instructions field", () => {
     expect(document.modelContext.instructions).toBe("second");
   });
 });
+
+// ── protocolVersion field ───────────────────────────────────────────────────
+
+describe("protocolVersion field", () => {
+  it("is initially null", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    expect(document.modelContext.protocolVersion).toBeNull();
+  });
+
+  it("can be set and read back", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    document.modelContext.protocolVersion = "1.0.0";
+    expect(document.modelContext.protocolVersion).toBe("1.0.0");
+  });
+
+  it("can be updated multiple times", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    document.modelContext.protocolVersion = "1.0.0";
+    document.modelContext.protocolVersion = "1.1.0";
+    expect(document.modelContext.protocolVersion).toBe("1.1.0");
+  });
+});

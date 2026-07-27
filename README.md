@@ -2,7 +2,7 @@
 
 **Business logic that lives in the browser page, exposed to agents as structured tools through the WebMCP standard.**
 
-WebMCP (`document.modelContext`) is a browser-native API that lets a page register callable tools for AI agents — the same way it registers event listeners for users. **AgentBridge** is the reference implementation: it adds RBAC, progressive tool disclosure, audit logging, a polyfill for today's browsers, and an MCP Streamable HTTP surface so external agents (Claude Code, Claude Desktop, MCP Inspector) can connect with no browser required.
+WebMCP (`document.modelContext`) is a browser-native API that lets a page register callable tools for AI agents — the same way it registers event listeners for users. **NavWebMcp** is the protocol layered on top: progressive tool disclosure, RBAC, and composite operations. **AgentBridge** is this repo's reference implementation of NavWebMcp: it adds RBAC, progressive tool disclosure, audit logging, a polyfill for today's browsers, and an MCP Streamable HTTP surface so external agents (Claude Code, Claude Desktop, MCP Inspector) can connect with no browser required. A [protocol-level agent skill](skills/navwebmcp-agent/SKILL.md) ships alongside it, for any agent talking to any NavWebMcp server.
 
 Built on [Next.js](https://nextjs.org) and the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -144,10 +144,10 @@ sequenceDiagram
 
     par Preflight — identity and permission scope
         Agent->>Platform: getContext()
-        Platform-->>Agent: { user: "Alice", role: "customer", page: "booking" }
+        Platform-->>Agent: { user: { id, displayName }, authenticated: true, page: "booking" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { version: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "1.0.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -170,7 +170,7 @@ sequenceDiagram
     Agent->>User: "Done — reservation confirmed for Alice, 3 guests, tomorrow at 19:00"
 ```
 
-`getContext` tells the agent who the user is and what page they're on. `getCapabilities` gives the role-scoped tool catalogue — name, permission level, and whether confirmation is required — without full input schemas. Together they answer: *who is this person and what are they allowed to do?* The agent has this before the first `explore` call, so it can skip irrelevant domains, identify every required parameter by inspecting schemas, and surface a single consolidated question rather than a sequential Q&A.
+`getContext` tells the agent who the user is and what page they're on. `getCapabilities` gives the role-scoped tool catalogue — name, permission level, and whether confirmation is required — without full input schemas, plus `protocolVersion` (the semver of the protocol contract, identical for every role) and `capabilityHash` (an 8-hex content hash of that role's tool set, used to cache-bust when the registry drifts). Together they answer: *who is this person and what are they allowed to do?* The agent has this before the first `explore` call, so it can skip irrelevant domains, identify every required parameter by inspecting schemas, and surface a single consolidated question rather than a sequential Q&A.
 
 This behaviour is enforced by the agent instructions delivered at connect time (MCP `initialize.instructions` / `document.modelContext.instructions`). See `lib/agent-instructions.ts`.
 
@@ -184,8 +184,8 @@ When an agent connects to the MCP HTTP endpoint, `tools/list` returns **only the
 
 | Tool | Role | What it returns |
 |---|---|---|
-| `getContext` | **Preflight** | Who the user is: `{ user, role, page, locale }` |
-| `getCapabilities` | **Preflight** | What their role allows: `{ version, tools: [{ name, permission, requiresConfirmation }] }` |
+| `getContext` | **Preflight** | Who the user is: `{ page, authenticated, locale, user: { id, displayName } }` |
+| `getCapabilities` | **Preflight** | What their role allows: `{ protocolVersion, capabilityHash, tools: [{ name, permission, requiresConfirmation }] }` |
 | `explore` | Discovery | Module tree navigation by dot-path |
 | `search` | Discovery | Find operations by Linux-style glob |
 | `describe_tool` | Discovery | Full JSON Schema for named operation(s) |
@@ -303,7 +303,7 @@ The same 45 business operations are exposed over both surfaces simultaneously. A
 
 ### RBAC and confirmation gates
 
-Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops). Destructive operations carry `requiresConfirmation: true` — the UI shows a confirmation dialog; agents must pass `confirm: true` in the call. Operations with this flag: `cancelReservation`, `cancelAnyReservation`, `checkOutGuest`, `deleteTask`, `issueRefund`, `applyNoShowFee`.
+Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops). Destructive operations carry `requiresConfirmation: true`. For `cancelReservation` and `cancelAnyReservation` this is an enforced gate: the input schema has a `confirm` parameter, and omitting it returns `CONFIRMATION_REQUIRED`. `checkOutGuest`, `deleteTask`, `issueRefund`, and `applyNoShowFee` also carry the flag but have no `confirm` parameter — an agent must get explicit user approval itself before calling them, since the server does not block an unconfirmed call.
 
 ### Audit log
 
@@ -313,7 +313,7 @@ Every call — agent-initiated or UI-initiated — is recorded with tool name, s
 
 Three protocol features work together to give the agent everything it needs before it says a word to the user:
 
-**`getContext`** — called on connect, returns the authenticated user's identity (`user`, `role`, `page`, `locale`). The agent knows who it is talking to and what page they are on. It can personalise responses and skip domains irrelevant to that user's role without fetching any schemas.
+**`getContext`** — called on connect, returns the authenticated user's identity (`page`, `authenticated`, `locale`, `user: { id, displayName }`). The agent knows who it is talking to and what page they are on. It can personalise responses without fetching any schemas.
 
 **`getCapabilities`** — called on connect (in parallel with `getContext`), returns every operation the caller's role is allowed to invoke: name, permission level, and `requiresConfirmation` flag. No input schemas yet — this is cheap. The agent can rule out unauthorised tools immediately and build the full picture of what is possible before exploring anything.
 
@@ -325,13 +325,32 @@ Three protocol features work together to give the agent everything it needs befo
 
 The combined effect: a user types *"I want to make a reservation"* and the agent responds with exactly one question listing every field it needs. The user fills them in. The operation executes. No back-and-forth.
 
-### Capability versioning
+### Versioning
 
-`getCapabilities()` also returns a DJB2 version hash over the full operation fingerprint set (names, permissions, roles, schema keys). Agents can compare the hash between sessions and refresh their loaded tool list automatically if the registry has changed — no need to reload everything on every connect.
+`getCapabilities()` returns two distinct fields, deliberately not one:
+
+| Field | Scope | Changes when | Maintained by |
+|---|---|---|---|
+| `protocolVersion` | Global — same for every role | The NavWebMcp contract itself changes: the manifest shape, a meta-op signature, the `Result` envelope, or an error code's meaning | Hand-bumped in `lib/protocol.ts`, following the rules in `CHANGELOG.md` |
+| `capabilityHash` | Role-scoped — differs by caller | The visible operation registry drifts (an operation is added, removed, or reshaped) for that role | Computed automatically (DJB2 over operation fingerprints) |
+
+Cache the manifest keyed on both: a changed `capabilityHash` means refresh the tool list; a `protocolVersion` MAJOR change means re-read the contract. `serverInfo.version` on the MCP handshake is the same `protocolVersion` semver — not a hash.
+
+This is deliberately independent of `package.json`'s version, which tracks the demo app build, not the wire protocol. The two will legitimately diverge.
 
 ### WebMCP standard + polyfill
 
-This project implements the WebMCP draft standard incubated by the W3C Web Machine Learning Community Group. The polyfill (`lib/webmcp-polyfill.ts`) installs a full `ModelContextImpl` on `document.modelContext` for browsers that don't yet support it natively, and is a no-op once the standard ships. AgentBridge adds on top: `permission` scopes, RBAC, `requiresConfirmation` gates, audit logging, progressive disclosure, capability versioning, and `executeBatch`.
+```
+WebMCP        — W3C Web Machine Learning CG draft standard (document.modelContext)
+  └ NavWebMcp — this protocol: progressive tool disclosure, RBAC, composite operations
+      └ AgentBridge — this repo's reference implementation of NavWebMcp
+```
+
+This project implements the WebMCP draft standard incubated by the W3C Web Machine Learning Community Group, and layers **NavWebMcp** — progressive tool disclosure, RBAC, and composite operations — on top of it. The polyfill (`lib/webmcp-polyfill.ts`) installs a full `ModelContextImpl` on `document.modelContext` for browsers that don't yet support it natively, and is a no-op once the standard ships. AgentBridge adds on top: `permission` scopes, RBAC, `requiresConfirmation` gates, audit logging, progressive disclosure, protocol versioning, and `executeBatch`.
+
+### Agent skill
+
+Anyone implementing NavWebMcp — in this repo's stack or any other — should ship [`skills/navwebmcp-agent/`](skills/navwebmcp-agent/SKILL.md) to their own agent. It is the consumer-side half of the protocol: how to connect efficiently, discover operations, choose between sequential/parallel/bulk invocation, prefer composite operations, and handle errors — independent of any specific server implementation. It carries its own `version` and a `protocol` compatibility range in its frontmatter, so it can be revised without implying the protocol changed. Copy the directory into `<your-repo>/.claude/skills/` or `~/.claude/skills/`.
 
 ---
 
@@ -393,8 +412,13 @@ Pass `Authorization: Bearer <token>` (your agent token is shown in the UI after 
 After signing in, open the browser console:
 
 ```javascript
-// List all available tools
+// List all available tools — the UI registers only the composite `book` tool today
 document.modelContext.getTools().map(t => t.name)
+// → ["book"]
+
+// Protocol version and instructions declared on this surface
+document.modelContext.protocolVersion   // "1.0.0"
+document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
 await document.modelContext.executeTool("book", {
@@ -404,14 +428,9 @@ await document.modelContext.executeTool("book", {
   name: "Alice"
 })
 // → { success: true, data: { reservation: {...}, validated: true } }
-
-// Glob search across the whole tree
-await document.modelContext.executeTool("search", { pattern: "**/*reservation*" })
-
-// Higher-level AgentBridge SDK
-agentBridge.describe()
-await agentBridge.call("searchAvailability", { date: "2026-07-23", partySize: 2 })
 ```
+
+The full `AgentBridge` SDK (`agentBridge.describe()`, `agentBridge.call(...)`, registering the whole operation registry in-page) exists in `lib/agentbridge.ts` and `lib/adapters/webmcp.ts` but is not currently wired into `app/providers.tsx` — only the `book` composite is registered. Wiring the full registry in-page is a tracked follow-up, not yet done.
 
 ### Operations catalogue
 

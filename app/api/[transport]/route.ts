@@ -3,11 +3,8 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
 import { userForToken, scopesForRole, MCP_RESOURCE } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
-import { computeVersion } from "@/lib/capabilities";
-import { registry } from "@/lib/operations";
+import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
-
-const GLOBAL_VERSION = computeVersion(registry);
 
 const mcpHandler = createMcpHandler(
   (server) => {
@@ -16,7 +13,7 @@ const mcpHandler = createMcpHandler(
   {
     serverInfo: {
       name: "agentbridge-booking",
-      version: GLOBAL_VERSION,
+      version: PROTOCOL_VERSION,
     },
     instructions: AGENT_INSTRUCTIONS,
   },

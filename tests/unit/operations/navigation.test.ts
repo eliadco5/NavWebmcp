@@ -400,12 +400,12 @@ describe('invoke', () => {
     expect(result.data.results.length).toBe(3)
   })
 
-  it('getCapabilities with admin returns 8-char hex version string', async () => {
+  it('getCapabilities with admin returns 8-char hex capabilityHash', async () => {
     const result = await invoke.handler({ name: 'getCapabilities', args: {} }, adminCtx)
     expect(result.success).toBe(true)
     const inner = result.data as any
     expect(inner.success).toBe(true)
-    expect(inner.data.version).toMatch(/^[0-9a-f]{8}$/)
+    expect(inner.data.capabilityHash).toMatch(/^[0-9a-f]{8}$/)
   })
 })
 
@@ -502,17 +502,26 @@ describe('getContext', () => {
 // ── getCapabilities ───────────────────────────────────────────────────────────
 
 describe('getCapabilities', () => {
-  it('returns {version, count, tools}', async () => {
+  it('returns {protocolVersion, capabilityHash, count, tools}', async () => {
     const result = await getCapabilities.handler({}, adminCtx)
     expect(result.success).toBe(true)
-    expect(result.data).toHaveProperty('version')
+    expect(result.data).toHaveProperty('protocolVersion')
+    expect(result.data).toHaveProperty('capabilityHash')
     expect(result.data).toHaveProperty('count')
     expect(result.data).toHaveProperty('tools')
+    expect(result.data).not.toHaveProperty('version')
   })
 
-  it('version is an 8-char hex string', async () => {
+  it('capabilityHash is an 8-char hex string', async () => {
     const result = await getCapabilities.handler({}, adminCtx)
-    expect(result.data.version).toMatch(/^[0-9a-f]{8}$/)
+    expect(result.data.capabilityHash).toMatch(/^[0-9a-f]{8}$/)
+  })
+
+  it('protocolVersion is semver and matches PROTOCOL_VERSION', async () => {
+    const { PROTOCOL_VERSION } = await import('@/lib/protocol')
+    const result = await getCapabilities.handler({}, adminCtx)
+    expect(result.data.protocolVersion).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(result.data.protocolVersion).toBe(PROTOCOL_VERSION)
   })
 
   it('customer sees fewer tools than admin', async () => {

@@ -7,8 +7,10 @@ export const getCapabilities = defineOperation({
   name: "getCapabilities",
   title: "Get Capabilities",
   description:
-    "Return the list of tools available to the caller's role along with a version hash. " +
-    "An agent can compare the version to its cached value to detect when capabilities have changed.",
+    "Return the list of tools available to the caller's role, along with protocolVersion " +
+    "(semver of the protocol contract, same for every role) and capabilityHash (8-hex " +
+    "content hash of THIS role's tool set). Cache the manifest keyed on both; re-fetch " +
+    "when either changes.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,

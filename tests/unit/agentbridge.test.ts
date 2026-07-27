@@ -71,6 +71,13 @@ describe("constructor + instructions", () => {
     new AgentBridge();
     expect(document.modelContext.instructions).toBeNull();
   });
+
+  it("sets document.modelContext.protocolVersion to PROTOCOL_VERSION", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const { PROTOCOL_VERSION } = await import("@/lib/protocol");
+    new AgentBridge();
+    expect(document.modelContext.protocolVersion).toBe(PROTOCOL_VERSION);
+  });
 });
 
 // ── register ─────────────────────────────────────────────────────────────────
@@ -444,12 +451,19 @@ describe("executeBatch", () => {
 // ── describe ─────────────────────────────────────────────────────────────────
 
 describe("describe", () => {
-  it("returns object with bridge, version, operations fields", async () => {
+  it("returns object with bridge, protocol, protocolVersion, operations fields", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
+    const { PROTOCOL_NAME, PROTOCOL_VERSION } = await import("@/lib/protocol");
     const bridge = new AgentBridge();
-    const desc = bridge.describe() as { bridge: string; version: string; operations: unknown[] };
+    const desc = bridge.describe() as {
+      bridge: string;
+      protocol: string;
+      protocolVersion: string;
+      operations: unknown[];
+    };
     expect(desc.bridge).toBe("AgentBridge");
-    expect(desc.version).toBe("1.0");
+    expect(desc.protocol).toBe(PROTOCOL_NAME);
+    expect(desc.protocolVersion).toBe(PROTOCOL_VERSION);
     expect(Array.isArray(desc.operations)).toBe(true);
   });
 

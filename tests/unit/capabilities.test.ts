@@ -3,28 +3,28 @@ import type { Operation } from "@/lib/operations/types";
 
 // Dynamic imports used because setup.ts resets modules before each test.
 
-describe("computeVersion", () => {
+describe("computeCapabilityHash", () => {
   it("returns an 8-character hex string for an empty op list", async () => {
-    const { computeVersion } = await import("@/lib/capabilities");
-    const v = computeVersion([]);
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
+    const v = computeCapabilityHash([]);
     expect(typeof v).toBe("string");
     expect(v).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("is stable: same ops → same hash", async () => {
     await import("@/lib/operations/index");
-    const { computeVersion } = await import("@/lib/capabilities");
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
     const { registry } = await import("@/lib/operations/index");
-    const v1 = computeVersion(registry);
-    const v2 = computeVersion(registry);
+    const v1 = computeCapabilityHash(registry);
+    const v2 = computeCapabilityHash(registry);
     expect(v1).toBe(v2);
   });
 
   it("changes when ops differ (adding one op changes the hash)", async () => {
     await import("@/lib/operations/index");
-    const { computeVersion } = await import("@/lib/capabilities");
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
     const { registry } = await import("@/lib/operations/index");
-    const before = computeVersion(registry);
+    const before = computeCapabilityHash(registry);
 
     // Create a synthetic extra op
     const extraOp: Operation = {
@@ -36,20 +36,20 @@ describe("computeVersion", () => {
       roles: ["admin"],
       handler: async () => ({ success: true, data: null }),
     };
-    const after = computeVersion([...registry, extraOp]);
+    const after = computeCapabilityHash([...registry, extraOp]);
     expect(before).not.toBe(after);
   });
 
   it("different op order → same hash (sorted internally)", async () => {
     await import("@/lib/operations/index");
-    const { computeVersion } = await import("@/lib/capabilities");
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
     const { registry } = await import("@/lib/operations/index");
     const reversed = [...registry].reverse();
-    expect(computeVersion(registry)).toBe(computeVersion(reversed));
+    expect(computeCapabilityHash(registry)).toBe(computeCapabilityHash(reversed));
   });
 
   it("returns a different hash for two different op arrays", async () => {
-    const { computeVersion } = await import("@/lib/capabilities");
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
     const op1: Operation = {
       name: "opA",
       title: "A",
@@ -68,7 +68,7 @@ describe("computeVersion", () => {
       roles: ["admin"],
       handler: async () => ({ success: true, data: null }),
     };
-    expect(computeVersion([op1])).not.toBe(computeVersion([op2]));
+    expect(computeCapabilityHash([op1])).not.toBe(computeCapabilityHash([op2]));
   });
 });
 
@@ -132,14 +132,17 @@ describe("visibleOps", () => {
 });
 
 describe("capabilityManifest", () => {
-  it("returns {version, count, tools} shape for admin", async () => {
+  it("returns {protocolVersion, capabilityHash, count, tools} shape for admin", async () => {
     await import("@/lib/operations/index");
     const { capabilityManifest } = await import("@/lib/capabilities");
+    const { PROTOCOL_VERSION } = await import("@/lib/protocol");
     const { registry } = await import("@/lib/operations/index");
     const manifest = capabilityManifest("admin", registry);
-    expect(typeof manifest.version).toBe("string");
+    expect(manifest.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(typeof manifest.capabilityHash).toBe("string");
     expect(typeof manifest.count).toBe("number");
     expect(Array.isArray(manifest.tools)).toBe(true);
+    expect(manifest).not.toHaveProperty("version");
   });
 
   it("each tool has {name, title, permission, roles, requiresConfirmation}", async () => {
@@ -198,20 +201,21 @@ describe("capabilityManifest", () => {
     expect(cancelAny!.requiresConfirmation).toBe(true);
   });
 
-  it("version in manifest is an 8-char hex string", async () => {
+  it("capabilityHash in manifest is an 8-char hex string", async () => {
     await import("@/lib/operations/index");
     const { capabilityManifest } = await import("@/lib/capabilities");
     const { registry } = await import("@/lib/operations/index");
     const manifest = capabilityManifest("admin", registry);
-    expect(manifest.version).toMatch(/^[0-9a-f]{8}$/);
+    expect(manifest.capabilityHash).toMatch(/^[0-9a-f]{8}$/);
   });
 
-  it("admin and customer manifest have different versions", async () => {
+  it("admin and customer differ on capabilityHash but agree on protocolVersion", async () => {
     await import("@/lib/operations/index");
     const { capabilityManifest } = await import("@/lib/capabilities");
     const { registry } = await import("@/lib/operations/index");
     const adminM = capabilityManifest("admin", registry);
     const customerM = capabilityManifest("customer", registry);
-    expect(adminM.version).not.toBe(customerM.version);
+    expect(adminM.capabilityHash).not.toBe(customerM.capabilityHash);
+    expect(adminM.protocolVersion).toBe(customerM.protocolVersion);
   });
 });

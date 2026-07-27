@@ -34,6 +34,8 @@ class ModelContextImpl extends EventTarget {
   ontoolchange: ((event: ToolChangeEvent) => void) | null = null;
   /** AgentBridge extension — not part of the WebMCP spec. Behavioral instructions for in-page agents. */
   instructions: string | null = null;
+  /** AgentBridge extension — not part of the WebMCP spec. Semver of the NavWebMcp protocol contract. */
+  protocolVersion: string | null = null;
 
   async registerTool(
     tool: ModelContextTool,
