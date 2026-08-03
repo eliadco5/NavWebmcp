@@ -7,6 +7,7 @@ import { AvailabilityList } from "./AvailabilityList";
 import { ReservationList } from "./ReservationList";
 import { ActivityLog } from "./ActivityLog";
 import { UsersPanel } from "./UsersPanel";
+import { FrontDeskPanel } from "./FrontDeskPanel";
 import type { Slot, Reservation } from "@/lib/store";
 
 function todayISO() {
@@ -168,25 +169,29 @@ export function BookingApp() {
             <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16 }}>Find Availability</h2>
             <form onSubmit={handleSearch} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
-                <label style={{ fontSize: 13, color: "#374151", display: "block", marginBottom: 4 }}>Date</label>
-                <input
-                  type="date"
-                  value={searchDate}
-                  onChange={(e) => setSearchDate(e.target.value)}
-                  min={todayISO()}
-                  required
-                />
+                <label style={{ fontSize: 13, color: "#374151", display: "block", marginBottom: 4 }}>
+                  Date
+                  <input
+                    type="date"
+                    value={searchDate}
+                    onChange={(e) => setSearchDate(e.target.value)}
+                    min={todayISO()}
+                    required
+                  />
+                </label>
               </div>
               <div>
-                <label style={{ fontSize: 13, color: "#374151", display: "block", marginBottom: 4 }}>Party Size</label>
-                <input
-                  type="number"
-                  value={partySize}
-                  onChange={(e) => setPartySize(Number(e.target.value))}
-                  min={1}
-                  max={20}
-                  required
-                />
+                <label style={{ fontSize: 13, color: "#374151", display: "block", marginBottom: 4 }}>
+                  Party Size
+                  <input
+                    type="number"
+                    value={partySize}
+                    onChange={(e) => setPartySize(Number(e.target.value))}
+                    min={1}
+                    max={20}
+                    required
+                  />
+                </label>
               </div>
               <button type="submit" style={{ background: "#4f46e5", color: "#fff" }}>
                 Search
@@ -216,14 +221,14 @@ export function BookingApp() {
                 <div>
                   <label style={{ fontSize: 13, color: "#374151", display: "block", marginBottom: 4 }}>
                     Guest Name
+                    <input
+                      type="text"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      placeholder="e.g. Alice Smith"
+                      required
+                    />
                   </label>
-                  <input
-                    type="text"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="e.g. Alice Smith"
-                    required
-                  />
                 </div>
                 {bookingError && (
                   <p style={{ color: "#ef4444", fontSize: 13 }}>{bookingError}</p>
@@ -269,6 +274,9 @@ export function BookingApp() {
             </h2>
             <ActivityLog entries={auditEntries} />
           </div>
+
+          {/* Support/Admin: front desk check-in / checkout */}
+          {isPrivileged && <FrontDeskPanel />}
 
           {/* Support/Admin: all reservations panel */}
           {isPrivileged && (

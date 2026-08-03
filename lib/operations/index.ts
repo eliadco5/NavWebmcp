@@ -9,6 +9,8 @@ import { getContext } from "./getContext";
 import { listAllReservations } from "./listAllReservations";
 import { cancelAnyReservation } from "./cancelAnyReservation";
 import { bookOp } from "./book-op";
+import { seatGuestOp } from "./seatGuest-op";
+import { hostVipGuestOp } from "./hostVipGuest-op";
 import { getCapabilities } from "./getCapabilities";
 import { explore } from "./explore";
 import { search } from "./search";
@@ -34,6 +36,7 @@ import { checkOutGuest } from "./checkOutGuest";
 import { getBillSummary } from "./getBillSummary";
 import { getOccupancy } from "./getOccupancy";
 import { getWaitTime } from "./getWaitTime";
+import { listFrontDeskReservations } from "./listFrontDeskReservations";
 import { listShiftNotes } from "./listShiftNotes";
 import { addShiftNote } from "./addShiftNote";
 // Tasks
@@ -72,7 +75,7 @@ registry.push(
   listCommunications, logCommunication,
   // Front Office
   checkInGuest, getCheckinStatus, checkOutGuest, getBillSummary,
-  getOccupancy, getWaitTime, listShiftNotes, addShiftNote,
+  getOccupancy, getWaitTime, listFrontDeskReservations, listShiftNotes, addShiftNote, seatGuestOp, hostVipGuestOp,
   // Tasks
   createTask, updateTask, searchTasks, deleteTask, getMyTasks, completeTask,
   // Housekeeping

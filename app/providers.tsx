@@ -6,8 +6,11 @@ import type { StoreEvent } from "@/lib/store";
 import type { AuditEntry } from "@/lib/auditlog";
 import { installWebMCPPolyfill } from "@/lib/webmcp-polyfill";
 import { book } from "@/lib/ui-tools/book";
+import { seatGuest } from "@/lib/ui-tools/seatGuest";
+import { hostVipGuest } from "@/lib/ui-tools/hostVipGuest";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
+import { registry } from "@/lib/operations";
 
 interface AuthUser {
   id: string;
@@ -82,37 +85,89 @@ export function Providers({ children }: { children: React.ReactNode }) {
       .catch(() => router.replace("/login"));
   }, [router]);
 
-  // Register the composite `book` tool into document.modelContext once the user is known.
-  // The same function is used by the UI button — one code path, business logic in the page.
+  // Register the composite `book` and `seatGuest` tools into document.modelContext once the
+  // user is known. The same functions are used by the UI buttons — one code path, business
+  // logic in the page.
   useEffect(() => {
     if (!user) return;
     installWebMCPPolyfill();
     const mc = document.modelContext;
     mc.protocolVersion = PROTOCOL_VERSION;
     mc.instructions ??= AGENT_INSTRUCTIONS;
-    if (mc.getTools().some((t) => t.name === "book")) return; // already registered (hot-reload guard)
-    mc.registerTool({
-      name: "book",
-      title: "Book a Table",
-      description:
-        "Book a table in ONE step: finds the matching open slot for the date and time, " +
-        "reserves it, and validates the booking. Prefer this over calling " +
-        "searchAvailability + createReservation separately.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          date: { type: "string", description: "Date in YYYY-MM-DD format" },
-          time: { type: "string", description: "Desired time slot, e.g. '18:00'" },
-          partySize: { type: "number", description: "Number of guests (1–20)" },
-          name: { type: "string", description: "Guest name for the reservation" },
+
+    if (!mc.getTools().some((t) => t.name === "book")) {
+      mc.registerTool({
+        name: "book",
+        title: "Book a Table",
+        description:
+          "Book a table in ONE step: finds the matching open slot for the date and time, " +
+          "reserves it, and validates the booking. Prefer this over calling " +
+          "searchAvailability + createReservation separately.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            date: { type: "string", description: "Date in YYYY-MM-DD format" },
+            time: { type: "string", description: "Desired time slot, e.g. '18:00'" },
+            partySize: { type: "number", description: "Number of guests (1–20)" },
+            name: { type: "string", description: "Guest name for the reservation" },
+          },
+          required: ["date", "time", "partySize", "name"],
         },
-        required: ["date", "time", "partySize", "name"],
-      },
-      execute: (input) => book(input as unknown as Parameters<typeof book>[0]),
-    });
+        execute: (input) => book(input as unknown as Parameters<typeof book>[0]),
+      });
+    }
+
+    if ((user.role === "support" || user.role === "admin") && !mc.getTools().some((t) => t.name === "seatGuest")) {
+      mc.registerTool({
+        name: "seatGuest",
+        title: "Seat Guest",
+        description:
+          "Seat a guest in ONE step: confirms a table is available, checks the reservation in, " +
+          "and validates the seating. Prefer this over calling " +
+          "getOccupancy + checkInGuest separately.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            reservationId: { type: "string", description: "Reservation ID to check in" },
+            tableId: { type: "string", description: "Table to assign; if omitted an available table with sufficient capacity is auto-assigned" },
+          },
+          required: ["reservationId"],
+        },
+        execute: (input) => seatGuest(input as unknown as Parameters<typeof seatGuest>[0]),
+      });
+    }
+
+    // hostVipGuest has no UI button — the CRM domain has no screens in this app —
+    // but it's still registered so the WebMCP surface (and the benchmark's lane C)
+    // can call it as a real in-page function, same as book and seatGuest.
+    if ((user.role === "support" || user.role === "admin") && !mc.getTools().some((t) => t.name === "hostVipGuest")) {
+      mc.registerTool({
+        name: "hostVipGuest",
+        title: "Host VIP Guest",
+        description:
+          "Host a VIP guest's visit in ONE step: reads their preferences and loyalty status, " +
+          "seats them, awards loyalty points for the visit, and logs a visit note. Prefer this over " +
+          "calling getGuestPreferences + getLoyaltyStatus + getOccupancy + checkInGuest + " +
+          "getCheckinStatus + addLoyaltyPoints + logCommunication separately.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            reservationId: { type: "string", description: "Reservation ID to check in" },
+            guestId: { type: "string", description: "The unique guest identifier" },
+            pointsToAward: { type: "number", description: "Loyalty points to award for this visit" },
+            visitNote: { type: "string", description: "Note describing the visit" },
+          },
+          required: ["reservationId", "guestId", "pointsToAward", "visitNote"],
+        },
+        execute: (input) => hostVipGuest(input as unknown as Parameters<typeof hostVipGuest>[0]),
+      });
+    }
+
     // Expose on window for console inspection (mirrors README pattern)
     if (typeof window !== "undefined") {
       (window as unknown as Record<string, unknown>)["bookTool"] = (input: Parameters<typeof book>[0]) => book(input);
+      (window as unknown as Record<string, unknown>)["seatGuestTool"] = (input: Parameters<typeof seatGuest>[0]) => seatGuest(input);
+      (window as unknown as Record<string, unknown>)["hostVipGuestTool"] = (input: Parameters<typeof hostVipGuest>[0]) => hostVipGuest(input);
     }
   }, [user]);
 
@@ -160,7 +215,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }
 
   const call = useCallback(async (name: string, params: Record<string, unknown> = {}): Promise<unknown> => {
-    if (name === "cancelReservation") {
+    const op = registry.find((o) => o.name === name);
+    if (op?.requiresConfirmation) {
       const approved = await handleConfirmation(name, params);
       if (!approved) {
         return { success: false, error: { code: "CONFIRMATION_DENIED", message: "User denied the action." } };
@@ -220,7 +276,7 @@ function ConfirmationDialog({
             Deny
           </button>
           <button onClick={onApprove} style={{ background: "#ef4444", color: "#fff" }}>
-            Allow Cancellation
+            Confirm
           </button>
         </div>
       </div>

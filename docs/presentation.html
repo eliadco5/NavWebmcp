@@ -252,7 +252,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 1 — TITLE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="01 / 10">
+<div class="slide" data-n="01 / 16">
   <div class="kicker">Protocol Proposal · 2026</div>
   <h1>WebMCP &amp; AgentBridge</h1>
   <p class="subtitle">Frontend-orchestrated AI agents — one function call instead of many</p>
@@ -275,8 +275,8 @@
     </div>
     <div class="kpi">
       <div class="kpi-label">Operations registered</div>
-      <div class="kpi-value">53</div>
-      <div class="kpi-delta" style="color:var(--ink-muted)">across 6 domains</div>
+      <div class="kpi-value">47</div>
+      <div class="kpi-delta" style="color:var(--ink-muted)">across 6 domains, + 8 meta-ops</div>
     </div>
   </div>
 </div>
@@ -284,7 +284,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 2 — AGENDA
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="02 / 10">
+<div class="slide" data-n="02 / 16">
   <div class="kicker">Agenda</div>
   <h2>10-minute walk-through</h2>
   <div class="agenda">
@@ -300,7 +300,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 3 — THE PROBLEM
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="03 / 10">
+<div class="slide" data-n="03 / 16">
   <div class="kicker">The Problem</div>
   <h2>How agents work today — and what it costs</h2>
   <p class="body" style="margin-top:8px">Every subsequent tool call re-reads all prior results. Cost compounds.</p>
@@ -318,7 +318,7 @@
         </div>
         <div class="arch-connector">↓ agent re-reads results #1 + #2</div>
         <div class="arch-box arch-box-orange">
-          <span>3. <code>addLoyaltyPoints</code></span>
+          <span>3. <code>getReservation</code></span>
         </div>
         <div class="arch-connector" style="color:var(--crit); font-weight:600">3 HTTP calls · growing context</div>
       </div>
@@ -326,7 +326,7 @@
     <div class="col">
       <div class="arch-title">AgentBridge composite (this protocol)</div>
       <div class="arch-box arch-box-accent" style="margin-top:0; padding:16px 14px">
-        <span>1. <code>book({ guestId, roomId, dates })</code></span>
+        <span>1. <code>book({ date, time, partySize, name })</code></span>
       </div>
       <div class="arch-connector">↓ orchestration runs server-side</div>
       <div class="arch-box" style="border-left:3px solid var(--s2)">
@@ -344,7 +344,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 4 — APPROACH COMPARISON TABLE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="04 / 10">
+<div class="slide" data-n="04 / 16">
   <div class="kicker">Approach Comparison</div>
   <h2>Three strategies for AI-agent integration</h2>
 
@@ -392,10 +392,10 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 5 — ARCHITECTURE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="05 / 10">
+<div class="slide" data-n="05 / 16">
   <div class="kicker">Architecture</div>
   <h2>One registry, two surfaces</h2>
-  <p class="body" style="margin-top:6px">The same 53 operations are exposed identically over WebMCP (browser) and MCP Streamable HTTP (server). Only the transport changes.</p>
+  <p class="body" style="margin-top:6px">All 47 operations are reachable over MCP Streamable HTTP (server) via progressive disclosure. The browser deliberately exposes a smaller surface — composite tools only (<code>book</code>, <code>seatGuest</code>) — so agent-facing UI stays a curated, high-leverage set rather than a mirror of the full registry.</p>
 
   <div class="arch" style="margin-top:28px; align-items:stretch">
     <div class="arch-col" style="flex:1.5">
@@ -421,14 +421,15 @@
       </div>
     </div>
     <div class="arch-col" style="flex:1">
-      <div class="arch-title">7 Always-on MCP tools</div>
+      <div class="arch-title">8 Always-on MCP tools</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>explore</code> — navigate module tree</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>search</code> — glob over op paths</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>describe_tool</code> — get input schema</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>invoke</code> — call any op directly</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>load_tools</code> — promote to native</div>
       <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>unload_tools</code></div>
-      <div class="arch-box" style="font-size:.8rem"><code>getCapabilities</code> — version hash</div>
+      <div class="arch-box" style="font-size:.8rem; margin-bottom:4px"><code>getCapabilities</code> — version hash</div>
+      <div class="arch-box" style="font-size:.8rem"><code>getContext</code> — current session/role</div>
     </div>
   </div>
 </div>
@@ -436,9 +437,9 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 6 — PROGRESSIVE TOOL DISCLOSURE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="06 / 10">
+<div class="slide" data-n="06 / 16">
   <div class="kicker">Progressive Tool Disclosure</div>
-  <h2>Agents discover operations without loading all 53</h2>
+  <h2>Agents discover operations without loading all 47</h2>
 
   <div class="two-col" style="margin-top:24px">
     <div class="col">
@@ -497,7 +498,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 7 — BENCHMARK RESULTS
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="07 / 10">
+<div class="slide" data-n="07 / 16">
   <div class="kicker">Benchmark Results</div>
   <h2>10 bookings, localhost, in-memory store</h2>
 
@@ -585,14 +586,404 @@
   <p class="body" style="font-size:.78rem;margin-top:16px;color:var(--ink-muted)">
     Key finding: <code>book-op MCP</code> (server-side in-process dispatch) is 3× faster than WebMCP because internal sub-calls skip HTTP hops. WebMCP still saves 85.7% of tokens vs. the baseline.
   </p>
+  <p class="body" style="font-size:.72rem;margin-top:6px;color:var(--ink-muted)" data-bench-buildmode>
+    Figures above from <code>benchmark.mjs</code> (Node-side simulation over <code>/api/call</code>). The 98 ms WebMCP figure was estimated, not measured in a browser — see the next slide for the real-transport numbers.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7a — LANE MATRIX (real transports, measured)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="08 / 16">
+  <div class="kicker">Benchmark Results · Real Transports</div>
+  <h2>Four lanes, one flow — <code>book()</code>, measured live</h2>
+  <p class="body" style="margin-top:8px">
+    <code>scripts/bench.mjs</code> replaces the estimate on the previous slide with numbers from the real MCP Streamable HTTP transport and a real headless browser — no simulation. Booking flow, 5 runs/lane, production build.
+  </p>
+
+  <table class="comp-table" style="margin-top:20px" data-bench-flow="booking">
+    <thead>
+      <tr>
+        <th>Lane</th>
+        <th>Transport</th>
+        <th>Calls</th>
+        <th>Avg wall-clock</th>
+        <th>Tool-schema tax</th>
+        <th>Agent input</th>
+        <th>Agent output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>3-call MCP <span style="color:var(--ink-muted);font-weight:400">(load + native)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>3</td>
+        <td class="cell-warn" data-bench="booking.A-native.avgMs" data-unit=" ms">47 ms</td>
+        <td data-bench="booking.A-native.toolSchemaTaxTokens" data-unit=" tok">80 tok</td>
+        <td data-bench="booking.A-native.avgInputTokens" data-unit=" tok">62 tok</td>
+        <td data-bench="booking.A-native.avgOutputTokens" data-unit=" tok">304 tok</td>
+      </tr>
+      <tr>
+        <td>3-call MCP <span style="color:var(--ink-muted);font-weight:400">(invoke, no load)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>3</td>
+        <td class="cell-warn" data-bench="booking.A-invoke.avgMs" data-unit=" ms">33 ms</td>
+        <td data-bench="booking.A-invoke.toolSchemaTaxTokens" data-unit=" tok">0 tok</td>
+        <td data-bench="booking.A-invoke.avgInputTokens" data-unit=" tok">58 tok</td>
+        <td data-bench="booking.A-invoke.avgOutputTokens" data-unit=" tok">360 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>book() composite</strong></td>
+        <td>Real MCP HTTP</td>
+        <td>1</td>
+        <td class="cell-good" data-bench="booking.B.avgMs" data-unit=" ms">14 ms</td>
+        <td data-bench="booking.B.toolSchemaTaxTokens" data-unit=" tok">41 tok</td>
+        <td class="cell-good" data-bench="booking.B.avgInputTokens" data-unit=" tok">26 tok</td>
+        <td class="cell-good" data-bench="booking.B.avgOutputTokens" data-unit=" tok">65 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>book() composite</strong></td>
+        <td>Real browser (WebMCP)</td>
+        <td>1</td>
+        <td class="cell-good" data-bench="booking.C.avgMs" data-unit=" ms">26 ms</td>
+        <td>—</td>
+        <td class="cell-good" data-bench="booking.C.avgInputTokens" data-unit=" tok">19 tok</td>
+        <td class="cell-good" data-bench="booking.C.avgOutputTokens" data-unit=" tok">56 tok</td>
+      </tr>
+      <tr>
+        <td>Playwright UI automation</td>
+        <td>Real browser (clicks)</td>
+        <td>7 steps</td>
+        <td class="cell-warn" data-bench="booking.D.avgMs" data-unit=" ms">613 ms</td>
+        <td colspan="3" class="cell-warn">see next slide — DOM re-reads dwarf every other lane</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="body" style="font-size:.75rem;margin-top:16px;color:var(--ink-muted)">
+    "3-call MCP" isn't a single choice: raw MCP only ever exposes 8 always-on meta-tools, so an agent must either <code>load_tools</code> the 3 business ops first (schema tax, then 3 native calls) or call <code>invoke</code> three times with no load step. Both are measured above — neither is a strawman.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7b — THE DOM TAX
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="09 / 16">
+  <div class="kicker">Benchmark Results · The DOM Tax</div>
+  <h2>What an agent has to read before it can click</h2>
+  <p class="body" style="margin-top:8px">
+    A function-call agent reads a JSON result. A browser-automation agent needs a fresh accessibility snapshot before every interaction — fill date, fill party size, click Search, click Book, fill name, click Confirm. That snapshot cost compounds across steps the same way the 3-call baseline's context did on slide 4.
+  </p>
+
+  <div class="legend" style="margin-top:20px">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--s5)"></div>book() via WebMCP — one call</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--s6)"></div>Playwright UI — 7-step form flow</div>
+  </div>
+
+  <div class="bar-chart" style="margin-top:20px">
+    <div class="bar-group">
+      <div class="bar-label" style="width:190px">book() — agent tokens</div>
+      <div class="bar-track">
+        <div class="bar-fill" id="bench-dom-tax-b" style="width:2%;background:var(--s5)"></div>
+        <div class="bar-value" style="color:var(--ink-1)" data-bench="booking.B.avgInputTokens+avgOutputTokens" data-unit=" tok">91 tok</div>
+      </div>
+    </div>
+    <div class="bar-group">
+      <div class="bar-label" style="width:190px">Playwright — cumulative aria-snapshot</div>
+      <div class="bar-track">
+        <div class="bar-fill" id="bench-dom-tax-d" style="width:100%;background:var(--s6)"></div>
+        <div class="bar-value" style="color:#fff" data-bench="booking.D.avgObservationTokens" data-unit=" tok">5,710 tok</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="body" style="font-size:.78rem;margin-top:16px">
+    <strong>~63×</strong> more tokens to observe the page than to call the function — and that's <em>before</em> counting the 7 separate tool calls (click, fill, click, fill, click…) an automation agent also has to make, each with its own round-trip.
+  </p>
+
+  <div class="quote" style="margin-top:16px">
+    Progressive disclosure keeps the registry cheap to browse. Composite ops keep individual actions cheap to execute. Browser automation pays both costs on every single step.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7c — LIVE DEMO
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="10 / 16">
+  <div class="kicker">Live Demo</div>
+  <h2>Watch it, don't just read it</h2>
+
+  <div class="flow" style="margin-top:8px">
+    <div class="flow-step">
+      <div class="flow-step-num">Watch</div>
+      <div class="flow-step-label">Playwright, headed</div>
+      <div class="flow-step-body">Fills the form, clicks through check-in</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-step-num">Compare</div>
+      <div class="flow-step-label">seatGuest(), MCP</div>
+      <div class="flow-step-body">One call, done before the browser blinks</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <div class="flow-step-num">Confirm</div>
+      <div class="flow-step-label">Activity Log</div>
+      <div class="flow-step-body">Live SSE feed, agent vs. UI calls</div>
+    </div>
+  </div>
+
+  <div class="arch-box arch-box-accent" style="margin-top:28px; font-family:ui-monospace,'Cascadia Code',Consolas,monospace; font-size:.85rem; padding:16px">
+    node scripts/bench.mjs --flow=checkin --headed --slowmo=250 --demo
+  </div>
+
+  <ul class="bullets" style="margin-top:20px">
+    <li><strong>Front Desk check-in</strong> is the flow on screen: seat a guest, view the bill, check out — 5 UI steps, one <code>seatGuest</code> call.</li>
+    <li><strong>--headed --slowmo=250</strong> makes the browser lane visible at human speed; the function-call lane runs at full speed right after, for contrast.</li>
+    <li>If the demo can't run live: the numbers on the previous two slides are the exact output of this same command, captured in production build.</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7d — THE RECEPTIONIST SESSION (cross-domain journey)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="11 / 16">
+  <div class="kicker">Benchmark Results · The Receptionist Session</div>
+  <h2>Two actions, one session — book <em>and</em> seat a guest</h2>
+  <p class="body" style="margin-top:8px">
+    A receptionist doesn't do one thing at a time: take a phone booking, then seat the walk-in already waiting. This flow drives both in one continuous browser session — no reload between them. <strong>Not</strong> "seat the guest just booked": <code>book()</code> and <code>seatGuest()</code> run on two disjoint stores with no shared id (a booking has no table concept; front-desk seating only works on the 3 seeded reservations). Two real, independent actions.
+  </p>
+
+  <table class="comp-table" style="margin-top:16px" data-bench-flow="journey">
+    <thead>
+      <tr>
+        <th>Lane</th>
+        <th>Transport</th>
+        <th>Calls</th>
+        <th>Avg wall-clock</th>
+        <th>Tool-schema tax</th>
+        <th>Agent input</th>
+        <th>Agent output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>6-call MCP <span style="color:var(--ink-muted);font-weight:400">(load + native)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>6</td>
+        <td class="cell-warn" data-bench="journey.A-native.avgMs" data-unit=" ms">95 ms</td>
+        <td data-bench="journey.A-native.toolSchemaTaxTokens" data-unit=" tok">132 tok</td>
+        <td data-bench="journey.A-native.avgInputTokens" data-unit=" tok">106 tok</td>
+        <td data-bench="journey.A-native.avgOutputTokens" data-unit=" tok">684 tok</td>
+      </tr>
+      <tr>
+        <td>6-call MCP <span style="color:var(--ink-muted);font-weight:400">(invoke, no load)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>6</td>
+        <td class="cell-warn" data-bench="journey.A-invoke.avgMs" data-unit=" ms">88 ms</td>
+        <td data-bench="journey.A-invoke.toolSchemaTaxTokens" data-unit=" tok">0 tok</td>
+        <td data-bench="journey.A-invoke.avgInputTokens" data-unit=" tok">98 tok</td>
+        <td data-bench="journey.A-invoke.avgOutputTokens" data-unit=" tok">800 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>book() + seatGuest()</strong> <span style="color:var(--ink-muted);font-weight:400">— 2 composites</span></td>
+        <td>Real MCP HTTP</td>
+        <td>2</td>
+        <td class="cell-good" data-bench="journey.B.avgMs" data-unit=" ms">29 ms</td>
+        <td data-bench="journey.B.toolSchemaTaxTokens" data-unit=" tok">57 tok</td>
+        <td class="cell-good" data-bench="journey.B.avgInputTokens" data-unit=" tok">41 tok</td>
+        <td class="cell-good" data-bench="journey.B.avgOutputTokens" data-unit=" tok">113 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>book() + seatGuest()</strong> <span style="color:var(--ink-muted);font-weight:400">— 2 composites</span></td>
+        <td>Real browser (WebMCP)</td>
+        <td>2</td>
+        <td class="cell-good" data-bench="journey.C.avgMs" data-unit=" ms">62 ms</td>
+        <td>—</td>
+        <td class="cell-good" data-bench="journey.C.avgInputTokens" data-unit=" tok">26 tok</td>
+        <td class="cell-good" data-bench="journey.C.avgOutputTokens" data-unit=" tok">100 tok</td>
+      </tr>
+      <tr>
+        <td>Playwright UI automation</td>
+        <td>Real browser (clicks)</td>
+        <td>10 steps</td>
+        <td class="cell-warn" data-bench="journey.D.avgMs" data-unit=" ms">863 ms</td>
+        <td colspan="3" class="cell-warn"><span data-bench="journey.D.avgObservationTokens" data-unit=" tok">11,495 tok</span> cumulative aria-snapshot — nearly 2× the single-flow booking form</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="body" style="font-size:.75rem;margin-top:16px;color:var(--ink-muted)">
+    The composite lanes scale linearly with the number of real actions (1 call → 2 calls). The Playwright lane's DOM-read cost scales with the number of UI steps, which is why it's the metric that compounds fastest as scope grows.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7e — SEVEN CALLS, ONE OP (multi-tool VIP scenario)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="12 / 16">
+  <div class="kicker">Benchmark Results · Seven Calls, One Op</div>
+  <h2>The cumulative-context argument, at real scale</h2>
+  <p class="body" style="margin-top:8px">
+    Slide 4 made the cumulative-context case with 3 calls. Here's the same shape at 7 calls across two domains — CRM and front desk — hosting a VIP guest's visit: read their preferences, read their loyalty tier, confirm a table, seat them, validate, award points, log the visit.
+  </p>
+
+  <div class="flow" style="flex-direction:column; gap:4px; align-items:stretch; margin-top:16px">
+    <div class="arch-box arch-box-orange" style="font-size:.8rem">1. <code>getGuestPreferences</code> → 2. <code>getLoyaltyStatus</code> → 3. <code>getOccupancy</code></div>
+    <div class="arch-connector">↓ agent re-reads results #1–3</div>
+    <div class="arch-box arch-box-orange" style="font-size:.8rem">4. <code>checkInGuest</code> → 5. <code>getCheckinStatus</code></div>
+    <div class="arch-connector">↓ agent re-reads results #1–5</div>
+    <div class="arch-box arch-box-orange" style="font-size:.8rem">6. <code>addLoyaltyPoints</code> → 7. <code>logCommunication</code></div>
+    <div class="arch-connector" style="color:var(--crit); font-weight:600">7 HTTP calls · context keeps growing</div>
+  </div>
+
+  <table class="comp-table" style="margin-top:20px" data-bench-flow="vip">
+    <thead>
+      <tr>
+        <th>Lane</th>
+        <th>Transport</th>
+        <th>Calls</th>
+        <th>Avg wall-clock</th>
+        <th>Tool-schema tax</th>
+        <th>Agent input</th>
+        <th>Agent output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>7-call MCP <span style="color:var(--ink-muted);font-weight:400">(load + native)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>7</td>
+        <td class="cell-warn" data-bench="vip.A-native.avgMs" data-unit=" ms">108 ms</td>
+        <td data-bench="vip.A-native.toolSchemaTaxTokens" data-unit=" tok">151 tok</td>
+        <td data-bench="vip.A-native.avgInputTokens" data-unit=" tok">131 tok</td>
+        <td data-bench="vip.A-native.avgOutputTokens" data-unit=" tok">677 tok</td>
+      </tr>
+      <tr>
+        <td>7-call MCP <span style="color:var(--ink-muted);font-weight:400">(invoke, no load)</span></td>
+        <td>Real MCP HTTP</td>
+        <td>7</td>
+        <td class="cell-warn" data-bench="vip.A-invoke.avgMs" data-unit=" ms">102 ms</td>
+        <td data-bench="vip.A-invoke.toolSchemaTaxTokens" data-unit=" tok">0 tok</td>
+        <td data-bench="vip.A-invoke.avgInputTokens" data-unit=" tok">124 tok</td>
+        <td data-bench="vip.A-invoke.avgOutputTokens" data-unit=" tok">797 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>hostVipGuest() composite</strong></td>
+        <td>Real MCP HTTP</td>
+        <td>1</td>
+        <td class="cell-good" data-bench="vip.B.avgMs" data-unit=" ms">20 ms</td>
+        <td data-bench="vip.B.toolSchemaTaxTokens" data-unit=" tok">43 tok</td>
+        <td class="cell-good" data-bench="vip.B.avgInputTokens" data-unit=" tok">33 tok</td>
+        <td class="cell-good" data-bench="vip.B.avgOutputTokens" data-unit=" tok">225 tok</td>
+      </tr>
+      <tr class="cell-hi">
+        <td><strong>hostVipGuest() composite</strong></td>
+        <td>Real browser (WebMCP)</td>
+        <td>1</td>
+        <td class="cell-good" data-bench="vip.C.avgMs" data-unit=" ms">51 ms</td>
+        <td>—</td>
+        <td class="cell-good" data-bench="vip.C.avgInputTokens" data-unit=" tok">24 tok</td>
+        <td class="cell-good" data-bench="vip.C.avgOutputTokens" data-unit=" tok">173 tok</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="body" style="font-size:.75rem;margin-top:16px;color:var(--ink-muted)">
+    No Playwright row here — the CRM domain has no screens in this app, so there's nothing to click. That's the honest limit of the demo, not a hidden number: only 10 of 47 business operations have any UI at all today; the rest, including every CRM op used above, are agent-only.
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7f — SPEEDBASE: TESTING THE ARCHITECTURE, NOT JUST THE AGENT
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="13 / 16">
+  <div class="kicker">speedbase · Test-Automation Speed</div>
+  <h2>Testing the architecture, not just the agent</h2>
+  <p class="body" style="margin-top:8px">
+    A different audience, a different question: how long does it take to <em>test</em> the business logic itself? <code>scripts/speedbase.mjs</code> runs the same scenario two ways — a Playwright script driving the browser, and a script calling <code>runOne()</code> (<code>lib/operations/dispatch.ts</code>) directly, in-process, with zero HTTP and no MCP client at all. Same Zod validation, same RBAC, same handler code — no transport.
+  </p>
+
+  <div class="legend" style="margin-top:20px">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--s5)"></div>Function call — runOne() in-process</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--s6)"></div>Playwright — fresh browser per test</div>
+  </div>
+
+  <div class="bar-chart" style="margin-top:20px" data-bench-flow="speedbase">
+    <div class="bar-group">
+      <div class="bar-label" style="width:130px">book()</div>
+      <div class="bar-track">
+        <div class="bar-fill" id="speedbase-bar-book-fn" style="width:.3%;background:var(--s5)"></div>
+        <div class="bar-value" style="color:var(--ink-1)" data-bench="speedbase.book.functionMs" data-unit=" ms">1.15 ms</div>
+      </div>
+    </div>
+    <div class="bar-group">
+      <div class="bar-label" style="width:130px"></div>
+      <div class="bar-track">
+        <div class="bar-fill" id="speedbase-bar-book-pw" style="width:100%;background:var(--s6)"></div>
+        <div class="bar-value" style="color:#fff" data-bench="speedbase.book.playwrightMs" data-unit=" ms">416 ms</div>
+      </div>
+    </div>
+    <div class="bar-group">
+      <div class="bar-label" style="width:130px">seatGuest()</div>
+      <div class="bar-track">
+        <div class="bar-fill" id="speedbase-bar-seatguest-fn" style="width:.1%;background:var(--s5)"></div>
+        <div class="bar-value" style="color:var(--ink-1)" data-bench="speedbase.seatGuest.functionMs" data-unit=" ms">0.43 ms</div>
+      </div>
+    </div>
+    <div class="bar-group">
+      <div class="bar-label" style="width:130px"></div>
+      <div class="bar-track">
+        <div class="bar-fill" id="speedbase-bar-seatguest-pw" style="width:100%;background:var(--s6)"></div>
+        <div class="bar-value" style="color:#fff" data-bench="speedbase.seatGuest.playwrightMs" data-unit=" ms">488 ms</div>
+      </div>
+    </div>
+  </div>
+  <p class="body" style="font-size:.72rem;margin-top:8px;color:var(--ink-muted)">
+    Bars scaled per-pair (book vs. book, seatGuest vs. seatGuest) — the absolute gap is 2–3 orders of magnitude, which would make the function-call bar invisible on a shared linear scale.
+  </p>
+
+  <table class="comp-table" style="margin-top:20px">
+    <thead>
+      <tr>
+        <th>Scenario</th>
+        <th>Function call</th>
+        <th>Playwright</th>
+        <th>Speedup</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="cell-hi">
+        <td>book()</td>
+        <td class="cell-good" data-bench="speedbase.book.functionMs" data-unit=" ms">1.15 ms</td>
+        <td class="cell-warn" data-bench="speedbase.book.playwrightMs" data-unit=" ms">416 ms</td>
+        <td class="cell-good" data-bench="speedbase.book.playwrightMs/functionMs" data-unit="×">363×</td>
+      </tr>
+      <tr class="cell-hi">
+        <td>seatGuest()</td>
+        <td class="cell-good" data-bench="speedbase.seatGuest.functionMs" data-unit=" ms">0.43 ms</td>
+        <td class="cell-warn" data-bench="speedbase.seatGuest.playwrightMs" data-unit=" ms">488 ms</td>
+        <td class="cell-good" data-bench="speedbase.seatGuest.playwrightMs/functionMs" data-unit="×">1127×</td>
+      </tr>
+      <tr>
+        <td>hostVipGuest()</td>
+        <td class="cell-good" data-bench="speedbase.hostVipGuest.functionMs" data-unit=" ms">0.27 ms</td>
+        <td colspan="2" class="cell-warn">no UI exists — function-call only, same honesty rule as the CRM slide</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="quote" style="margin-top:16px">
+    Not an agent-token argument — this is separate from every other slide in this deck. The same <code>book()</code>/<code>seatGuest()</code> operations your E2E suite drives through a browser can be tested directly, in milliseconds, through the exact validation and RBAC path the browser path goes through.
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════
      SLIDE 8 — OPERATION MODEL
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="08 / 10">
+<div class="slide" data-n="14 / 16">
   <div class="kicker">Operation Model</div>
-  <h2>53 operations across 6 domains</h2>
+  <h2>47 operations across 6 domains + 8 meta-ops</h2>
   <p class="body" style="margin-top:6px">Every op carries a validated schema (Zod), RBAC roles, a module path, and a result envelope.</p>
 
   <div class="two-col" style="margin-top:24px">
@@ -616,9 +1007,9 @@
         <div class="bar-group">
           <div class="bar-label" style="width:120px">Front Office</div>
           <div class="bar-track" style="height:18px">
-            <div class="bar-fill" style="width:calc(8/14*100%);background:var(--s3)"></div>
+            <div class="bar-fill" style="width:calc(10/14*100%);background:var(--s3)"></div>
           </div>
-          <span class="bar-value-outside">8 ops</span>
+          <span class="bar-value-outside">10 ops</span>
         </div>
         <div class="bar-group">
           <div class="bar-label" style="width:120px">Tasks</div>
@@ -666,7 +1057,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 9 — SECURITY & RBAC
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="09 / 10">
+<div class="slide" data-n="15 / 16">
   <div class="kicker">Security &amp; Access Control</div>
   <h2>Layered controls at every call boundary</h2>
 
@@ -717,7 +1108,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 10 — NEXT STEPS
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="10 / 10">
+<div class="slide" data-n="16 / 16">
   <div class="kicker">Next Steps</div>
   <h2>What we're proposing</h2>
 
@@ -757,5 +1148,108 @@
 </div>
 
 </div><!-- /deck -->
+
+<!--
+  Live benchmark data: node scripts/bench.mjs writes docs/bench-data.js with
+  window.BENCH = {...}, and node scripts/speedbase.mjs writes docs/speedbase-data.js
+  with window.SPEEDBASE = {...}. A <script src> load (not fetch) works from file://,
+  from a server, and silently no-ops if the file is missing — so this deck never
+  depends on a benchmark run to open, but shows fresh numbers when one exists.
+-->
+<script src="bench-data.js" onerror="window.__benchDataMissing = true"></script>
+<script src="speedbase-data.js" onerror="window.__speedbaseDataMissing = true"></script>
+<script>
+(function applyBench() {
+  var BENCH = window.BENCH;
+  var SPEEDBASE = window.SPEEDBASE;
+
+  function resolveBench(path) {
+    // "booking.B.avgInputTokens+avgOutputTokens" -> sum of the two named fields
+    if (!BENCH || !BENCH.results) return null;
+    var parts = path.split(".");
+    var flow = parts[0], lane = parts[1], fieldExpr = parts[2];
+    var rows = BENCH.results[flow];
+    if (!rows) return null;
+    var row = rows.find(function (r) { return r.lane === lane; });
+    if (!row) return null;
+    var fields = fieldExpr.split("+");
+    var sum = 0;
+    for (var i = 0; i < fields.length; i++) {
+      var v = row[fields[i]];
+      if (typeof v !== "number") return null;
+      sum += v;
+    }
+    return sum;
+  }
+
+  function resolveSpeedbase(path) {
+    // "speedbase.book.functionMs" -> rows.find(r => r.scenario === "book").functionMs
+    // "speedbase.book.playwrightMs/functionMs" -> that row's ratio of the two fields
+    // (speedup is written to speedbase-data.js as a pre-formatted string like "363x",
+    // not a number, so the ratio is recomputed here from the two numeric fields it
+    // was derived from — same "derive it client-side" approach as the "+" sum syntax
+    // resolveBench uses for cumulative token fields).
+    if (!SPEEDBASE || !SPEEDBASE.rows) return null;
+    var parts = path.split(".");
+    var scenario = parts[1], fieldExpr = parts[2];
+    var row = SPEEDBASE.rows.find(function (r) { return r.scenario === scenario; });
+    if (!row) return null;
+    if (fieldExpr.indexOf("/") !== -1) {
+      var ratioFields = fieldExpr.split("/");
+      var numerator = row[ratioFields[0]], denominator = row[ratioFields[1]];
+      if (typeof numerator !== "number" || typeof denominator !== "number" || denominator === 0) return null;
+      return Math.round(numerator / denominator);
+    }
+    var v = row[fieldExpr];
+    return typeof v === "number" ? v : null;
+  }
+
+  function resolve(path) {
+    return path.indexOf("speedbase.") === 0 ? resolveSpeedbase(path) : resolveBench(path);
+  }
+
+  document.querySelectorAll("[data-bench]").forEach(function (el) {
+    var value = resolve(el.getAttribute("data-bench"));
+    if (value === null) return;
+    var unit = el.getAttribute("data-unit") || "";
+    el.textContent = value.toLocaleString() + unit;
+  });
+
+  if (!BENCH || !BENCH.results) return; // remaining logic below is BENCH-specific
+
+  document.querySelectorAll("[data-bench-buildmode]").forEach(function (el) {
+    if (BENCH.buildMode === "dev") {
+      el.textContent = "⚠ Figures captured in --dev mode — not for publication. Re-run with a production build.";
+      el.style.color = "var(--crit)";
+    }
+  });
+
+  // Rescale the two DOM-tax bars on slide 9 against whichever pair is largest, so a
+  // future flow with even bigger observation tokens still renders as a fair diagram.
+  var bTok = resolve("booking.B.avgInputTokens+avgOutputTokens");
+  var dTok = resolve("booking.D.avgObservationTokens");
+  if (bTok !== null && dTok !== null && dTok > 0) {
+    var max = Math.max(bTok, dTok);
+    var bBar = document.getElementById("bench-dom-tax-b");
+    var dBar = document.getElementById("bench-dom-tax-d");
+    if (bBar) bBar.style.width = Math.max(2, (bTok / max) * 100) + "%";
+    if (dBar) dBar.style.width = Math.max(2, (dTok / max) * 100) + "%";
+  }
+
+  // Same per-pair rescale for the speedbase bars (slide 13) — function-call vs.
+  // Playwright, scaled against each other within each scenario, not across scenarios.
+  function rescalePair(fnPath, pwPath, fnBarId, pwBarId) {
+    var fnMs = resolve(fnPath), pwMs = resolve(pwPath);
+    if (fnMs === null || pwMs === null || pwMs <= 0) return;
+    var max = Math.max(fnMs, pwMs);
+    var fnBar = document.getElementById(fnBarId);
+    var pwBar = document.getElementById(pwBarId);
+    if (fnBar) fnBar.style.width = Math.max(0.3, (fnMs / max) * 100) + "%";
+    if (pwBar) pwBar.style.width = Math.max(2, (pwMs / max) * 100) + "%";
+  }
+  rescalePair("speedbase.book.functionMs", "speedbase.book.playwrightMs", "speedbase-bar-book-fn", "speedbase-bar-book-pw");
+  rescalePair("speedbase.seatGuest.functionMs", "speedbase.seatGuest.playwrightMs", "speedbase-bar-seatguest-fn", "speedbase-bar-seatguest-pw");
+})();
+</script>
 </body>
 </html>
