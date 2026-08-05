@@ -16,25 +16,26 @@ All numbers below are measured, not estimated: real MCP Streamable HTTP transpor
 
 | Lane | Transport | Calls/booking | Avg latency | Tokens/booking* |
 |---|---|---|---|---|
-| Raw MCP (`load_tools` + native) | Real MCP HTTP | 3 | 49 ms | 366 |
-| Raw MCP (`invoke`, no load step) | Real MCP HTTP | 3 | 59 ms | 418 |
-| **`book()` composite** | Real MCP HTTP | **1** | **16 ms** | **91** |
-| **`book()` composite** | Real browser (WebMCP) | **1** | **39 ms** | **75** |
-| Playwright UI automation | Real browser, 7 clicks | 1 user action | 422 ms | 5,710† |
+| Raw MCP (`load_tools` + native) | Real MCP HTTP | 3 | 15 ms | 366 |
+| Raw MCP (`invoke`, no load step) | Real MCP HTTP | 3 | 15 ms | 418 |
+| **`book()` composite — NavWebMcp** | Real MCP HTTP | **1** | **5 ms** | **91** |
+| WebMCP, raw (primitive ops, one at a time) | Real browser | 3 | 40 ms | 259 |
+| **`book()` composite — NavWebMcp** | Real browser (WebMCP) | **1** | **26 ms** | **75** |
+| Playwright UI automation | Real browser, 7 clicks | 1 user action | 342 ms | 5,721† |
 
 \* input + output tokens, excludes the one-time tool-schema cost of `load_tools`. † cumulative accessibility-tree tokens an agent would need to *read* the page before each click — not directly comparable to the other rows, but that's the point: it's the cost nothing else on this list pays.
 
-**Composite call vs. raw multi-call: −78 to −80% tokens, per booking, on both surfaces.** Latency drops −67 to −73% over MCP; the WebMCP composite is a smaller −20 to −34% win since it's still driven from inside a real browser page. All lanes succeeded 5/5 — the savings cost nothing in reliability.
+**Composite call vs. raw multi-call: −72 to −87% tokens, per booking, on both surfaces.** Latency drops −67 to −88% over MCP; the WebMCP composite still wins over raw calls made from the same page — −71% tokens, −35% latency — even though both are driven from inside a real browser. All lanes succeeded 5/5 — the savings cost nothing in reliability.
 
 ### It compounds with scope
 
 | Scenario | Raw calls | Composite calls | Token saving | Latency saving |
 |---|---|---|---|---|
 | `book` — 3-op booking | 3 | 1 | −75% | −67% |
-| `journey` — book + seat a guest (2 real actions, one session) | 6 | 2 | −80% | −65% |
-| `vip` — 7-op chain across CRM + front desk | 7 | 1 | −68% | −84% |
+| `journey` — book + seat a guest (2 real actions, one session) | 6 | 2 | −81% | −63% |
+| `vip` — 7-op chain across CRM + front desk | 7 | 1 | −68% | −87% |
 
-The `journey` flow's Playwright lane (one continuous UI session doing both actions) costs **818 ms** and **11,292 cumulative tokens** of DOM reads — versus **35 ms** and **154 tokens** for the two composite calls. The `vip` flow has no Playwright row at all: CRM has no UI in this app, so there's nothing to click — a real limit of browser automation that composite calls don't have.
+The `journey` flow's Playwright lane (one continuous UI session doing both actions) costs **695 ms** and **11,300 cumulative tokens** of DOM reads — versus **7 ms** and **154 tokens** for the two composite calls. The `vip` flow has no Playwright row at all: CRM has no UI in this app, so there's nothing to click — a real limit of browser automation that composite calls don't have.
 
 ### Testing the architecture, not just the agent
 

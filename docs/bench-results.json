@@ -8,7 +8,7 @@
       {
         "lane": "A-native",
         "successRate": "5/5",
-        "avgMs": 49,
+        "avgMs": 15,
         "httpCalls": 19,
         "toolSchemaTaxTokens": 80,
         "avgInputTokens": 62,
@@ -18,7 +18,7 @@
       {
         "lane": "A-invoke",
         "successRate": "5/5",
-        "avgMs": 59,
+        "avgMs": 15,
         "httpCalls": 18,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 58,
@@ -28,7 +28,7 @@
       {
         "lane": "B",
         "successRate": "5/5",
-        "avgMs": 16,
+        "avgMs": 5,
         "httpCalls": 9,
         "toolSchemaTaxTokens": 41,
         "avgInputTokens": 26,
@@ -36,9 +36,19 @@
         "avgObservationTokens": 0
       },
       {
+        "lane": "C-raw",
+        "successRate": "5/5",
+        "avgMs": 40,
+        "httpCalls": 0,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 31,
+        "avgOutputTokens": 228,
+        "avgObservationTokens": 0
+      },
+      {
         "lane": "C",
         "successRate": "5/5",
-        "avgMs": 39,
+        "avgMs": 26,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 19,
@@ -48,19 +58,19 @@
       {
         "lane": "D",
         "successRate": "5/5",
-        "avgMs": 422,
+        "avgMs": 342,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 0,
         "avgOutputTokens": 0,
-        "avgObservationTokens": 5710
+        "avgObservationTokens": 5721
       }
     ],
     "checkin": [
       {
         "lane": "A-native",
         "successRate": "5/5",
-        "avgMs": 52,
+        "avgMs": 15,
         "httpCalls": 19,
         "toolSchemaTaxTokens": 78,
         "avgInputTokens": 43,
@@ -70,7 +80,7 @@
       {
         "lane": "A-invoke",
         "successRate": "5/5",
-        "avgMs": 47,
+        "avgMs": 13,
         "httpCalls": 18,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 40,
@@ -80,7 +90,7 @@
       {
         "lane": "B",
         "successRate": "5/5",
-        "avgMs": 16,
+        "avgMs": 4,
         "httpCalls": 9,
         "toolSchemaTaxTokens": 42,
         "avgInputTokens": 15,
@@ -88,9 +98,19 @@
         "avgObservationTokens": 0
       },
       {
+        "lane": "C-raw",
+        "successRate": "5/5",
+        "avgMs": 39,
+        "httpCalls": 0,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 15,
+        "avgOutputTokens": 293,
+        "avgObservationTokens": 0
+      },
+      {
         "lane": "C",
         "successRate": "5/5",
-        "avgMs": 41,
+        "avgMs": 30,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 7,
@@ -100,19 +120,19 @@
       {
         "lane": "D",
         "successRate": "5/5",
-        "avgMs": 433,
+        "avgMs": 365,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 0,
         "avgOutputTokens": 0,
-        "avgObservationTokens": 3888
+        "avgObservationTokens": 3886
       }
     ],
     "journey": [
       {
         "lane": "A-native",
         "successRate": "5/5",
-        "avgMs": 100,
+        "avgMs": 19,
         "httpCalls": 34,
         "toolSchemaTaxTokens": 132,
         "avgInputTokens": 106,
@@ -122,7 +142,7 @@
       {
         "lane": "A-invoke",
         "successRate": "5/5",
-        "avgMs": 100,
+        "avgMs": 22,
         "httpCalls": 33,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 98,
@@ -132,7 +152,7 @@
       {
         "lane": "B",
         "successRate": "5/5",
-        "avgMs": 35,
+        "avgMs": 7,
         "httpCalls": 14,
         "toolSchemaTaxTokens": 57,
         "avgInputTokens": 41,
@@ -140,9 +160,19 @@
         "avgObservationTokens": 0
       },
       {
+        "lane": "C-raw",
+        "successRate": "5/5",
+        "avgMs": 73,
+        "httpCalls": 0,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 46,
+        "avgOutputTokens": 521,
+        "avgObservationTokens": 0
+      },
+      {
         "lane": "C",
         "successRate": "5/5",
-        "avgMs": 83,
+        "avgMs": 55,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 26,
@@ -152,19 +182,19 @@
       {
         "lane": "D",
         "successRate": "5/5",
-        "avgMs": 818,
+        "avgMs": 695,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 0,
         "avgOutputTokens": 0,
-        "avgObservationTokens": 11292
+        "avgObservationTokens": 11300
       }
     ],
     "vip": [
       {
         "lane": "A-native",
         "successRate": "5/5",
-        "avgMs": 98,
+        "avgMs": 23,
         "httpCalls": 39,
         "toolSchemaTaxTokens": 151,
         "avgInputTokens": 131,
@@ -174,7 +204,7 @@
       {
         "lane": "A-invoke",
         "successRate": "5/5",
-        "avgMs": 97,
+        "avgMs": 25,
         "httpCalls": 38,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 124,
@@ -184,7 +214,7 @@
       {
         "lane": "B",
         "successRate": "5/5",
-        "avgMs": 16,
+        "avgMs": 3,
         "httpCalls": 9,
         "toolSchemaTaxTokens": 43,
         "avgInputTokens": 33,
@@ -192,9 +222,19 @@
         "avgObservationTokens": 0
       },
       {
+        "lane": "C-raw",
+        "successRate": "5/5",
+        "avgMs": 63,
+        "httpCalls": 0,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 62,
+        "avgOutputTokens": 542,
+        "avgObservationTokens": 0
+      },
+      {
         "lane": "C",
         "successRate": "5/5",
-        "avgMs": 55,
+        "avgMs": 48,
         "httpCalls": 0,
         "toolSchemaTaxTokens": 0,
         "avgInputTokens": 24,

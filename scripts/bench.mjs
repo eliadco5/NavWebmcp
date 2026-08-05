@@ -4,7 +4,11 @@
  *   Lane A-native — real MCP: load_tools([...]) once, then N native tools/call.
  *   Lane A-invoke — real MCP: N x invoke({name,args}), no load step.
  *   Lane B        — real MCP: load_tools([...composite]) then 1 (or a few) tools/call.
- *   Lane C        — real browser: document.modelContext.executeTool(...) (WebMCP).
+ *   Lane C-raw    — real browser: primitive ops called one at a time via /api/call —
+ *                   the in-page WebMCP surface here only registers composite tools
+ *                   (see app/providers.tsx), so this measures raw multi-call from a
+ *                   loaded page directly instead of assuming it.
+ *   Lane C        — real browser: document.modelContext.executeTool(...) (WebMCP composite).
  *   Lane D        — real browser: Playwright drives the actual UI, click by click.
  *
  * Flows:
@@ -444,6 +448,51 @@ async function withBrowserContext(loginInfo, fn) {
   }
 }
 
+// Lane C-raw: real browser page, primitive ops called one at a time via the same
+// /api/call endpoint the UI buttons use — no composite bundling. This is the "raw
+// multi-call over WebMCP" case: the in-page WebMCP surface here only ever registers
+// composite tools (book/seatGuest/hostVipGuest — see app/providers.tsx), so this
+// lane measures what calling the primitives sequentially from inside a loaded page
+// actually costs, rather than assuming it matches the composite lane's numbers.
+async function laneCRaw(flow, loginInfo, n, adminCookie) {
+  const def = FLOW_DEFS[flow];
+  return withBrowserContext(loginInfo, async (page, inPageCalls) => {
+    const perRun = [];
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && def.resetBetweenIterations) await resetFrontOffice(adminCookie);
+      const input = def.iterationInput(i);
+      inPageCalls.count = 0;
+      const tokens = { input: 0, output: 0 };
+      let success = true;
+      const acc = [];
+      const start = performance.now();
+      const callTool = async (name, args) => {
+        tokens.input += estimateTokens(args);
+        const result = await page.evaluate(
+          async ([n, a]) => {
+            const res = await fetch("/api/call", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: n, params: a }),
+            });
+            return res.json();
+          },
+          [name, args]
+        );
+        tokens.output += estimateTokens(result);
+        const data = result?.data ?? result;
+        if (result?.success === false) success = false;
+        return { data, isError: result?.success === false };
+      };
+      const finalRes = await def.primitiveSteps(input, callTool, acc);
+      if (!finalRes) success = false;
+      const ms = performance.now() - start;
+      perRun.push({ ms, calls: inPageCalls.count, inputTokens: tokens.input, outputTokens: tokens.output, success });
+    }
+    return { lane: "C-raw", toolSchemaTaxTokens: 0, httpCalls: 0, runs: perRun };
+  });
+}
+
 // Lane C: call the real WebMCP surface (document.modelContext.executeTool), the same
 // entry point a browser-side MCP client would use — not window.bookTool.
 async function laneC(flow, loginInfo, n, adminCookie) {
@@ -740,6 +789,9 @@ async function main() {
         rows.push(summarize(result));
         await resetStores(bob.cookie);
       } else if (lane === "c") {
+        const rawResult = await laneCRaw(flow, loginInfo, N, bob.cookie);
+        rows.push(summarize(rawResult));
+        await resetStores(bob.cookie);
         result = await laneC(flow, loginInfo, N, bob.cookie);
         rows.push(summarize(result));
         await resetStores(bob.cookie);

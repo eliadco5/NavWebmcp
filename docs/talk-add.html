@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADD — AI-Driven Development</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page:           #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --series-fn:      #3987e5;   /* blue — the point: composite / function call */
+    --series-pw:      #d95926;   /* orange — the outlier: Playwright / raw multi-call */
+    --grid:           #2c2c2a;
+    --baseline:       #383835;
+    --good:           #0ca30c;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .deck { width: 100%; max-width: 1080px; margin: 0 auto; padding: 32px 16px 100px; }
+
+  .slide {
+    background: var(--surface-1);
+    border: 1px solid var(--grid);
+    border-radius: 20px;
+    padding: 56px 64px;
+    margin-bottom: 28px;
+    position: relative;
+    min-height: 560px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .slide::before {
+    content: attr(data-n);
+    position: absolute;
+    top: 22px; right: 26px;
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kicker {
+    font-size: 14px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--series-fn);
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 2.6rem; font-weight: 800; line-height: 1.15; color: var(--text-primary); }
+  h2 { font-size: 1.9rem; font-weight: 800; line-height: 1.2; color: var(--text-primary); margin-bottom: 6px; }
+  .subtitle { font-size: 1.15rem; color: var(--text-secondary); margin-top: 14px; line-height: 1.5; }
+  .body { font-size: 1.02rem; color: var(--text-secondary); line-height: 1.6; }
+
+  /* ── Cold-open hero figure ─────────────────────────────── */
+  .hero-slide { align-items: center; text-align: center; justify-content: center; }
+  .hero-figure {
+    font-size: 8.5rem; font-weight: 800; line-height: 1;
+    color: var(--series-fn);
+    letter-spacing: -0.02em;
+  }
+  .hero-caption {
+    font-size: 1.3rem; color: var(--text-secondary); margin-top: 20px; font-weight: 500;
+  }
+  .hero-attrib {
+    font-size: .95rem; color: var(--text-muted); margin-top: 44px; letter-spacing: .02em;
+  }
+
+  /* ── Stat tile row (second BOOM slide) ──────────────────── */
+  .stat-row { display: flex; gap: 24px; justify-content: center; margin-top: 8px; }
+  .stat-tile {
+    flex: 1; max-width: 280px;
+    background: var(--page); border: 1px solid var(--grid);
+    border-radius: 14px; padding: 32px 28px; text-align: center;
+  }
+  .stat-value { font-size: 3.4rem; font-weight: 800; color: var(--series-fn); line-height: 1; }
+  .stat-label { font-size: .95rem; color: var(--text-secondary); margin-top: 12px; font-weight: 500; }
+
+  /* ── Agenda ──────────────────────────────────────────────── */
+  .agenda { margin-top: 28px; display: flex; flex-direction: column; gap: 10px; }
+  .agenda-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 18px; border-radius: 8px;
+    border: 1px solid var(--grid); background: var(--page);
+  }
+  .agenda-num {
+    font-size: .8rem; font-weight: 700; color: var(--series-fn);
+    font-variant-numeric: tabular-nums; width: 28px; flex-shrink: 0;
+  }
+  .agenda-label { font-size: .98rem; font-weight: 500; color: var(--text-primary); }
+
+  /* ── Bullet list ─────────────────────────────────────────── */
+  .bullets { margin-top: 26px; list-style: none; display: flex; flex-direction: column; gap: 16px; }
+  .bullets li { padding-left: 24px; position: relative; font-size: 1.02rem; color: var(--text-secondary); line-height: 1.6; }
+  .bullets li::before { content: "–"; position: absolute; left: 0; color: var(--series-fn); font-weight: 700; }
+  .bullets li strong { color: var(--text-primary); }
+
+  /* ── Two-col ─────────────────────────────────────────────── */
+  .two-col { display: flex; gap: 32px; margin-top: 28px; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 260px; }
+
+  /* ── Architecture panels (✕ / ✓) ─────────────────────────── */
+  .panels { display: flex; gap: 24px; margin-top: 26px; }
+  .panel { flex: 1; min-width: 0; border-radius: 14px; padding: 24px 24px 20px; }
+  .panel.bad { background: color-mix(in srgb, var(--series-pw) 8%, var(--surface-1)); border: 1.5px solid color-mix(in srgb, var(--series-pw) 35%, transparent); }
+  .panel.good { background: color-mix(in srgb, var(--series-fn) 8%, var(--surface-1)); border: 1.5px solid color-mix(in srgb, var(--series-fn) 35%, transparent); }
+  .panel-label { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .panel-mark { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0; }
+  .bad .panel-mark { background: var(--series-pw); color: #1a1a19; }
+  .good .panel-mark { background: var(--series-fn); color: #1a1a19; }
+  .bad .panel-label { color: var(--series-pw); }
+  .good .panel-label { color: var(--series-fn); }
+  .code-block {
+    background: var(--page); border-radius: 8px; padding: 14px 16px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px; line-height: 1.6; color: var(--text-secondary); white-space: pre; overflow: hidden;
+  }
+  .code-block .kw { color: #d95926; }
+  .code-block .fn { color: #3987e5; }
+  .code-block .cm { color: var(--text-muted); }
+  .panel-note { margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+  .diagram { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0 2px; }
+  .op-box { background: var(--page); border: 1.5px solid var(--series-fn); border-radius: 8px; padding: 10px 16px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+  .stem { width: 1.5px; height: 18px; background: var(--baseline); }
+  .branches { width: 100%; height: 1.5px; background: var(--baseline); }
+  .nodes-row { display: flex; justify-content: space-between; width: 100%; margin-top: 18px; padding: 0 4px; }
+  .node { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .node-stem { width: 1.5px; height: 18px; background: var(--baseline); margin-top: -18px; }
+  .node-pill { background: var(--page); border: 1.5px solid var(--baseline); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 700; color: var(--text-primary); }
+
+  /* ── Bar chart (horizontal, emphasis form) ─────────────────── */
+  .bar-chart { margin-top: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .bar-group-title { font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px; }
+  .bar-row { display: flex; align-items: center; gap: 14px; }
+  .bar-name { width: 150px; font-size: .88rem; font-weight: 600; color: var(--text-secondary); text-align: right; flex-shrink: 0; }
+  .bar-track { position: relative; flex: 1; height: 30px; background: var(--grid); border-radius: 5px; overflow: hidden; }
+  .bar-fill { position: absolute; top: 0; left: 0; height: 30px; border-radius: 5px; }
+  .bar-fill.pw { background: var(--series-pw); }
+  .bar-fill.fn { background: var(--series-fn); }
+  .bar-fill.muted { background: var(--text-muted); }
+  .bar-value { width: 130px; flex-shrink: 0; font-size: .92rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; }
+  .speedup-tag {
+    align-self: flex-start; margin-left: 164px; margin-top: -2px;
+    font-size: .78rem; font-weight: 700; color: var(--series-fn);
+    background: color-mix(in srgb, var(--series-fn) 16%, transparent);
+    border-radius: 999px; padding: 4px 12px;
+  }
+
+  .legend { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 14px; margin-bottom: 4px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--text-secondary); }
+  .legend-swatch { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ── Comparison table ───────────────────────────────────── */
+  .comp-table { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: .9rem; }
+  .comp-table th { text-align: left; padding: 10px 14px; font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1.5px solid var(--baseline); }
+  .comp-table td { padding: 12px 14px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
+  .comp-table tr:last-child td { border-bottom: none; }
+  .comp-table td:first-child { color: var(--text-primary); font-weight: 600; }
+  .cell-good { color: var(--good) !important; font-weight: 700; }
+  .cell-hi { background: color-mix(in srgb, var(--series-fn) 8%, transparent); }
+
+  /* ── Flow steps (dev-loop lanes) ────────────────────────── */
+  .lane { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+  .lane-label { width: 90px; flex-shrink: 0; font-size: .85rem; font-weight: 700; color: var(--text-secondary); }
+  .lane-step {
+    padding: 10px 16px; border-radius: 8px; font-size: .82rem; font-weight: 600;
+    background: var(--page); border: 1px solid var(--grid); color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .lane-arrow { color: var(--text-muted); font-size: 1rem; }
+  .lane.slow .lane-step { border-color: color-mix(in srgb, var(--series-pw) 40%, var(--grid)); }
+  .lane.fast .lane-step { border-color: color-mix(in srgb, var(--series-fn) 40%, var(--grid)); }
+  .lane-repeat { color: var(--text-muted); font-size: .8rem; font-style: italic; margin-left: 4px; }
+
+  /* ── Quote block ─────────────────────────────────────────── */
+  .quote {
+    border-left: 3px solid var(--series-fn);
+    padding: 16px 22px; margin-top: 26px;
+    background: var(--page); border-radius: 0 8px 8px 0;
+    font-size: 1.1rem; color: var(--text-secondary); font-style: italic; line-height: 1.6;
+  }
+
+  /* ── Recap list ──────────────────────────────────────────── */
+  .recap { margin-top: 24px; display: flex; flex-direction: column; gap: 14px; }
+  .recap-item { display: flex; gap: 16px; align-items: baseline; }
+  .recap-num { font-size: .85rem; font-weight: 800; color: var(--series-fn); width: 30px; flex-shrink: 0; }
+  .recap-text { font-size: 1rem; color: var(--text-secondary); line-height: 1.5; }
+  .recap-text strong { color: var(--text-primary); }
+
+  /* ── Closing ─────────────────────────────────────────────── */
+  .closing-slide { align-items: center; text-align: center; }
+  .contact-row { display: flex; gap: 28px; margin-top: 36px; font-size: 1rem; color: var(--text-secondary); }
+
+  code {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: .88em; background: var(--page); border-radius: 4px;
+    padding: 2px 6px; color: var(--series-fn);
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 1 — TITLE
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="01 / 19">
+  <div class="kicker">AI Dev TLV · 2026</div>
+  <h1>ADD<br>AI-Driven Development</h1>
+  <p class="subtitle">Your platform wasn't built for AI. Here's what fixes that.</p>
+  <div class="hero-attrib" style="margin-top:40px">R&amp;D Director, Priority Hospitality · builder of NavWebMcp</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 2 — COLD OPEN: STAT ROW
+════════════════════════════════════════════════════ -->
+<div class="slide hero-slide" data-n="02 / 19">
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="stat-value">−80%</div>
+      <div class="stat-label">tokens, composite vs. raw multi-call</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-value">−73%</div>
+      <div class="stat-label">latency, composite vs. raw multi-call</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-value">437×</div>
+      <div class="stat-label">faster to test than through a browser</div>
+    </div>
+  </div>
+  <div class="hero-attrib" style="margin-top:36px">real MCP transport · real headless browser · n=5 · production build</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 3 — AGENDA
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="03 / 19">
+  <div class="kicker">Agenda</div>
+  <h2>Where those numbers come from</h2>
+  <div class="agenda">
+    <div class="agenda-item"><div class="agenda-num">01</div><div class="agenda-label">The problem — why current development isn't built for AI</div></div>
+    <div class="agenda-item"><div class="agenda-num">02</div><div class="agenda-label">Why "just add an MCP server" doesn't fix it</div></div>
+    <div class="agenda-item"><div class="agenda-num">03</div><div class="agenda-label">ADD, defined — one rule for where logic lives</div></div>
+    <div class="agenda-item"><div class="agenda-num">04</div><div class="agenda-label">Payoff 1 — testing in milliseconds, not seconds</div></div>
+    <div class="agenda-item"><div class="agenda-num">05</div><div class="agenda-label">Payoff 2 — what it does to your CI bill</div></div>
+    <div class="agenda-item"><div class="agenda-num">06</div><div class="agenda-label">Payoff 3 — the AI-agent development loop</div></div>
+    <div class="agenda-item"><div class="agenda-num">07</div><div class="agenda-label">The protocol — NavWebMcp, on top of MCP</div></div>
+    <div class="agenda-item"><div class="agenda-num">08</div><div class="agenda-label">Case study — the full numbers, end to end</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 4 — THE PROBLEM
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="04 / 19">
+  <div class="kicker">The Problem</div>
+  <h2>Current development isn't built for AI</h2>
+  <p class="body" style="margin-top:8px">Every team bolting an agent onto their product hits the same wall.</p>
+  <ul class="bullets">
+    <li><strong>Hallucinated calls</strong> — guesses at a sequence nothing tells it</li>
+    <li><strong>Non-deterministic</strong> — same request, different path each time</li>
+    <li><strong>Endless back-and-forth</strong> — a dozen turns to gather one form's worth of input</li>
+    <li><strong>Doesn't connect at all</strong> — weeks of bespoke glue just to start</li>
+  </ul>
+  <div class="quote" style="margin-top:24px">That's not an agent problem. It's an architecture problem: most software was never designed to be consumed — only to be clicked.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 5 — WHY "JUST ADD MCP" DOESN'T FIX IT
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="05 / 19">
+  <div class="kicker">The False Fix</div>
+  <h2>Stop Bending Your Platform to Fit an Agent</h2>
+  <p class="subtitle" style="margin-top:2px">Why "just add an MCP server" doesn't fix it?</p>
+  <p class="body" style="margin-top:8px">Most integrations wrap a human-shaped API in tool definitions — one tool per endpoint. The agent still has to:</p>
+  <ul class="bullets">
+    <li><strong>Orchestrate multiple calls</strong> — the wrapper gave it a schema, not less work</li>
+    <li><strong>Re-read growing context</strong> — every call's result reprocessed on the next</li>
+    <li><strong>Learn your domain from the prompt</strong> — sequencing, preconditions, dependencies</li>
+  </ul>
+  <div class="quote" style="margin-top:24px">Wrapping the API is not the same as re-architecting it. MCP is a transport. It was never the fix.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 6 — ADD, DEFINED
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="06 / 19">
+  <div class="kicker">ADD, Defined</div>
+  <h2>You already wrote the business logic.<br>You just wrote it in the wrong place.</h2>
+  <p class="body" style="margin-top:16px">Validation, orchestration, business rules — scattered across every <code>onClick</code>, every <code>useEffect</code>, every route handler that happens to need them.</p>
+  <div class="quote" style="margin-top:24px">ADD's one rule: business logic gets its own layer, separate from the UI that triggers it.</div>
+  <p class="body" style="margin-top:20px">One function. One place. The UI becomes what it should've been all along — a thin caller.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 7 — ARCHITECTURE DIAGRAM
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="07 / 19">
+  <div class="kicker">Architecture</div>
+  <h2>Same logic. One place, not forty.</h2>
+  <div class="panels">
+    <div class="panel bad">
+      <div class="panel-label"><span class="panel-mark">✕</span> Logic lives in the click handler</div>
+      <div class="code-block"><span class="kw">&lt;Button</span> onClick={<span class="kw">async</span> () <span class="cm">=&gt;</span> {
+  <span class="kw">if</span> (!date) <span class="kw">return</span>;
+  <span class="kw">const</span> ok = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="cm">'/api/check'</span>);
+  <span class="kw">if</span> (!ok) <span class="kw">return</span> showError();
+  <span class="kw">await</span> <span class="fn">fetch</span>(<span class="cm">'/api/reserve'</span>);
+  <span class="cm">// ...and again, next screen</span>
+}}<span class="kw">&gt;</span></div>
+      <div class="panel-note">Repeated in every screen that needs it — each copy one edit away from drifting apart.</div>
+    </div>
+    <div class="panel good">
+      <div class="panel-label"><span class="panel-mark">✓</span> Logic lives in its own layer</div>
+      <div class="code-block"><span class="cm">// lib/operations/book.ts</span>
+<span class="kw">export async function</span> <span class="fn">book</span>(input) {
+  <span class="kw">if</span> (!input.date) <span class="kw">throw</span> ValidationError;
+  <span class="kw">const</span> ok = <span class="kw">await</span> <span class="fn">checkAvailability</span>(input);
+  <span class="kw">if</span> (!ok) <span class="kw">throw</span> UnavailableError;
+  <span class="kw">return</span> <span class="fn">reserve</span>(input);
+}</div>
+      <div class="diagram" style="padding-top:2px">
+        <div class="op-box">book()</div>
+        <div class="stem"></div>
+        <div class="branches"></div>
+        <div class="nodes-row">
+          <div class="node"><div class="node-stem"></div><div class="node-pill">UI</div></div>
+          <div class="node"><div class="node-stem"></div><div class="node-pill">Test</div></div>
+          <div class="node"><div class="node-stem"></div><div class="node-pill">Agent</div></div>
+        </div>
+      </div>
+      <div class="panel-note">One function, one set of rules. The UI is just the first caller — not the logic's home.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 8 — PAYOFF 1: TESTING SPEED (CHART)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="08 / 19">
+  <div class="kicker">Payoff 1 · Testing</div>
+  <h2>Test the logic, not the DOM</h2>
+  <p class="body" style="margin-top:6px">Same scenario, same validation, same RBAC — one path goes through a real browser, the other calls the operation directly.</p>
+
+  <div class="legend" style="margin-top:18px">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--series-pw)"></div>Playwright (browser)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--series-fn)"></div>Function call (direct)</div>
+  </div>
+
+  <div class="bar-chart">
+    <div>
+      <div class="bar-group-title">book()</div>
+      <div class="bar-row"><div class="bar-name">Playwright</div><div class="bar-track"><div class="bar-fill pw" style="width:100%"></div></div><div class="bar-value">388 ms</div></div>
+      <div class="bar-row"><div class="bar-name">Function</div><div class="bar-track"><div class="bar-fill fn" style="width:0.6%"></div></div><div class="bar-value">0.89 ms</div></div>
+      <div class="speedup-tag">437× faster</div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="bar-group-title">seatGuest()</div>
+      <div class="bar-row"><div class="bar-name">Playwright</div><div class="bar-track"><div class="bar-fill pw" style="width:100%"></div></div><div class="bar-value">459 ms</div></div>
+      <div class="bar-row"><div class="bar-name">Function</div><div class="bar-track"><div class="bar-fill fn" style="width:0.2%"></div></div><div class="bar-value">0.35 ms</div></div>
+      <div class="speedup-tag">1,314× faster</div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="bar-group-title">hostVipGuest()</div>
+      <div class="bar-row"><div class="bar-name">Playwright</div><div class="bar-track"></div><div class="bar-value" style="color:var(--text-muted)">no UI exists</div></div>
+      <div class="bar-row"><div class="bar-name">Function</div><div class="bar-track"><div class="bar-fill fn" style="width:0.1%"></div></div><div class="bar-value">0.18 ms</div></div>
+    </div>
+  </div>
+  <p class="body" style="font-size:.82rem;margin-top:14px;color:var(--text-muted)">Every one of those milliseconds is a runner-minute your DevOps team isn't paying for — this is where the FinOps story starts.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 9 — WHY MILLISECONDS BECOME A BUDGET LINE
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="09 / 19">
+  <div class="kicker">DevOps &amp; FinOps · The Cost Chain</div>
+  <h2>A single test's cost is invisible. Multiply it.</h2>
+  <p class="body" style="margin-top:6px">One 388ms test doesn't move a budget. Run on every commit, every PR, every branch — it does.</p>
+
+  <div class="lane fast" style="margin-top:26px">
+    <div class="lane-step">test duration</div><div class="lane-arrow">×</div>
+    <div class="lane-step">number of tests</div><div class="lane-arrow">×</div>
+    <div class="lane-step">runner cost / minute</div><div class="lane-arrow">=</div>
+    <div class="lane-step" style="border-color:var(--series-fn);color:var(--series-fn)">your CI bill</div>
+  </div>
+
+  <ul class="bullets" style="margin-top:26px">
+    <li>A real suite is thousands of tests, not one — <strong>and that number only grows</strong></li>
+    <li>Fewer tests trades away coverage. <strong>Cheaper tests doesn't.</strong></li>
+  </ul>
+  <div class="quote" style="margin-top:24px">Fast tests don't just save a developer a few seconds. They change what your organization can afford to run, and how often.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 10 — PAYOFF 2: CI COST (INDEXED, NO $)
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="10 / 19">
+  <div class="kicker">Payoff 2 · CI &amp; Cloud Cost</div>
+  <h2>What isn't obvious until you do the math</h2>
+  <p class="body" style="margin-top:6px">Every Playwright test needs a real browser: spun up, rendered, torn down. A function call needs none of it.</p>
+
+  <div class="bar-chart" style="margin-top:26px">
+    <div class="bar-group-title">1,000 book() tests — CI runner time needed</div>
+    <div class="bar-row"><div class="bar-name">Playwright</div><div class="bar-track"><div class="bar-fill pw" style="width:100%"></div></div><div class="bar-value">≈ 6.5 minutes</div></div>
+    <div class="bar-row"><div class="bar-name">Function call</div><div class="bar-track"><div class="bar-fill fn" style="width:0.3%"></div></div><div class="bar-value">≈ 1 second</div></div>
+  </div>
+  <p class="body" style="font-size:.82rem;margin-top:10px;color:var(--text-muted)">Runner time only — derived by multiplying Payoff 1's measured per-test duration (388ms vs. 0.89ms) by 1,000 tests. No separate cost benchmark, no $/minute figures claimed.</p>
+
+  <div class="quote" style="margin-top:24px">A suite that needs an hour of browser time can run as direct calls in seconds. You're no longer choosing between thorough and affordable.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 11 — PAYOFF 3: THE DEV/AGENT LOOP
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="11 / 19">
+  <div class="kicker">Payoff 3 · The Development Loop</div>
+  <h2>Every change has to be verified before it's trusted</h2>
+  <p class="body" style="margin-top:6px">Write → test → read result → fix → run again. Same loop, human or agent.</p>
+
+  <div class="lane slow">
+    <div class="lane-label">Browser test</div>
+    <div class="lane-step">write</div><div class="lane-arrow">→</div>
+    <div class="lane-step">boot browser</div><div class="lane-arrow">→</div>
+    <div class="lane-step">click through</div><div class="lane-arrow">→</div>
+    <div class="lane-step">read result</div>
+    <div class="lane-repeat">1 iteration</div>
+  </div>
+  <div class="lane fast">
+    <div class="lane-label">Function call</div>
+    <div class="lane-step">write</div><div class="lane-arrow">→</div>
+    <div class="lane-step">call operation</div><div class="lane-arrow">→</div>
+    <div class="lane-step">read result</div>
+    <div class="lane-repeat">dozens of iterations, same time budget</div>
+  </div>
+
+  <p class="body" style="margin-top:24px">If the loop itself is an AI agent driving Playwright, it compounds twice — it has to re-read the page after every click too:</p>
+
+  <div class="bar-chart" style="margin-top:14px">
+    <div class="bar-group-title">Tokens read per verification, booking flow</div>
+    <div class="bar-row"><div class="bar-name">Function call</div><div class="bar-track"><div class="bar-fill fn" style="width:1.6%"></div></div><div class="bar-value">91 tok</div></div>
+    <div class="bar-row"><div class="bar-name">Agent driving Playwright</div><div class="bar-track"><div class="bar-fill pw" style="width:100%"></div></div><div class="bar-value">5,721 tok</div></div>
+  </div>
+  <p class="body" style="font-size:.82rem;margin-top:8px;color:var(--text-muted)">~63× more tokens just to <em>observe</em> the page — a fresh accessibility snapshot after every click.</p>
+
+  <div class="quote" style="margin-top:22px">Not because the agent got smarter. Because the loop it depends on got 100–1,000× tighter — and stopped paying a re-read tax on every step.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 12 — TRANSITION: FROM BUILDING TO SERVING
+════════════════════════════════════════════════════ -->
+<div class="slide hero-slide" data-n="12 / 19">
+  <div class="kicker">So Far · So Next</div>
+  <h2 style="text-align:center">Everything up to now made <em>you</em> faster.</h2>
+  <p class="subtitle" style="text-align:center;margin-top:18px">Testing, CI cost, the dev loop — all payoffs for the team writing the code.</p>
+  <p class="subtitle" style="text-align:center;margin-top:10px;color:var(--text-primary);font-weight:600">Now the platform has a second user: an AI agent, acting on someone else's behalf.</p>
+  <div class="hero-attrib" style="margin-top:36px">Same operations layer. A different caller.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 13 — THE PROTOCOL
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="13 / 19">
+  <div class="kicker">The Protocol</div>
+  <h2>NavWebMcp — MCP as transport, not architecture</h2>
+  <p class="body" style="margin-top:8px">If your business logic already lives in its own layer, exposing it to an agent is the easy part.</p>
+  <ul class="bullets">
+    <li><strong>Composite operations</strong> — one call replaces three or seven</li>
+    <li><strong>Progressive disclosure</strong> — a handful of tools at connect, the rest on demand</li>
+    <li><strong>RBAC &amp; confirmation, enforced once</strong> — same checks your UI already respects</li>
+    <li><strong>One registry, two surfaces</strong> — nothing re-implemented as "the agent version"</li>
+  </ul>
+  <div class="quote" style="margin-top:22px">If you did the architecture right, this layer is nearly mechanical to add. That's the point.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 14 — THE PROTOCOL, UNDER THE HOOD
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="14 / 19">
+  <div class="kicker">The Protocol · Under the Hood</div>
+  <h2>Eight meta-tools. Nothing else to install.</h2>
+
+  <div class="two-col" style="margin-top:22px">
+    <div class="col">
+      <div class="bar-group-title" style="margin-bottom:8px">Discovery</div>
+      <ul class="bullets" style="margin-top:0;gap:10px">
+        <li><code>explore</code> — walk the module tree</li>
+        <li><code>search</code> — glob for operations</li>
+        <li><code>describe_tool</code> — get the schema</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="bar-group-title" style="margin-bottom:8px">Execution &amp; session</div>
+      <ul class="bullets" style="margin-top:0;gap:10px">
+        <li><code>invoke</code> — call any op directly</li>
+        <li><code>load_tools</code> / <code>unload_tools</code></li>
+        <li><code>getContext</code> / <code>getCapabilities</code> — preflight</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="bar-group-title" style="margin-top:20px;margin-bottom:8px">One registration, all eight tools read it</div>
+  <div class="code-block"><span class="fn">defineOperation</span>({
+  <span class="kw">name</span>: <span class="cm">"book"</span>,
+  <span class="kw">description</span>: <span class="cm">"Book a table in ONE step: find a slot, reserve, validate."</span>,
+  <span class="kw">inputSchema</span>: { date, time, partySize, name },
+  <span class="kw">permission</span>: <span class="cm">"write"</span>,             <span class="cm">// read | write</span>
+  <span class="kw">roles</span>: [<span class="cm">"customer"</span>, <span class="cm">"support"</span>, <span class="cm">"admin"</span>],  <span class="cm">// who can call it</span>
+  <span class="kw">module</span>: <span class="cm">"reservation.booking"</span>,  <span class="cm">// where it lives in the tree</span>
+  <span class="kw">handler</span>: (input, ctx) <span class="cm">=&gt;</span> bookOrchestration(input, ctx)
+})</div>
+
+  <div class="quote" style="margin-top:18px">A completely standard MCP client — Claude Desktop, Claude Code, MCP Inspector. No custom transport. No fork. No special build.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 15 — CASE STUDY: TOKENS
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="15 / 19">
+  <div class="kicker">Case Study · Booking Flow</div>
+  <h2>Tokens per booking</h2>
+  <p class="body" style="margin-top:6px">Same booking, three ways: raw MCP, raw WebMCP, and one NavWebMcp composite call.</p>
+
+  <div class="bar-chart" style="margin-top:22px">
+    <div class="bar-row"><div class="bar-name">Raw MCP</div><div class="bar-track"><div class="bar-fill muted" style="width:100%"></div></div><div class="bar-value">366 tok</div></div>
+    <div class="bar-row"><div class="bar-name">WebMCP</div><div class="bar-track"><div class="bar-fill muted" style="width:70.8%"></div></div><div class="bar-value">259 tok</div></div>
+    <div class="bar-row"><div class="bar-name"><strong>NavWebMcp</strong></div><div class="bar-track"><div class="bar-fill fn" style="width:24.9%"></div></div><div class="bar-value">91 tok</div></div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--baseline)"></div>Raw multi-call (3 calls)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--series-fn)"></div>NavWebMcp composite (1 call)</div>
+  </div>
+  <div class="quote" style="margin-top:20px">−75% tokens vs. raw calls over MCP, −65% vs. the same raw calls made from inside the browser — one composite call beats raw multi-call on every surface.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 16 — CASE STUDY: LATENCY
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="16 / 19">
+  <div class="kicker">Case Study · Booking Flow</div>
+  <h2>Latency per booking</h2>
+  <p class="body" style="margin-top:6px">Playwright shown separately — a different way of interacting with the app entirely.</p>
+
+  <div class="bar-chart" style="margin-top:22px">
+    <div class="bar-row"><div class="bar-name">Raw MCP</div><div class="bar-track"><div class="bar-fill muted" style="width:37.5%"></div></div><div class="bar-value">15 ms</div></div>
+    <div class="bar-row"><div class="bar-name">WebMCP</div><div class="bar-track"><div class="bar-fill muted" style="width:100%"></div></div><div class="bar-value">40 ms</div></div>
+    <div class="bar-row"><div class="bar-name"><strong>NavWebMcp</strong></div><div class="bar-track"><div class="bar-fill fn" style="width:12.5%"></div></div><div class="bar-value">5 ms</div></div>
+    <div class="bar-row" style="margin-top:6px"><div class="bar-name">Playwright (UI)</div><div class="bar-track"><div class="bar-fill pw" style="width:100%"></div></div><div class="bar-value">342 ms</div></div>
+  </div>
+  <p class="body" style="font-size:.82rem;margin-top:10px;color:var(--text-muted)">Playwright scaled on its own axis (max = 342ms) — not directly comparable to the rows above.</p>
+  <div class="quote" style="margin-top:16px">−67% latency vs. raw MCP, −88% vs. the same raw calls made from a browser page — the composite call wins even against the surface it's supposedly "slower" on.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 17 — CASE STUDY: IT COMPOUNDS WITH SCOPE
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="17 / 19">
+  <div class="kicker">Case Study · It Compounds</div>
+  <h2>The bigger the flow, the bigger the win</h2>
+  <table class="comp-table">
+    <thead>
+      <tr><th>Scenario</th><th>Raw calls</th><th>Composite calls</th><th>Token saving</th><th>Latency saving</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>book — 3-op booking</td><td>3</td><td>1</td><td>−75%</td><td>−67%</td></tr>
+      <tr><td>journey — book + seat a guest</td><td>6</td><td>2</td><td>−81%</td><td>−63%</td></tr>
+      <tr class="cell-hi"><td>vip — 7-op chain, CRM + front desk</td><td>7</td><td>1</td><td class="cell-good">−68%</td><td class="cell-good">−87%</td></tr>
+    </tbody>
+  </table>
+  <p class="body" style="margin-top:20px"><code>vip</code> has no Playwright row — no UI exists for that domain. A limit browser automation has that a composite call doesn't.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 18 — SYNTHESIS
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="18 / 19">
+  <div class="kicker">Putting It Together</div>
+  <h2>Five payoffs, one architecture decision</h2>
+  <div class="recap">
+    <div class="recap-item"><div class="recap-num">01</div><div class="recap-text"><strong>Testing:</strong> direct calls instead of a browser — up to 1,314× faster per test.</div></div>
+    <div class="recap-item"><div class="recap-num">02</div><div class="recap-text"><strong>DevOps &amp; FinOps:</strong> the same separation lets every commit run every test without your cloud bill or your CI queue noticing.</div></div>
+    <div class="recap-item"><div class="recap-num">03</div><div class="recap-text"><strong>Dev loop:</strong> the same tight loop that helps your tests helps your AI coding agent iterate — 100–1,000× tighter.</div></div>
+    <div class="recap-item"><div class="recap-num">04</div><div class="recap-text"><strong>Protocol:</strong> NavWebMcp, a thin layer on top of MCP, makes agent-exposure mechanical instead of a redesign.</div></div>
+    <div class="recap-item"><div class="recap-num">05</div><div class="recap-text"><strong>Case study:</strong> −68 to −75% tokens, −67 to −87% latency, measured on the exact operations your UI already calls.</div></div>
+  </div>
+  <div class="quote" style="margin-top:26px">None of this started with "add an MCP server." It started with a much older, much less glamorous decision: where does your business logic actually live?</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 19 — CLOSING
+════════════════════════════════════════════════════ -->
+<div class="slide closing-slide" data-n="19 / 19">
+  <div class="kicker">Thank You</div>
+  <h1 style="font-size:2.1rem">You don't bend your platform to fit AI.</h1>
+  <p class="subtitle" style="font-size:1.3rem">You just stop making AI the first thing that has to bend.</p>
+  <div class="contact-row">
+    <div>ADD — AI-Driven Development</div>
+    <div>·</div>
+    <div>Questions welcome</div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+</body>
+</html>
