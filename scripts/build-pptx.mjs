@@ -1,6 +1,6 @@
 /**
  * Generates docs/talk-add.pptx — a PowerPoint mirror of docs/talk-add.html.
- * Same 19-slide content and dark palette, rebuilt with native PPTX shapes
+ * Same 20-slide content and dark palette, rebuilt with native PPTX shapes
  * (not an HTML screenshot export) so it's editable in PowerPoint/Keynote/Slides.
  *
  * Usage: node scripts/build-pptx.mjs
@@ -126,7 +126,7 @@ function barRow(s, x, y, w, opts) {
   });
 }
 
-const TOTAL = 19;
+const TOTAL = 20;
 
 // ── Slide 1 — Title ──────────────────────────────────────────────────────────
 {
@@ -256,10 +256,68 @@ const TOTAL = 19;
   subtitle(s, "One function. One place. The UI becomes what it should've been all along — a thin caller.", 4.9, { fontSize: 15 });
 }
 
-// ── Slide 7 — Architecture diagram (✕ / ✓ panels) ────────────────────────────
+// ── Slide 7 — ADD, Defined · On disk (✕ / ✓ folder trees) ────────────────────
 {
   const s = newSlide();
   pageNum(s, 7, TOTAL);
+  kicker(s, "ADD, Defined · On Disk");
+  heading(s, "What the rule looks like as folders", { fontSize: 28 });
+  subtitle(s, "Same feature, two layouts — one file tree per approach.", 1.7, { fontSize: 14 });
+
+  const panelY = 2.1, panelH = 3.85, panelW = (CONTENT_W - 0.5) / 2;
+  const leftX = MARGIN_X, rightX = MARGIN_X + panelW + 0.5;
+
+  // Bad panel
+  s.addShape(pptx.ShapeType.roundRect, {
+    x: leftX, y: panelY, w: panelW, h: panelH, rectRadius: 0.08,
+    fill: { color: "2A1F1B" }, line: { color: SERIES_PW, width: 1.5 },
+  });
+  s.addText([
+    { text: "✕  ", options: { color: SERIES_PW, bold: true } },
+    { text: "Logic distributed across the UI", options: { color: SERIES_PW, bold: true } },
+  ], { x: leftX + 0.3, y: panelY + 0.25, w: panelW - 0.6, h: 0.4, fontSize: 15, fontFace: "Arial" });
+  s.addText(
+    `components/\n  BookingApp.tsx     ← validates, fetches inline\n  FrontDeskPanel.tsx ← same rules, copied\napp/api/reserve/\n  route.ts           ← and again, server-side`,
+    {
+      x: leftX + 0.3, y: panelY + 0.8, w: panelW - 0.6, h: 1.6,
+      fontSize: 11, color: TEXT_SECONDARY, fontFace: "Consolas", valign: "top",
+      fill: { color: PAGE },
+    }
+  );
+  s.addText("No single place to test. Nothing for an agent to call.", {
+    x: leftX + 0.3, y: panelY + 2.55, w: panelW - 0.6, h: 1.1,
+    fontSize: 12, color: TEXT_SECONDARY, fontFace: "Arial", valign: "top",
+  });
+
+  // Good panel
+  s.addShape(pptx.ShapeType.roundRect, {
+    x: rightX, y: panelY, w: panelW, h: panelH, rectRadius: 0.08,
+    fill: { color: "1B2530" }, line: { color: SERIES_FN, width: 1.5 },
+  });
+  s.addText([
+    { text: "✓  ", options: { color: SERIES_FN, bold: true } },
+    { text: "Operations own the logic, UI just calls in", options: { color: SERIES_FN, bold: true } },
+  ], { x: rightX + 0.3, y: panelY + 0.25, w: panelW - 0.6, h: 0.4, fontSize: 15, fontFace: "Arial" });
+  s.addText(
+    `frontend/\n  components/    ← thin UI callers\n  operations/\n    book.ts      ← orchestration logic\n    registry.ts  ← registers for discovery\nbackend/\n  api/           ← the calls book() makes\n  route.ts       ← exposes api/ via MCP`,
+    {
+      x: rightX + 0.3, y: panelY + 0.8, w: panelW - 0.6, h: 2.15,
+      fontSize: 10.5, color: TEXT_SECONDARY, fontFace: "Consolas", valign: "top",
+      fill: { color: PAGE },
+    }
+  );
+  s.addText("One place to test, one place for an agent to call — the UI is neither.", {
+    x: rightX + 0.3, y: panelY + 3.0, w: panelW - 0.6, h: 0.75,
+    fontSize: 12, color: TEXT_SECONDARY, fontFace: "Arial", valign: "top",
+  });
+
+  quoteBox(s, "Every caller — UI, test, agent — enters through the same door. None of them go through each other's.", panelY + panelH + 0.2, { h: 0.85, fontSize: 13 });
+}
+
+// ── Slide 8 — Architecture diagram (✕ / ✓ panels) ────────────────────────────
+{
+  const s = newSlide();
+  pageNum(s, 8, TOTAL);
   kicker(s, "Architecture");
   heading(s, "Same logic. One place, not forty.", { fontSize: 28 });
 
@@ -327,10 +385,10 @@ const TOTAL = 19;
   });
 }
 
-// ── Slide 8 — Payoff 1: Testing speed ────────────────────────────────────────
+// ── Slide 9 — Payoff 1: Testing speed ────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 8, TOTAL);
+  pageNum(s, 9, TOTAL);
   kicker(s, "Payoff 1 · Testing");
   heading(s, "Test the logic, not the DOM", { fontSize: 28 });
   subtitle(s, "Same scenario, same validation, same RBAC — one path goes through a real browser, the other calls the operation directly.", 1.7, { fontSize: 14 });
@@ -370,10 +428,10 @@ const TOTAL = 19;
   subtitle(s, "Every one of those milliseconds is a runner-minute your DevOps team isn't paying for — this is where the FinOps story starts.", y + 0.1, { fontSize: 12, color: TEXT_MUTED });
 }
 
-// ── Slide 9 — Cost chain ─────────────────────────────────────────────────────
+// ── Slide 10 — Cost chain ─────────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 9, TOTAL);
+  pageNum(s, 10, TOTAL);
   kicker(s, "DevOps & FinOps · The Cost Chain");
   heading(s, "A single test's cost is invisible. Multiply it.", { fontSize: 28 });
   subtitle(s, "One 388ms test doesn't move a budget. Run on every commit, every PR, every branch — it does.", 1.75, { fontSize: 15 });
@@ -411,10 +469,10 @@ const TOTAL = 19;
   quoteBox(s, "Fast tests don't just save a developer a few seconds. They change what your organization can afford to run, and how often.", 5.4, { h: 1.0 });
 }
 
-// ── Slide 10 — CI cost worked example ────────────────────────────────────────
+// ── Slide 11 — CI cost worked example ────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 10, TOTAL);
+  pageNum(s, 11, TOTAL);
   kicker(s, "Payoff 2 · CI & Cloud Cost");
   heading(s, "What isn't obvious until you do the math", { fontSize: 28 });
   subtitle(s, "Every Playwright test needs a real browser: spun up, rendered, torn down. A function call needs none of it.", 1.75, { fontSize: 14 });
@@ -433,10 +491,10 @@ const TOTAL = 19;
   quoteBox(s, "A suite that needs an hour of browser time can run as direct calls in seconds. You're no longer choosing between thorough and affordable.", y + 0.9, { h: 1.0 });
 }
 
-// ── Slide 11 — Dev/agent loop ─────────────────────────────────────────────────
+// ── Slide 12 — Dev/agent loop ─────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 11, TOTAL);
+  pageNum(s, 12, TOTAL);
   kicker(s, "Payoff 3 · The Development Loop");
   heading(s, "Every change has to be verified before it's trusted", { fontSize: 26 });
   subtitle(s, "Write → test → read result → fix → run again. Same loop, human or agent.", 1.65, { fontSize: 15 });
@@ -475,10 +533,10 @@ const TOTAL = 19;
   quoteBox(s, "Not because the agent got smarter. Because the loop it depends on got 100–1,000× tighter — and stopped paying a re-read tax on every step.", 6.15, { h: 1.05, fontSize: 13 });
 }
 
-// ── Slide 12 — Transition ─────────────────────────────────────────────────────
+// ── Slide 13 — Transition ─────────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 12, TOTAL);
+  pageNum(s, 13, TOTAL);
   kicker(s, "So Far · So Next");
   s.addText("Everything up to now made you faster.", {
     x: MARGIN_X, y: 2.6, w: CONTENT_W, h: 0.8, fontSize: 30, bold: true, color: TEXT_PRIMARY, align: "center", fontFace: "Arial",
@@ -488,10 +546,10 @@ const TOTAL = 19;
   subtitle(s, "Same operations layer. A different caller.", 5.4, { fontSize: 13, color: TEXT_MUTED, align: "center" });
 }
 
-// ── Slide 13 — The Protocol ───────────────────────────────────────────────────
+// ── Slide 14 — The Protocol ───────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 13, TOTAL);
+  pageNum(s, 14, TOTAL);
   kicker(s, "The Protocol");
   heading(s, "NavWebMcp — MCP as transport, not architecture", { fontSize: 26 });
   subtitle(s, "If your business logic already lives in its own layer, exposing it to an agent is the easy part.", 1.7, { fontSize: 14 });
@@ -504,10 +562,10 @@ const TOTAL = 19;
   quoteBox(s, "If you did the architecture right, this layer is nearly mechanical to add. That's the point.", 5.5, { h: 0.9 });
 }
 
-// ── Slide 14 — Protocol under the hood ────────────────────────────────────────
+// ── Slide 15 — Protocol under the hood ────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 14, TOTAL);
+  pageNum(s, 15, TOTAL);
   kicker(s, "The Protocol · Under the Hood");
   heading(s, "Eight meta-tools. Nothing else to install.", { fontSize: 28 });
 
@@ -551,10 +609,10 @@ const TOTAL = 19;
   quoteBox(s, "A completely standard MCP client — Claude Desktop, Claude Code, MCP Inspector. No custom transport. No fork. No special build.", 6.6, { h: 0.75, fontSize: 12 });
 }
 
-// ── Slide 15 — Case study: tokens ─────────────────────────────────────────────
+// ── Slide 16 — Case study: tokens ─────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 15, TOTAL);
+  pageNum(s, 16, TOTAL);
   kicker(s, "Case Study · Booking Flow");
   heading(s, "Tokens per booking", { fontSize: 28 });
   subtitle(s, "Same booking, three ways: raw MCP, raw WebMCP, and one NavWebMcp composite call.", 1.7, { fontSize: 14 });
@@ -575,10 +633,10 @@ const TOTAL = 19;
   quoteBox(s, "−75% tokens vs. raw calls over MCP, −65% vs. the same raw calls made from inside the browser — one composite call beats raw multi-call on every surface.", y + 0.6, { h: 1.0 });
 }
 
-// ── Slide 16 — Case study: latency ────────────────────────────────────────────
+// ── Slide 17 — Case study: latency ────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 16, TOTAL);
+  pageNum(s, 17, TOTAL);
   kicker(s, "Case Study · Booking Flow");
   heading(s, "Latency per booking", { fontSize: 28 });
   subtitle(s, "Playwright shown separately — a different way of interacting with the app entirely.", 1.7, { fontSize: 14 });
@@ -598,10 +656,10 @@ const TOTAL = 19;
   quoteBox(s, '−67% latency vs. raw MCP, −88% vs. the same raw calls made from a browser page — the composite call wins even against the surface it\'s supposedly "slower" on.', y + 0.55, { h: 1.0 });
 }
 
-// ── Slide 17 — Case study: compounds with scope ───────────────────────────────
+// ── Slide 18 — Case study: compounds with scope ───────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 17, TOTAL);
+  pageNum(s, 18, TOTAL);
   kicker(s, "Case Study · It Compounds");
   heading(s, "The bigger the flow, the bigger the win", { fontSize: 28 });
 
@@ -633,10 +691,10 @@ const TOTAL = 19;
   subtitle(s, "vip has no Playwright row — no UI exists for that domain. A limit browser automation has that a composite call doesn't.", 4.4, { fontSize: 14 });
 }
 
-// ── Slide 18 — Synthesis ───────────────────────────────────────────────────────
+// ── Slide 19 — Synthesis ───────────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 18, TOTAL);
+  pageNum(s, 19, TOTAL);
   kicker(s, "Putting It Together");
   heading(s, "Five payoffs, one architecture decision", { fontSize: 28 });
 
@@ -660,10 +718,10 @@ const TOTAL = 19;
   quoteBox(s, 'None of this started with "add an MCP server." It started with a much older, much less glamorous decision: where does your business logic actually live?', y + 0.15, { h: 1.0 });
 }
 
-// ── Slide 19 — Closing ─────────────────────────────────────────────────────────
+// ── Slide 20 — Closing ─────────────────────────────────────────────────────────
 {
   const s = newSlide();
-  pageNum(s, 19, TOTAL);
+  pageNum(s, 20, TOTAL);
   kicker(s, "Thank You");
   s.addText("You don't bend your platform to fit AI.", {
     x: MARGIN_X, y: 2.7, w: CONTENT_W, h: 0.8, fontSize: 32, bold: true, color: TEXT_PRIMARY, align: "center", fontFace: "Arial",

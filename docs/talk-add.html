@@ -130,6 +130,7 @@
   .code-block .kw { color: #d95926; }
   .code-block .fn { color: #3987e5; }
   .code-block .cm { color: var(--text-muted); }
+  .code-block.tree { font-size: 12px; line-height: 1.75; }
   .panel-note { margin-top: 12px; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
 
   .diagram { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0 2px; }
@@ -217,7 +218,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 1 — TITLE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="01 / 19">
+<div class="slide" data-n="01 / 20">
   <div class="kicker">AI Dev TLV · 2026</div>
   <h1>ADD<br>AI-Driven Development</h1>
   <p class="subtitle">Your platform wasn't built for AI. Here's what fixes that.</p>
@@ -227,7 +228,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 2 — COLD OPEN: STAT ROW
 ════════════════════════════════════════════════════ -->
-<div class="slide hero-slide" data-n="02 / 19">
+<div class="slide hero-slide" data-n="02 / 20">
   <div class="stat-row">
     <div class="stat-tile">
       <div class="stat-value">−80%</div>
@@ -248,7 +249,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 3 — AGENDA
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="03 / 19">
+<div class="slide" data-n="03 / 20">
   <div class="kicker">Agenda</div>
   <h2>Where those numbers come from</h2>
   <div class="agenda">
@@ -266,7 +267,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 4 — THE PROBLEM
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="04 / 19">
+<div class="slide" data-n="04 / 20">
   <div class="kicker">The Problem</div>
   <h2>Current development isn't built for AI</h2>
   <p class="body" style="margin-top:8px">Every team bolting an agent onto their product hits the same wall.</p>
@@ -282,7 +283,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 5 — WHY "JUST ADD MCP" DOESN'T FIX IT
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="05 / 19">
+<div class="slide" data-n="05 / 20">
   <div class="kicker">The False Fix</div>
   <h2>Stop Bending Your Platform to Fit an Agent</h2>
   <p class="subtitle" style="margin-top:2px">Why "just add an MCP server" doesn't fix it?</p>
@@ -298,7 +299,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 6 — ADD, DEFINED
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="06 / 19">
+<div class="slide" data-n="06 / 20">
   <div class="kicker">ADD, Defined</div>
   <h2>You already wrote the business logic.<br>You just wrote it in the wrong place.</h2>
   <p class="body" style="margin-top:16px">Validation, orchestration, business rules — scattered across every <code>onClick</code>, every <code>useEffect</code>, every route handler that happens to need them.</p>
@@ -307,9 +308,42 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════
-     SLIDE 7 — ARCHITECTURE DIAGRAM
+     SLIDE 7 — ADD, DEFINED · ON DISK
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="07 / 19">
+<div class="slide" data-n="07 / 20">
+  <div class="kicker">ADD, Defined · On Disk</div>
+  <h2>What the rule looks like as folders</h2>
+  <p class="body" style="margin-top:8px">Same feature, two layouts — one file tree per approach.</p>
+  <div class="panels">
+    <div class="panel bad">
+      <div class="panel-label"><span class="panel-mark">✕</span> Logic distributed across the UI</div>
+      <div class="code-block tree"><span class="cm">components/</span>
+  <span class="fn">BookingApp.tsx</span>     <span class="cm">← validates, fetches inline</span>
+  <span class="fn">FrontDeskPanel.tsx</span> <span class="cm">← same rules, copied</span>
+<span class="cm">app/api/reserve/</span>
+  <span class="cm">route.ts</span>           <span class="cm">← and again, server-side</span></div>
+      <div class="panel-note">No single place to test. Nothing for an agent to call.</div>
+    </div>
+    <div class="panel good">
+      <div class="panel-label"><span class="panel-mark">✓</span> Operations own the logic, UI just calls in</div>
+      <div class="code-block tree"><span class="cm">frontend/</span>
+  <span class="cm">components/</span>    <span class="cm">← thin UI callers</span>
+  <span class="fn">operations/</span>
+    <span class="cm">book.ts</span>      <span class="cm">← orchestration logic</span>
+    <span class="cm">registry.ts</span>  <span class="cm">← registers for discovery</span>
+<span class="cm">backend/</span>
+  <span class="cm">api/</span>           <span class="cm">← the calls book() makes</span>
+  <span class="cm">route.ts</span>       <span class="cm">← exposes api/ via MCP</span></div>
+      <div class="panel-note">One place to test, one place for an agent to call — the UI is neither.</div>
+    </div>
+  </div>
+  <div class="quote" style="margin-top:22px">Every caller — UI, test, agent — enters through the same door. None of them go through each other's.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     SLIDE 8 — ARCHITECTURE DIAGRAM
+════════════════════════════════════════════════════ -->
+<div class="slide" data-n="08 / 20">
   <div class="kicker">Architecture</div>
   <h2>Same logic. One place, not forty.</h2>
   <div class="panels">
@@ -351,7 +385,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 8 — PAYOFF 1: TESTING SPEED (CHART)
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="08 / 19">
+<div class="slide" data-n="09 / 20">
   <div class="kicker">Payoff 1 · Testing</div>
   <h2>Test the logic, not the DOM</h2>
   <p class="body" style="margin-top:6px">Same scenario, same validation, same RBAC — one path goes through a real browser, the other calls the operation directly.</p>
@@ -386,7 +420,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 9 — WHY MILLISECONDS BECOME A BUDGET LINE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="09 / 19">
+<div class="slide" data-n="10 / 20">
   <div class="kicker">DevOps &amp; FinOps · The Cost Chain</div>
   <h2>A single test's cost is invisible. Multiply it.</h2>
   <p class="body" style="margin-top:6px">One 388ms test doesn't move a budget. Run on every commit, every PR, every branch — it does.</p>
@@ -408,7 +442,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 10 — PAYOFF 2: CI COST (INDEXED, NO $)
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="10 / 19">
+<div class="slide" data-n="11 / 20">
   <div class="kicker">Payoff 2 · CI &amp; Cloud Cost</div>
   <h2>What isn't obvious until you do the math</h2>
   <p class="body" style="margin-top:6px">Every Playwright test needs a real browser: spun up, rendered, torn down. A function call needs none of it.</p>
@@ -426,7 +460,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 11 — PAYOFF 3: THE DEV/AGENT LOOP
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="11 / 19">
+<div class="slide" data-n="12 / 20">
   <div class="kicker">Payoff 3 · The Development Loop</div>
   <h2>Every change has to be verified before it's trusted</h2>
   <p class="body" style="margin-top:6px">Write → test → read result → fix → run again. Same loop, human or agent.</p>
@@ -462,7 +496,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 12 — TRANSITION: FROM BUILDING TO SERVING
 ════════════════════════════════════════════════════ -->
-<div class="slide hero-slide" data-n="12 / 19">
+<div class="slide hero-slide" data-n="13 / 20">
   <div class="kicker">So Far · So Next</div>
   <h2 style="text-align:center">Everything up to now made <em>you</em> faster.</h2>
   <p class="subtitle" style="text-align:center;margin-top:18px">Testing, CI cost, the dev loop — all payoffs for the team writing the code.</p>
@@ -473,7 +507,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 13 — THE PROTOCOL
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="13 / 19">
+<div class="slide" data-n="14 / 20">
   <div class="kicker">The Protocol</div>
   <h2>NavWebMcp — MCP as transport, not architecture</h2>
   <p class="body" style="margin-top:8px">If your business logic already lives in its own layer, exposing it to an agent is the easy part.</p>
@@ -489,7 +523,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 14 — THE PROTOCOL, UNDER THE HOOD
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="14 / 19">
+<div class="slide" data-n="15 / 20">
   <div class="kicker">The Protocol · Under the Hood</div>
   <h2>Eight meta-tools. Nothing else to install.</h2>
 
@@ -529,7 +563,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 15 — CASE STUDY: TOKENS
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="15 / 19">
+<div class="slide" data-n="16 / 20">
   <div class="kicker">Case Study · Booking Flow</div>
   <h2>Tokens per booking</h2>
   <p class="body" style="margin-top:6px">Same booking, three ways: raw MCP, raw WebMCP, and one NavWebMcp composite call.</p>
@@ -549,7 +583,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 16 — CASE STUDY: LATENCY
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="16 / 19">
+<div class="slide" data-n="17 / 20">
   <div class="kicker">Case Study · Booking Flow</div>
   <h2>Latency per booking</h2>
   <p class="body" style="margin-top:6px">Playwright shown separately — a different way of interacting with the app entirely.</p>
@@ -567,7 +601,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 17 — CASE STUDY: IT COMPOUNDS WITH SCOPE
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="17 / 19">
+<div class="slide" data-n="18 / 20">
   <div class="kicker">Case Study · It Compounds</div>
   <h2>The bigger the flow, the bigger the win</h2>
   <table class="comp-table">
@@ -586,7 +620,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 18 — SYNTHESIS
 ════════════════════════════════════════════════════ -->
-<div class="slide" data-n="18 / 19">
+<div class="slide" data-n="19 / 20">
   <div class="kicker">Putting It Together</div>
   <h2>Five payoffs, one architecture decision</h2>
   <div class="recap">
@@ -602,7 +636,7 @@
 <!-- ═══════════════════════════════════════════════════
      SLIDE 19 — CLOSING
 ════════════════════════════════════════════════════ -->
-<div class="slide closing-slide" data-n="19 / 19">
+<div class="slide closing-slide" data-n="20 / 20">
   <div class="kicker">Thank You</div>
   <h1 style="font-size:2.1rem">You don't bend your platform to fit AI.</h1>
   <p class="subtitle" style="font-size:1.3rem">You just stop making AI the first thing that has to bend.</p>
