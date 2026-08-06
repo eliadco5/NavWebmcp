@@ -1,6 +1,7 @@
 import { registry } from "./registry";
 import { invalidateOpCache } from "./dispatch";
 import { searchAvailability } from "./searchAvailability";
+import { getWeatherForecast } from "./getWeatherForecast";
 import { createReservation } from "./createReservation";
 import { cancelReservation } from "./cancelReservation";
 import { listReservations } from "./listReservations";
@@ -66,7 +67,7 @@ registry.push(
   // Always-on navigation & meta
   explore, search, describeTool, invoke, loadTools, unloadTools, getContext, getCapabilities,
   // Reservation
-  searchAvailability, createReservation, cancelReservation,
+  searchAvailability, getWeatherForecast, createReservation, cancelReservation,
   listReservations, getReservation, listAllReservations, cancelAnyReservation, bookOp,
   // CRM
   searchGuests, getGuest, createGuest, updateGuest,
