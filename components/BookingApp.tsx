@@ -14,6 +14,88 @@ function todayISO() {
   return new Date().toISOString().split("T")[0];
 }
 
+const WEATHER_LOCATIONS = ["New York", "Chicago", "Miami", "San Francisco", "Austin"];
+
+interface WeatherForecast {
+  date: string;
+  location: string;
+  condition: string;
+  tempMaxC: number;
+  tempMinC: number;
+  precipitationChancePercent: number;
+  outdoorSeatingRecommended: boolean;
+  message: string;
+}
+
+function WeatherCheck({ date, call }: { date: string; call: (name: string, params?: Record<string, unknown>) => Promise<unknown> }) {
+  const [location, setLocation] = useState(WEATHER_LOCATIONS[0]);
+  const [forecast, setForecast] = useState<WeatherForecast | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCheck() {
+    setLoading(true);
+    setError(null);
+    setForecast(null);
+    try {
+      const result = await call("getWeatherForecast", { date, location }) as
+        { success: boolean; data?: WeatherForecast; error?: { message: string } };
+      if (result.success && result.data) {
+        setForecast(result.data);
+      } else {
+        setError(result.error?.message ?? "Could not fetch forecast.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <select
+          value={location}
+          onChange={(e) => { setLocation(e.target.value); setForecast(null); setError(null); }}
+          style={{ flex: 1, fontSize: 13 }}
+        >
+          {WEATHER_LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+        </select>
+        <button
+          type="button"
+          onClick={handleCheck}
+          disabled={loading}
+          style={{ background: "#f3f4f6", color: "#374151", fontSize: 13, whiteSpace: "nowrap" }}
+        >
+          {loading ? "Checking…" : "Check Weather"}
+        </button>
+      </div>
+
+      {error && <p style={{ color: "#ef4444", fontSize: 12, marginTop: 8 }}>{error}</p>}
+
+      {forecast && (
+        <div style={{
+          marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: 13,
+          background: forecast.outdoorSeatingRecommended ? "#ecfdf5" : "#fef2f2",
+          border: `1px solid ${forecast.outdoorSeatingRecommended ? "#a7f3d0" : "#fecaca"}`,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>
+              <strong>{forecast.condition}</strong>, {forecast.tempMinC}–{forecast.tempMaxC}°C, {forecast.precipitationChancePercent}% rain
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
+              background: forecast.outdoorSeatingRecommended ? "#a7f3d0" : "#fecaca",
+              color: forecast.outdoorSeatingRecommended ? "#065f46" : "#991b1b",
+            }}>
+              {forecast.outdoorSeatingRecommended ? "Outdoor OK" : "Indoor"}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -207,6 +289,8 @@ export function BookingApp() {
                 />
               </div>
             )}
+
+            <WeatherCheck date={searchDate} call={call} />
           </div>
 
           {bookingSlot && (
