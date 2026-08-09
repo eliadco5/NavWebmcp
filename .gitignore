@@ -17,3 +17,6 @@ dev.log
 # OS
 .DS_Store
 Thumbs.db
+
+# social media drafts/assets — not part of the app
+docs/social/
