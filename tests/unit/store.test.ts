@@ -352,9 +352,10 @@ describe("getAllReservations", () => {
     expect(ids).toContain(r2.id);
   });
 
-  it("returns empty array when no reservations exist", async () => {
+  it("a fresh store starts with only the 3 seeded front-desk reservations", async () => {
     const store = await freshStore();
-    expect(store.getAllReservations()).toEqual([]);
+    const ids = store.getAllReservations().map((r: { id: string }) => r.id);
+    expect(ids.sort()).toEqual(["res_001", "res_002", "res_003"]);
   });
 
   it("returns a copy: mutating result does not affect internal state", async () => {
@@ -365,5 +366,100 @@ describe("getAllReservations", () => {
     const originalLen = all.length;
     all.push({} as never);
     expect(store.getAllReservations().length).toBe(originalLen);
+  });
+});
+
+// ── getReservationById / updateReservation ──────────────────────────────────
+// These exist for the front-desk operations (checkInGuest, checkOutGuest, ...),
+// which look up reservations unscoped by userId — a host isn't the reservation's
+// owner the way a customer is.
+
+describe("getReservationById", () => {
+  it("finds a seeded front-desk reservation by id", async () => {
+    const store = await freshStore();
+    const found = store.getReservationById("res_002");
+    expect(found).toBeDefined();
+    expect(found!.name).toBe("Bob Chen");
+  });
+
+  it("finds a reservation created via the booking flow, regardless of owner", async () => {
+    const store = await freshStore();
+    const slot = store.getSlots()[0];
+    const created = store.createReservation(slot.id, "Alice", 1, "u_alice")!;
+    expect(store.getReservationById(created.id)).toMatchObject({ id: created.id, name: "Alice" });
+  });
+
+  it("returns undefined for a nonexistent id", async () => {
+    const store = await freshStore();
+    expect(store.getReservationById("nonexistent")).toBeUndefined();
+  });
+});
+
+describe("updateReservation", () => {
+  it("merges a partial patch in place and returns the updated record", async () => {
+    const store = await freshStore();
+    const updated = store.updateReservation("res_003", { status: "checked-in", tableId: "t_03" });
+    expect(updated).toMatchObject({ id: "res_003", status: "checked-in", tableId: "t_03" });
+    // partySize/name survive — only the patched fields changed
+    expect(updated!.partySize).toBe(3);
+  });
+
+  it("returns undefined for a nonexistent id and does not throw", async () => {
+    const store = await freshStore();
+    expect(store.updateReservation("nonexistent", { status: "cancelled" })).toBeUndefined();
+  });
+
+  it("a booking-flow reservation can be checked in via updateReservation — the actual merge fix", async () => {
+    const store = await freshStore();
+    const slot = store.getSlots()[0];
+    const created = store.createReservation(slot.id, "Alice", 2, "u_alice")!;
+
+    store.updateReservation(created.id, { status: "checked-in", tableId: "t_01" });
+
+    expect(store.getReservationById(created.id)).toMatchObject({ status: "checked-in", tableId: "t_01" });
+  });
+});
+
+// ── tables / bills ────────────────────────────────────────────────────────────
+
+describe("tables and bills", () => {
+  it("a fresh store seeds the 5 front-desk tables", async () => {
+    const store = await freshStore();
+    expect([...store.tables.keys()].sort()).toEqual(["t_01", "t_02", "t_03", "t_04", "t_05"]);
+    expect(store.tables.get("t_02")).toMatchObject({ status: "occupied", capacity: 4 });
+  });
+
+  it("a fresh store has no bills", async () => {
+    const store = await freshStore();
+    expect(store.bills.size).toBe(0);
+  });
+});
+
+// ── resetFrontDeskSeed ────────────────────────────────────────────────────────
+
+describe("resetFrontDeskSeed", () => {
+  it("restores tables and clears bills", async () => {
+    const store = await freshStore();
+    store.tables.set("t_01", { id: "t_01", status: "occupied", capacity: 2 });
+    store.bills.set("res_001", { reservationId: "res_001", tableId: "t_02", items: [], total: 10, generatedAt: "2026-01-01T00:00:00Z" });
+
+    store.resetFrontDeskSeed();
+
+    expect(store.tables.get("t_01")).toMatchObject({ status: "available" });
+    expect(store.bills.size).toBe(0);
+  });
+
+  it("resets the 3 seeded reservations to their seed values without touching a customer's own booking", async () => {
+    const store = await freshStore();
+    const slot = store.getSlots()[0];
+    const booked = store.createReservation(slot.id, "Alice", 1, "u_alice")!;
+    store.updateReservation("res_003", { status: "checked-in", tableId: "t_03" });
+
+    store.resetFrontDeskSeed();
+
+    const reset = store.getReservationById("res_003");
+    expect(reset).toMatchObject({ status: "pending" });
+    expect(reset!.tableId).toBeUndefined();
+    expect(store.getReservationById(booked.id)).toMatchObject({ id: booked.id, name: "Alice" });
   });
 });

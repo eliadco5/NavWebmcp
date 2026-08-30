@@ -1,8 +1,6 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { store } from "@/lib/store";
 
 // Average dining duration in minutes used for turnover estimate
 const AVG_DINING_MINUTES = 60;

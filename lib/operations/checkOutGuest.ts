@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { store } from "@/lib/store";
 
 const MOCK_MENU_ITEMS = [
   { name: "Grilled Salmon", price: 28.5 },
@@ -36,7 +34,7 @@ export const checkOutGuest = defineOperation({
     reservationId: z.string().describe("Reservation ID to check out"),
   },
   async handler({ reservationId }, _ctx) {
-    const reservation = store.reservations.get(reservationId);
+    const reservation = store.getReservationById(reservationId);
     if (!reservation) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
     if (reservation.status !== "checked-in") return fail("INVALID_STATE", `Reservation must be checked-in to check out; current status: ${reservation.status}`);
     if (!reservation.tableId) return fail("INVALID_STATE", "Reservation has no assigned table");
@@ -58,7 +56,7 @@ export const checkOutGuest = defineOperation({
       status: "available",
       capacity: table.capacity,
     });
-    store.reservations.set(reservationId, { ...reservation, status: "checked-out" as never });
+    store.updateReservation(reservationId, { status: "checked-out" });
 
     return ok(bill);
   },

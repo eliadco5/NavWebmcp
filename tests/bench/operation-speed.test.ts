@@ -18,6 +18,8 @@ import type { OperationContext } from "@/lib/operations/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let runOne: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let bookingStore: any;
 
 // tests/setup.ts's global beforeEach deletes every store singleton and calls
 // vi.resetModules() before EACH it() below. A static top-of-file `import { runOne }`
@@ -28,42 +30,19 @@ beforeEach(async () => {
   await import("@/lib/operations/index");
   const dispatch = await import("@/lib/operations/dispatch");
   runOne = dispatch.runOne;
+  const storeMod = await import("@/lib/store");
+  bookingStore = storeMod.store;
 });
 
 const N = Number(process.env.SPEEDBASE_N ?? 5);
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __frontofficeStore:
-    | {
-        tables: Map<string, { id: string; status: "available" | "occupied" | "reserved"; capacity: number; reservationId?: string; seatedAt?: string; guestId?: string }>;
-        reservations: Map<string, { id: string; guestId: string; guestName: string; partySize: number; tableId?: string; status: "pending" | "checked-in" | "checked-out" | "cancelled" }>;
-        bills: Map<string, { reservationId: string; tableId: string; items: { name: string; qty: number; price: number }[]; total: number; generatedAt: string }>;
-        shiftNotes: { id: string; note: string; author: string; createdAt: string; date: string }[];
-      }
-    | undefined;
-}
-
 // Resets are only needed BETWEEN iterations within a single it() — the beforeEach
 // above already gives each it() a fresh module graph and thus a freshly-seeded store.
-// Within one it(), the store binding is stable across iterations, so mutating its Maps
-// in place (same approach as app/api/bench/reset/route.ts) is what actually resets it.
+// Within one it(), the store binding is stable across iterations, so resetting the
+// front-desk portion of it in place (same approach as app/api/bench/reset/route.ts)
+// is what actually resets it, without touching any other (customer-booked) reservation.
 function resetFrontOffice() {
-  const fo = globalThis.__frontofficeStore;
-  if (!fo) return;
-  fo.tables.clear();
-  fo.tables.set("t_01", { id: "t_01", status: "available", capacity: 2 });
-  fo.tables.set("t_02", { id: "t_02", status: "occupied", capacity: 4, reservationId: "res_001", seatedAt: new Date(Date.now() - 45 * 60000).toISOString(), guestId: "g_001" });
-  fo.tables.set("t_03", { id: "t_03", status: "available", capacity: 4 });
-  fo.tables.set("t_04", { id: "t_04", status: "reserved", capacity: 6, reservationId: "res_002" });
-  fo.tables.set("t_05", { id: "t_05", status: "available", capacity: 2 });
-
-  fo.reservations.clear();
-  fo.reservations.set("res_001", { id: "res_001", guestId: "g_001", guestName: "Alice Martin", partySize: 2, tableId: "t_02", status: "checked-in" });
-  fo.reservations.set("res_002", { id: "res_002", guestId: "g_002", guestName: "Bob Chen", partySize: 5, status: "pending" });
-  fo.reservations.set("res_003", { id: "res_003", guestId: "g_003", guestName: "Carol Diaz", partySize: 3, status: "pending" });
-
-  fo.bills.clear();
+  bookingStore?.resetFrontDeskSeed();
 }
 
 function futureDate(offsetDays: number): string {

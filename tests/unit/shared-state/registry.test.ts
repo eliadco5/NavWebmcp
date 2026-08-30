@@ -54,35 +54,49 @@ describe("Array-backed descriptors — restore mutates in place", () => {
   });
 });
 
-describe("frontoffice composite descriptor", () => {
-  it("restore() keeps identity of all 3 Maps + 1 array inside the wrapper object", async () => {
+describe("shiftNotes descriptor", () => {
+  it("restore() keeps the same array instance", async () => {
     const { ALL_DESCRIPTORS } = await import("@/lib/shared-state/registry");
-    const { frontofficeStore } = await import("@/lib/seed");
+    const { shiftNotes } = await import("@/lib/seed/frontoffice");
 
-    const s = frontofficeStore();
-    const beforeTables = s.tables;
-    const beforeReservations = s.reservations;
-    const beforeBills = s.bills;
-    const beforeShiftNotes = s.shiftNotes;
+    const before = shiftNotes();
+    const d = ALL_DESCRIPTORS.find((x) => x.key === "shiftNotes")!;
+    d.restore([]);
 
-    const d = ALL_DESCRIPTORS.find((x) => x.key === "frontoffice")!;
-    d.restore(d.snapshot());
+    expect(shiftNotes()).toBe(before);
+    expect(shiftNotes().length).toBe(0);
+  });
+});
 
-    expect(frontofficeStore().tables).toBe(beforeTables);
-    expect(frontofficeStore().reservations).toBe(beforeReservations);
-    expect(frontofficeStore().bills).toBe(beforeBills);
-    expect(frontofficeStore().shiftNotes).toBe(beforeShiftNotes);
+describe("booking descriptor — tables and bills", () => {
+  it("round-trips tables/bills alongside reservations", async () => {
+    const { ALL_DESCRIPTORS } = await import("@/lib/shared-state/registry");
+    const { store } = await import("@/lib/store");
+
+    store.tables.set("t_01", { id: "t_01", status: "occupied", capacity: 2 });
+    store.bills.set("res_001", { reservationId: "res_001", tableId: "t_02", items: [], total: 0, generatedAt: "2026-01-01T00:00:00Z" });
+
+    const d = ALL_DESCRIPTORS.find((x) => x.key === "booking")!;
+    const snap = d.snapshot();
+
+    store.tables.set("t_01", { id: "t_01", status: "available", capacity: 2 });
+    store.bills.delete("res_001");
+
+    d.restore(snap);
+
+    expect(store.tables.get("t_01")).toMatchObject({ status: "occupied" });
+    expect(store.bills.get("res_001")).toMatchObject({ tableId: "t_02" });
   });
 });
 
 describe("booking descriptor", () => {
-  it("does not persist the slot window, only reservations + taken ids", async () => {
+  it("does not persist the slot window, only reservations/taken/tables/bills", async () => {
     const { ALL_DESCRIPTORS } = await import("@/lib/shared-state/registry");
     const d = ALL_DESCRIPTORS.find((x) => x.key === "booking")!;
     const snap = d.snapshot() as { reservations: unknown[]; taken: string[] };
     expect(snap).toHaveProperty("reservations");
     expect(snap).toHaveProperty("taken");
-    expect(Object.keys(snap).sort()).toEqual(["reservations", "taken"]);
+    expect(Object.keys(snap).sort()).toEqual(["bills", "reservations", "tables", "taken"]);
   });
 
   it("a reservation created before restore() is visible after, on an otherwise fresh store", async () => {
@@ -97,7 +111,7 @@ describe("booking descriptor", () => {
 
     // Simulate "another instance": a fresh, differently-seeded store, then
     // restore the snapshot onto it — mirrors what hydrate() does on cold start.
-    store.restore({ reservations: [], taken: [] }); // reset in place first
+    store.restore({ reservations: [], taken: [], tables: [], bills: [] }); // reset in place first
     d.restore(snap);
 
     expect(store.getReservation(reservation.id, "u_alice")).toBeDefined();

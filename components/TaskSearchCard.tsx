@@ -11,6 +11,7 @@ interface Task {
   priority: "low" | "medium" | "high";
   status: "open" | "in_progress" | "completed" | "cancelled";
   assigneeId?: string;
+  reservationId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ export function TaskSearchCard({ isAdmin }: { isAdmin: boolean }) {
   const [department, setDepartment] = useState("");
   const [status, setStatus] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [reservationId, setReservationId] = useState("");
   const [tasks, setTasks] = useState<Task[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +34,11 @@ export function TaskSearchCard({ isAdmin }: { isAdmin: boolean }) {
     if (department.trim()) params.department = department.trim();
     if (status) params.status = status;
     if (assigneeId) params.assigneeId = assigneeId;
+    if (reservationId.trim()) params.reservationId = reservationId.trim();
     const res = await call("searchTasks", params) as { success: boolean; data?: { tasks: Task[] } };
     if (res.success && res.data) setTasks(res.data.tasks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [call, department, status, assigneeId]);
+  }, [call, department, status, assigneeId, reservationId]);
 
   useEffect(() => { search(); }, [search]);
   useEffect(() => { if (storeVersion > 0) search(); }, [storeVersion, search]);
@@ -82,6 +85,7 @@ export function TaskSearchCard({ isAdmin }: { isAdmin: boolean }) {
           <option value="">Any assignee</option>
           {DEMO_USERS.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
+        <input placeholder="Reservation ID" value={reservationId} onChange={(e) => setReservationId(e.target.value)} />
       </div>
 
       {error && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 10 }}>{error}</p>}
@@ -95,6 +99,11 @@ export function TaskSearchCard({ isAdmin }: { isAdmin: boolean }) {
               <span style={{ fontSize: 13, flex: 1 }}>
                 <strong>{t.title}</strong>
                 <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>{t.department}</span>
+                {t.reservationId && (
+                  <span className="badge" style={{ marginLeft: 8, background: "#e0f2fe", color: "#0369a1" }}>
+                    {t.reservationId}
+                  </span>
+                )}
               </span>
               <select
                 value={t.status}

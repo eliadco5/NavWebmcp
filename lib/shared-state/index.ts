@@ -4,7 +4,12 @@ import { withStateLock } from "./mutex";
 import { ALL_DESCRIPTORS, type StoreDescriptor } from "./registry";
 import { auditLog, type AuditEntry } from "@/lib/auditlog";
 
-const SCHEMA_VERSION = "1";
+// Bump whenever a descriptor's snapshot shape changes incompatibly with what
+// might already be sitting in Redis (e.g. lib/store.ts's BookingStoreSnapshot
+// gaining tables/bills) — this changes every key's prefix, so old data is
+// simply never read instead of crashing restore() on a shape it doesn't
+// recognise. Cheap: it's all disposable, TTL'd demo data.
+const SCHEMA_VERSION = "2";
 
 // Vercel injects VERCEL_ENV ("production" | "preview" | "development") with zero
 // setup. Namespacing by it means a preview deployment and production never share
@@ -54,26 +59,34 @@ async function hydrate(): Promise<HydrationBaseline | null> {
   const redis = await getRedis();
   if (!redis) return null; // local dev / tests: fall through to today's in-memory behavior
 
-  const snapshots = new Map<string, string>();
+  let results: (string | null)[];
   try {
     const multi = redis.multi();
     for (const d of ALL_DESCRIPTORS) multi.get(keyFor(d.key));
-    const results = (await multi.exec()) as unknown as (string | null)[];
-
-    ALL_DESCRIPTORS.forEach((d, i) => {
-      const raw = results[i];
-      // A missing key means "nothing persisted yet" — keep whatever snapshot()
-      // just seeded from lib/seed instead of restoring, so the first request
-      // also becomes the thing that gets flushed.
-      if (raw !== null && raw !== undefined) d.restore(JSON.parse(raw));
-      snapshots.set(d.key, JSON.stringify(d.snapshot()));
-    });
+    results = (await multi.exec()) as unknown as (string | null)[];
   } catch (err) {
     // Fail OPEN: a Redis outage degrades to today's per-instance behavior rather
     // than a 500. Stale/local data beats a broken demo.
     console.warn("[shared-state] hydrate failed, using in-process state:", err);
     return null;
   }
+
+  // Each descriptor's restore() is isolated: one incompatible/corrupt key
+  // (e.g. leftover data shaped for a since-changed snapshot — SCHEMA_VERSION
+  // should prevent this, but restore() isn't the place to find out it didn't)
+  // must not take every OTHER store's persistence down with it for the rest of
+  // this request. A descriptor that fails just keeps its freshly-seeded
+  // in-memory state and gets flushed as-is, same as a missing key would.
+  const snapshots = new Map<string, string>();
+  ALL_DESCRIPTORS.forEach((d, i) => {
+    const raw = results[i];
+    try {
+      if (raw !== null && raw !== undefined) d.restore(JSON.parse(raw));
+    } catch (err) {
+      console.warn(`[shared-state] restore failed for "${d.key}", using in-process state:`, err);
+    }
+    snapshots.set(d.key, JSON.stringify(d.snapshot()));
+  });
 
   return { descriptors: ALL_DESCRIPTORS, snapshots };
 }

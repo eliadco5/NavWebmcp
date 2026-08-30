@@ -3,16 +3,17 @@
 //
 // Every restore() mutates the existing object IN PLACE rather than replacing it.
 // ~43 operation files bind a store's object reference at module load (e.g.
-// `const store = frontofficeStore()` in lib/operations/getOccupancy.ts) — see
+// `const store = crmGuests()` in lib/operations/getGuest.ts) — see
 // lib/seed/store.ts's resetMap/resetArray for the same contract. Calling the
 // seed accessor (e.g. crmGuests()) also forces the singleton into existence on a
 // cold instance where it doesn't exist yet, which restore() relies on.
 import {
   crmGuests, crmPreferences, crmLoyalty, crmCommunications,
-  tasksStore, frontofficeStore,
+  tasksStore,
   financePayments, financeAdjustments,
   housekeepingTableStatus, housekeepingScheduleItems, housekeepingInspections,
 } from "@/lib/seed";
+import { shiftNotes } from "@/lib/seed/frontoffice";
 import { store as bookingStore } from "@/lib/store";
 import { auditLog } from "@/lib/auditlog";
 import { snapshotLoaded, restoreLoaded } from "@/lib/loadedTools";
@@ -51,38 +52,6 @@ function arrayDescriptor<T>(key: string, accessor: () => T[]): StoreDescriptor {
     },
   };
 }
-
-interface FrontofficeSnapshot {
-  tables: [string, unknown][];
-  reservations: [string, unknown][];
-  bills: [string, unknown][];
-  shiftNotes: unknown[];
-}
-
-const frontofficeDescriptor: StoreDescriptor = {
-  key: "frontoffice",
-  snapshot: (): FrontofficeSnapshot => {
-    const s = frontofficeStore();
-    return {
-      tables: [...s.tables],
-      reservations: [...s.reservations],
-      bills: [...s.bills],
-      shiftNotes: [...s.shiftNotes],
-    };
-  },
-  restore: (data) => {
-    const s = frontofficeStore();
-    const d = data as FrontofficeSnapshot;
-    s.tables.clear();
-    for (const [k, v] of d.tables) s.tables.set(k, v as never);
-    s.reservations.clear();
-    for (const [k, v] of d.reservations) s.reservations.set(k, v as never);
-    s.bills.clear();
-    for (const [k, v] of d.bills) s.bills.set(k, v as never);
-    s.shiftNotes.length = 0;
-    s.shiftNotes.push(...(d.shiftNotes as never[]));
-  },
-};
 
 const bookingDescriptor: StoreDescriptor = {
   key: "booking",
@@ -138,7 +107,7 @@ export const SEED_DESCRIPTORS: StoreDescriptor[] = [
   arrayDescriptor("housekeepingInspections", housekeepingInspections),
   mapDescriptor("financePayments", financePayments),
   mapDescriptor("financeAdjustments", financeAdjustments),
-  frontofficeDescriptor,
+  arrayDescriptor("shiftNotes", shiftNotes),
 ];
 
 export const ALL_DESCRIPTORS: StoreDescriptor[] = [

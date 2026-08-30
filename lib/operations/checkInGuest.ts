@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { store } from "@/lib/store";
 
 export const checkInGuest = defineOperation({
   name: "checkInGuest",
@@ -17,7 +15,7 @@ export const checkInGuest = defineOperation({
     tableId: z.string().optional().describe("Table to assign; if omitted an available table with sufficient capacity is auto-assigned"),
   },
   async handler({ reservationId, tableId }, _ctx) {
-    const reservation = store.reservations.get(reservationId);
+    const reservation = store.getReservationById(reservationId);
     if (!reservation) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
     if (reservation.status === "checked-in") return fail("ALREADY_CHECKED_IN", "Guest is already checked in");
     if (reservation.status === "checked-out") return fail("INVALID_STATE", "Reservation has already been checked out");
@@ -49,8 +47,8 @@ export const checkInGuest = defineOperation({
       seatedAt,
       guestId: reservation.guestId,
     });
-    store.reservations.set(reservationId, { ...reservation, tableId: targetTableId, status: "checked-in" });
+    store.updateReservation(reservationId, { tableId: targetTableId, status: "checked-in" });
 
-    return ok({ reservationId, tableId: targetTableId, guestName: reservation.guestName, partySize: reservation.partySize, seatedAt });
+    return ok({ reservationId, tableId: targetTableId, guestName: reservation.name, partySize: reservation.partySize, seatedAt });
   },
 });

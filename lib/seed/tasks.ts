@@ -7,6 +7,8 @@ export interface Task {
   priority: "low" | "medium" | "high";
   status: "open" | "in_progress" | "completed" | "cancelled";
   assigneeId?: string;
+  /** Front-desk reservation this task relates to, if it was created from one. */
+  reservationId?: string;
   createdAt: string;
   updatedAt: string;
 }
