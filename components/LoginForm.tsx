@@ -75,10 +75,6 @@ export function LoginForm() {
           {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
-
-      <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 20 }}>
-        <strong>alice</strong> (customer) · <strong>carol</strong> (support) · <strong>bob</strong> (admin) — all password: <strong>password</strong>
-      </p>
     </div>
   );
 }
