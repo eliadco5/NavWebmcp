@@ -2,7 +2,6 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { getModelContext } from "./webmcp-polyfill";
 import type { ModelContextLike } from "./webmcp-polyfill";
-import type { StoreEvent } from "./store";
 import { auditLog } from "./auditlog";
 import type { OperationContext } from "./operations/types";
 import type { Role } from "./auth";
@@ -36,7 +35,6 @@ export interface AgentBridgeOptions {
 
 export class AgentBridge {
   private registrations: AgentBridgeRegistration[] = [];
-  private storeListeners: Array<() => void> = [];
   private confirmationHandler: ConfirmationHandler;
   private getUserId: () => string | null;
   private getUserRole: () => Role | null;
@@ -169,23 +167,7 @@ export class AgentBridge {
     };
   }
 
-  subscribe(
-    eventType: StoreEvent["type"],
-    callback: (event: StoreEvent) => void
-  ): () => void {
-    let unsubscribe = () => {};
-    import("./store").then(({ store }) => {
-      unsubscribe = store.on((event) => {
-        if (event.type === eventType) callback(event);
-      });
-    });
-    const cleanup = () => unsubscribe();
-    this.storeListeners.push(cleanup);
-    return cleanup;
-  }
-
   destroy(): void {
-    for (const cleanup of this.storeListeners) cleanup();
-    this.storeListeners = [];
+    this.registrations = [];
   }
 }

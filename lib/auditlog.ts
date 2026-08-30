@@ -13,7 +13,6 @@ export interface AuditEntry {
 
 class AuditLog {
   private entries: AuditEntry[] = [];
-  private listeners: Array<(entry: AuditEntry) => void> = [];
 
   record(
     operation: string,
@@ -33,7 +32,6 @@ class AuditLog {
     };
     this.entries.unshift(entry);
     if (this.entries.length > 100) this.entries.pop();
-    for (const l of this.listeners) l(entry);
     return entry;
   }
 
@@ -41,11 +39,16 @@ class AuditLog {
     return [...this.entries];
   }
 
-  onChange(cb: (entry: AuditEntry) => void): () => void {
-    this.listeners.push(cb);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== cb);
-    };
+  /** For lib/shared-state. Empty means "nothing recorded on this instance yet",
+   *  which restore() must be able to distinguish from "never hydrated". */
+  snapshot(): AuditEntry[] {
+    return [...this.entries];
+  }
+
+  /** Restore IN PLACE — see BookingStore.restore() for why. */
+  restore(data: AuditEntry[]): void {
+    this.entries.length = 0;
+    this.entries.push(...data);
   }
 }
 

@@ -5,10 +5,11 @@ import { registry } from "@/lib/operations";
 import { auditLog } from "@/lib/auditlog";
 import { roleSatisfies } from "@/lib/auth";
 import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { withSharedState } from "@/lib/shared-state";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export const POST = withSharedState(async function POST(req: NextRequest) {
   const cookieStore = await cookies();
   const { user } = getOrProvisionUser(cookieStore);
   if (!user) {
@@ -54,4 +55,4 @@ export async function POST(req: NextRequest) {
   auditLog.record(name, params ?? {}, success, "ui", output);
 
   return Response.json(result);
-}
+});

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // setup.ts deletes __auditLog + calls vi.resetModules() before each test.
 
@@ -84,56 +84,5 @@ describe("auditLog.getEntries", () => {
     const entries = auditLog.getEntries();
     const ids = entries.map((e) => e.id);
     expect(ids).not.toContain(oldest.id);
-  });
-});
-
-describe("auditLog.onChange", () => {
-  it("callback fires when record is called", async () => {
-    const { auditLog } = await import("@/lib/auditlog");
-    const cb = vi.fn();
-    auditLog.onChange(cb);
-    auditLog.record("op", {}, true, "agent");
-    expect(cb).toHaveBeenCalledTimes(1);
-  });
-
-  it("callback receives the new entry as argument", async () => {
-    const { auditLog } = await import("@/lib/auditlog");
-    const cb = vi.fn();
-    auditLog.onChange(cb);
-    const entry = auditLog.record("myOp", { x: 1 }, false, "agent");
-    expect(cb).toHaveBeenCalledWith(entry);
-  });
-
-  it("unsubscribe stops future notifications", async () => {
-    const { auditLog } = await import("@/lib/auditlog");
-    const cb = vi.fn();
-    const unsub = auditLog.onChange(cb);
-    auditLog.record("op1", {}, true, "ui");
-    unsub();
-    auditLog.record("op2", {}, true, "ui");
-    expect(cb).toHaveBeenCalledTimes(1);
-  });
-
-  it("multiple listeners all fire on a single record call", async () => {
-    const { auditLog } = await import("@/lib/auditlog");
-    const cb1 = vi.fn();
-    const cb2 = vi.fn();
-    auditLog.onChange(cb1);
-    auditLog.onChange(cb2);
-    auditLog.record("op", {}, true, "ui");
-    expect(cb1).toHaveBeenCalledTimes(1);
-    expect(cb2).toHaveBeenCalledTimes(1);
-  });
-
-  it("unsubscribing one listener does not affect others", async () => {
-    const { auditLog } = await import("@/lib/auditlog");
-    const cb1 = vi.fn();
-    const cb2 = vi.fn();
-    const unsub1 = auditLog.onChange(cb1);
-    auditLog.onChange(cb2);
-    unsub1();
-    auditLog.record("op", {}, true, "ui");
-    expect(cb1).not.toHaveBeenCalled();
-    expect(cb2).toHaveBeenCalledTimes(1);
   });
 });

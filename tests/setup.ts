@@ -2,7 +2,6 @@ import { beforeEach, vi } from "vitest";
 
 const SINGLETON_KEYS = [
   "__bookingStore",
-  "__authStore",
   "__auditLog",
   "__loadedToolsStore",
   "__crmGuests",
