@@ -10,6 +10,7 @@ interface Task {
   priority: "low" | "medium" | "high";
   status: "open" | "in_progress" | "completed" | "cancelled";
   assigneeId?: string;
+  reservationId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,6 +72,11 @@ export function MyTasksCard() {
                 >
                   {t.priority}
                 </span>
+                {t.reservationId && (
+                  <span className="badge" style={{ marginLeft: 8, background: "#e0f2fe", color: "#0369a1" }}>
+                    {t.reservationId}
+                  </span>
+                )}
               </span>
               {t.status === "completed" ? (
                 <span className="badge badge-ok">completed</span>

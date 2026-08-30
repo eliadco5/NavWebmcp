@@ -12,7 +12,8 @@ import { resetCrmGuests, resetCrmPreferences, resetCrmLoyalty, resetCrmCommunica
 import { resetTasksStore } from "./tasks";
 import { resetHousekeepingTableStatus, resetHousekeepingSchedule, resetHousekeepingInspections } from "./housekeeping";
 import { resetFinancePayments, resetFinanceAdjustments } from "./finance";
-import { resetFrontofficeStore } from "./frontoffice";
+import { resetShiftNotes } from "./frontoffice";
+import { store } from "@/lib/store";
 
 /** Re-seed every operations store that has actually been touched this request
  *  lifetime, in place. Used by POST /api/bench/reset ("Reset demo data" in the
@@ -29,5 +30,6 @@ export function resetAllSeedStores(): void {
   resetHousekeepingInspections();
   resetFinancePayments();
   resetFinanceAdjustments();
-  resetFrontofficeStore();
+  resetShiftNotes();
+  store.resetFrontDeskSeed();
 }

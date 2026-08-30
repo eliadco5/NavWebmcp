@@ -26,6 +26,16 @@ function futureDate(n: number): string {
   return d.toISOString().split('T')[0]
 }
 
+function todayDate(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+async function pickSlotToday(partySize = 2) {
+  const r = await searchAvailability.handler({ date: todayDate(), partySize }, customerCtx)
+  if (r.success && r.data.slots.length > 0) return r.data.slots[0]
+  return null
+}
+
 async function pickSlot(partySize = 2, ctx = customerCtx) {
   for (let i = 1; i < 7; i++) {
     const date = futureDate(i)
@@ -353,5 +363,64 @@ describe('Flow E — multi-user isolation', () => {
     for (const r of adminList.data.reservations) {
       expect(r.userId).toBe(adminCtx.userId)
     }
+  })
+})
+
+// ── Flow F: a booking connects to the front desk ─────────────────────────────
+// Regression coverage for the bug that motivated merging BookingStore and the
+// front-desk store into one: a table booked via createReservation used to be
+// completely invisible to checkInGuest/getBillSummary/listFrontDeskReservations,
+// because they read from two entirely separate, unconnected datasets.
+
+describe('Flow F — a booking connects to the front desk', () => {
+  it('a table booked for today can be checked in and billed, and shows up in the front-desk queue', async () => {
+    const mods = await Promise.all([
+      import('@/lib/operations/checkInGuest'),
+      import('@/lib/operations/getBillSummary'),
+      import('@/lib/operations/listFrontDeskReservations'),
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const checkInGuest = (mods[0] as any).checkInGuest
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getBillSummary = (mods[1] as any).getBillSummary
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const listFrontDeskReservations = (mods[2] as any).listFrontDeskReservations
+
+    const slot = await pickSlotToday(2)
+    expect(slot).not.toBeNull()
+
+    const created = await createReservation.handler({ slotId: slot!.id, name: 'Alice', partySize: 2 }, customerCtx)
+    expect(created.success).toBe(true)
+    const reservationId = created.data.reservation.id
+
+    // Visible to the front desk today...
+    const list = await listFrontDeskReservations.handler({}, supportCtx)
+    expect(list.success).toBe(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(list.data.reservations.some((r: any) => r.reservationId === reservationId)).toBe(true)
+
+    // ...support can check it in...
+    const checkin = await checkInGuest.handler({ reservationId }, supportCtx)
+    expect(checkin.success).toBe(true)
+
+    // ...and the original customer — who owns it via userId, not guestId — can
+    // view their own bill.
+    const bill = await getBillSummary.handler({ reservationId }, customerCtx)
+    expect(bill.success).toBe(true)
+  })
+
+  it('a booking for a future date does not appear in today\'s front-desk queue', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { listFrontDeskReservations } = (await import('@/lib/operations/listFrontDeskReservations')) as any
+
+    const slots = await pickTwoSlots(2) // futureDate(1..6) — never today
+    expect(slots).not.toBeNull()
+    const [s1] = slots!
+    const created = await createReservation.handler({ slotId: s1.slot.id, name: 'Future Guest', partySize: 2 }, customerCtx)
+    expect(created.success).toBe(true)
+
+    const list = await listFrontDeskReservations.handler({}, supportCtx)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(list.data.reservations.some((r: any) => r.reservationId === created.data.reservation.id)).toBe(false)
   })
 })

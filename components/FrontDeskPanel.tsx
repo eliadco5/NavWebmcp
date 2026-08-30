@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useBridge } from "@/app/providers";
 import { DEMO_GUEST_IDS } from "@/lib/seed/crm";
+import { DEMO_USERS } from "@/lib/constants";
 
 interface FrontDeskReservation {
   reservationId: string;
@@ -52,6 +53,11 @@ export function FrontDeskPanel() {
   const [vipPoints, setVipPoints] = useState(100);
   const [vipNote, setVipNote] = useState("");
   const [vipResult, setVipResult] = useState<Record<string, unknown> | null>(null);
+  const [taskForm, setTaskForm] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDepartment, setTaskDepartment] = useState("");
+  const [taskPriority, setTaskPriority] = useState<"low" | "medium" | "high">("medium");
+  const [taskAssigneeId, setTaskAssigneeId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,6 +152,30 @@ export function FrontDeskPanel() {
     }
   }
 
+  async function handleCreateTask(reservationId: string) {
+    if (!taskTitle.trim() || !taskDepartment.trim()) return;
+    setBusy(reservationId);
+    setError(null);
+    try {
+      const result = await call("createTask", {
+        title: taskTitle.trim(),
+        department: taskDepartment.trim(),
+        priority: taskPriority,
+        reservationId,
+        ...(taskAssigneeId && { assigneeId: taskAssigneeId }),
+      }) as { success: boolean; error?: { message: string } };
+      if (!result.success) setError(result.error?.message ?? "Failed to create task");
+      else {
+        setTaskForm(null);
+        setTaskTitle("");
+        setTaskDepartment("");
+        setTaskAssigneeId("");
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleCheckOut(reservationId: string) {
     setBusy(reservationId);
     setError(null);
@@ -230,6 +260,13 @@ export function FrontDeskPanel() {
                 >
                   {details[r.reservationId] ? "Hide Details" : "Details"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTaskForm(taskForm === r.reservationId ? null : r.reservationId)}
+                  style={{ background: "#f3f4f6", color: "#374151", fontSize: 12 }}
+                >
+                  Create Task
+                </button>
                 {r.status === "pending" && (
                   <>
                     <button
@@ -281,6 +318,35 @@ export function FrontDeskPanel() {
                 )}
               </div>
             </div>
+
+            {taskForm === r.reservationId && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ fontSize: 11, color: "#9ca3af" }}>
+                  createTask — linked to this reservation via reservationId.
+                </p>
+                <input placeholder="Title" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
+                <div className="field-grid">
+                  <input placeholder="Department" value={taskDepartment} onChange={(e) => setTaskDepartment(e.target.value)} />
+                  <select value={taskPriority} onChange={(e) => setTaskPriority(e.target.value as typeof taskPriority)}>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                  <select value={taskAssigneeId} onChange={(e) => setTaskAssigneeId(e.target.value)}>
+                    <option value="">Unassigned</option>
+                    {DEMO_USERS.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy === r.reservationId || !taskTitle.trim() || !taskDepartment.trim()}
+                  onClick={() => handleCreateTask(r.reservationId)}
+                  style={{ background: "#4f46e5", color: "#fff", fontSize: 12 }}
+                >
+                  {busy === r.reservationId ? "Creating…" : "Create Task"}
+                </button>
+              </div>
+            )}
 
             {details[r.reservationId] && (
               <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10, fontSize: 12, color: "#6b7280" }}>

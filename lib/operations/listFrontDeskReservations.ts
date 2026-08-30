@@ -1,8 +1,7 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { store } from "@/lib/store";
+import { today } from "@/lib/seed/store";
 
 export const listFrontDeskReservations = defineOperation({
   name: "listFrontDeskReservations",
@@ -13,13 +12,21 @@ export const listFrontDeskReservations = defineOperation({
   module: "frontoffice.checkin",
   inputSchema: {},
   async handler(_input, _ctx) {
-    const reservations = Array.from(store.reservations.values()).map((r) => ({
-      reservationId: r.id,
-      guestName: r.guestName,
-      partySize: r.partySize,
-      status: r.status,
-      tableId: r.tableId ?? null,
-    }));
+    // Front-desk-seeded reservations have no date (they're not tied to slot
+    // inventory); a booking made via the Reservations tab always has one. Only
+    // show today's — otherwise every booking ever made, including next week's,
+    // would clutter the check-in queue.
+    const todayDate = today();
+    const reservations = store
+      .getAllReservations()
+      .filter((r) => r.date === undefined || r.date === todayDate)
+      .map((r) => ({
+        reservationId: r.id,
+        guestName: r.name,
+        partySize: r.partySize,
+        status: r.status,
+        tableId: r.tableId ?? null,
+      }));
     return ok({ reservations });
   },
 });

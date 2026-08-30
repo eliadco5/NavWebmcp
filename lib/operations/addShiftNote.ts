@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { shiftNotes } from "@/lib/seed/frontoffice";
 
 export const addShiftNote = defineOperation({
   name: "addShiftNote",
@@ -17,11 +15,12 @@ export const addShiftNote = defineOperation({
     author: z.string().min(1).describe("Name or ID of the staff member adding the note"),
   },
   async handler({ note, author }, _ctx) {
-    const id = `sn_${String(store.shiftNotes.length + 1).padStart(3, "0")}`;
+    const notes = shiftNotes();
+    const id = `sn_${String(notes.length + 1).padStart(3, "0")}`;
     const createdAt = new Date().toISOString();
     const date = createdAt.slice(0, 10);
     const entry = { id, note, author, createdAt, date };
-    store.shiftNotes.push(entry);
+    notes.push(entry);
     return ok(entry);
   },
 });

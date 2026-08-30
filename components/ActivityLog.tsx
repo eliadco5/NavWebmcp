@@ -24,7 +24,7 @@ export function ActivityLog({ entries }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 560, overflowY: "auto" }}>
       {entries.map((e) => {
         const isOpen = expanded.has(e.id);
         const hasDetail = Object.keys(e.input ?? {}).length > 0 || e.output !== undefined;

@@ -14,7 +14,7 @@ const tasks = tasksStore();
 export const createTask = defineOperation({
   name: "createTask",
   title: "Create Task",
-  description: "Create an operational task with title, department, priority, and optional assignee.",
+  description: "Create an operational task with title, department, priority, and optional assignee. Pass reservationId to link it to a front-desk reservation.",
   permission: "write",
   roles: ["support", "admin"],
   module: "tasks.management",
@@ -23,8 +23,9 @@ export const createTask = defineOperation({
     department: z.string().describe("Department responsible for the task"),
     priority: z.enum(["low", "medium", "high"]).describe("Task priority level"),
     assigneeId: z.string().optional().describe("User ID to assign the task to"),
+    reservationId: z.string().optional().describe("Front-desk reservation this task relates to, if any"),
   },
-  async handler({ title, department, priority, assigneeId }, _ctx) {
+  async handler({ title, department, priority, assigneeId, reservationId }, _ctx) {
     globalThis.__tasksSeq = (globalThis.__tasksSeq ?? tasks.size) + 1;
     const taskId = `task_${String(globalThis.__tasksSeq).padStart(3, "0")}`;
     const now = new Date().toISOString();
@@ -35,6 +36,7 @@ export const createTask = defineOperation({
       priority,
       status: "open",
       assigneeId,
+      reservationId,
       createdAt: now,
       updatedAt: now,
     };

@@ -49,7 +49,6 @@ export function LoginForm() {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="alice"
             autoComplete="username"
             required
           />

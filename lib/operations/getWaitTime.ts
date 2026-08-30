@@ -1,9 +1,7 @@
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
-import { frontofficeStore } from "@/lib/seed";
-
-const store = frontofficeStore();
+import { store } from "@/lib/store";
 
 const AVG_DINING_MINUTES = 60;
 
