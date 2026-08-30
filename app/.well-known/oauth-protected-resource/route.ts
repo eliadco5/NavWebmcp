@@ -1,4 +1,5 @@
-import { MCP_RESOURCE, ALL_SCOPES } from "@/lib/auth";
+import { ALL_SCOPES } from "@/lib/auth";
+import { MCP_RESOURCE } from "@/lib/auth-tokens";
 
 /**
  * RFC 9728 Protected Resource Metadata endpoint.

@@ -1,19 +1,21 @@
+import type { OperationContext } from "@/lib/operations/types";
+
 export type Role = "customer" | "support" | "admin";
 
-export const adminCtx = {
+export const adminCtx: OperationContext = {
   userId: "u_bob",
-  role: "admin" as const,
+  role: "admin",
   token: "tok_admin",
 };
 
-export const supportCtx = {
+export const supportCtx: OperationContext = {
   userId: "u_carol",
-  role: "support" as const,
+  role: "support",
   token: "tok_support",
 };
 
-export const customerCtx = {
+export const customerCtx: OperationContext = {
   userId: "u_alice",
-  role: "customer" as const,
+  role: "customer",
   token: "tok_customer",
 };

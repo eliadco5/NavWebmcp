@@ -1,10 +1,10 @@
 import { cookies } from "next/headers";
-import { destroySession, SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE } from "@/lib/auth";
 
+// Sessions are stateless (HMAC-signed, not looked up), so there's nothing to
+// invalidate server-side — deleting the cookie IS the logout.
 export async function POST() {
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  if (sessionId) destroySession(sessionId);
   cookieStore.delete(SESSION_COOKIE);
   return Response.json({ success: true });
 }

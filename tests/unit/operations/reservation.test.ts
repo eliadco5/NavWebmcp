@@ -66,11 +66,17 @@ describe('searchAvailability', () => {
     expect(result.data).toHaveProperty('message')
   })
 
-  it('returns slots array (may be empty for far-future date)', async () => {
+  // lib/store.ts lazily seeds any requested date on first touch — a far-future
+  // date returns real slots now (self-healing across serverless instances is
+  // the whole point), so "empty results" has to come from party size instead.
+  it('returns slots array (empty when party size exceeds every slot capacity)', async () => {
     const result = await searchAvailability.handler({ date: '2099-12-31', partySize: 2 }, customerCtx)
     expect(result.success).toBe(true)
     expect(Array.isArray(result.data.slots)).toBe(true)
-    expect(result.data.slots.length).toBe(0)
+    expect(result.data.slots.length).toBeGreaterThan(0)
+
+    const empty = await searchAvailability.handler({ date: '2099-12-31', partySize: 99 }, customerCtx)
+    expect(empty.data.slots.length).toBe(0)
   })
 
   it('count matches slots.length', async () => {
@@ -80,7 +86,7 @@ describe('searchAvailability', () => {
   })
 
   it('message says "No availability" for empty results', async () => {
-    const result = await searchAvailability.handler({ date: '2099-12-31', partySize: 2 }, customerCtx)
+    const result = await searchAvailability.handler({ date: '2099-12-31', partySize: 99 }, customerCtx)
     expect(result.data.message).toContain('No availability')
   })
 

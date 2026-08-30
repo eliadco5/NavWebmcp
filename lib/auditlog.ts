@@ -3,6 +3,10 @@ export interface AuditEntry {
   timestamp: string;
   operation: string;
   input: Record<string, unknown>;
+  /** The op's `data` on success, or its `error` object on failure — what the
+   *  platform actually sent back to the caller. Optional only for backwards
+   *  compatibility with call sites that predate this field. */
+  output?: unknown;
   success: boolean;
   source: "ui" | "agent";
 }
@@ -15,13 +19,15 @@ class AuditLog {
     operation: string,
     input: Record<string, unknown>,
     success: boolean,
-    source: "ui" | "agent" = "ui"
+    source: "ui" | "agent" = "ui",
+    output?: unknown
   ): AuditEntry {
     const entry: AuditEntry = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       operation,
       input,
+      output,
       success,
       source,
     };

@@ -28,31 +28,55 @@ function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function seedSlots(): Slot[] {
-  const slots: Slot[] = [];
-  const times = ["10:00", "12:00", "14:00", "18:00", "20:00"];
-  const today = new Date();
-  for (let d = 0; d < 7; d++) {
-    const date = new Date(today);
-    date.setDate(today.getDate() + d);
-    const dateStr = date.toISOString().split("T")[0];
-    for (const time of times) {
-      slots.push({
-        id: generateId(),
-        date: dateStr,
-        time,
-        capacity: 4 + Math.floor(Math.random() * 5),
-        available: true,
-      });
-    }
-  }
-  return slots;
+const TIMES = ["10:00", "12:00", "14:00", "18:00", "20:00"] as const;
+const CAPACITY_BY_TIME: Record<string, number> = {
+  "10:00": 4, "12:00": 6, "14:00": 4, "18:00": 8, "20:00": 6,
+};
+
+/** Deterministic, self-describing slot id — e.g. "slot_2026-08-30_1800".
+ *
+ * The original id was `Math.random()` generated at module init, which meant two
+ * things on Vercel: (1) every serverless instance seeded a DIFFERENT random id
+ * for "today at 18:00", so a searchAvailability on instance A returned an id
+ * createReservation on instance B didn't recognise — the booking flow failed
+ * silently across instances; (2) the whole 7-day window was seeded once at cold
+ * start, so a long-lived instance would keep offering yesterday's dates forever
+ * and never grow into day 8.
+ *
+ * Encoding date+time directly in the id fixes both: any instance can derive
+ * which date a slot belongs to from the id alone and lazily seed that date on
+ * first touch (see ensureDate below), so there's nothing to disagree about. */
+function slotId(date: string, time: string): string {
+  return `slot_${date}_${time.replace(":", "")}`;
 }
 
 class BookingStore {
-  private slots: Slot[] = seedSlots();
+  private slots = new Map<string, Slot>();
   private reservations: Reservation[] = [];
   private listeners: Listener[] = [];
+
+  /** Seed the 5 daily time slots for `date` if they don't exist yet. Idempotent
+   *  and cheap — safe to call on every read. */
+  private ensureDate(date: string): void {
+    for (const time of TIMES) {
+      const id = slotId(date, time);
+      if (!this.slots.has(id)) {
+        this.slots.set(id, { id, date, time, capacity: CAPACITY_BY_TIME[time], available: true });
+      }
+    }
+  }
+
+  /** Seed today + the next 6 days — the rolling 7-day window the UI's date
+   *  picker expects, computed from the current request time rather than once
+   *  at module init. */
+  private ensureWindow(): void {
+    const start = new Date();
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(start);
+      date.setDate(start.getDate() + d);
+      this.ensureDate(date.toISOString().slice(0, 10));
+    }
+  }
 
   on(listener: Listener): () => void {
     this.listeners.push(listener);
@@ -66,15 +90,21 @@ class BookingStore {
   }
 
   getSlots(): Slot[] {
-    return this.slots;
+    this.ensureWindow();
+    return Array.from(this.slots.values());
   }
 
   getSlot(id: string): Slot | undefined {
-    return this.slots.find((s) => s.id === id);
+    // Self-heal: an id encodes its own date, so a cold instance that has never
+    // seeded that date yet can still resolve it correctly on first lookup.
+    const m = /^slot_(\d{4}-\d{2}-\d{2})_\d{4}$/.exec(id);
+    if (m) this.ensureDate(m[1]);
+    return this.slots.get(id);
   }
 
   searchAvailability(date: string, partySize: number): Slot[] {
-    return this.slots.filter(
+    this.ensureDate(date);
+    return Array.from(this.slots.values()).filter(
       (s) => s.date === date && s.available && s.capacity >= partySize
     );
   }
@@ -93,7 +123,7 @@ class BookingStore {
     partySize: number,
     userId: string
   ): Reservation | null {
-    const slot = this.slots.find((s) => s.id === slotId);
+    const slot = this.getSlot(slotId);
     if (!slot || !slot.available || slot.capacity < partySize) return null;
 
     const reservation: Reservation = {
@@ -124,7 +154,7 @@ class BookingStore {
     const reservation = this.reservations[idx];
     this.reservations.splice(idx, 1);
 
-    const slot = this.slots.find((s) => s.id === reservation.slotId);
+    const slot = this.getSlot(reservation.slotId);
     if (slot) slot.available = true;
 
     this.emit({ type: "reservation.cancelled", reservationId: id });
@@ -146,7 +176,7 @@ class BookingStore {
     const reservation = this.reservations[idx];
     this.reservations.splice(idx, 1);
 
-    const slot = this.slots.find((s) => s.id === reservation.slotId);
+    const slot = this.getSlot(reservation.slotId);
     if (slot) slot.available = true;
 
     this.emit({ type: "reservation.cancelled", reservationId: id });

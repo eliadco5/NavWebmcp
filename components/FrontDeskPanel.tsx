@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useBridge } from "@/app/providers";
+import { DEMO_GUEST_IDS } from "@/lib/seed/crm";
 
 interface FrontDeskReservation {
   reservationId: string;
@@ -26,12 +27,31 @@ interface Bill {
   total: number;
 }
 
+interface CheckinStatus {
+  reservationId: string;
+  guestName: string;
+  guestId: string;
+  partySize: number;
+  status: string;
+  tableId: string | null;
+  seatedAt: string | null;
+  minutesSeated: number | null;
+}
+
 export function FrontDeskPanel() {
-  const { call, storeEvents } = useBridge();
+  const { call, storeVersion } = useBridge();
 
   const [tables, setTables] = useState<OccupancyTable[]>([]);
   const [reservations, setReservations] = useState<FrontDeskReservation[]>([]);
   const [bills, setBills] = useState<Record<string, Bill>>({});
+  const [details, setDetails] = useState<Record<string, CheckinStatus>>({});
+  const [advanced, setAdvanced] = useState<string | null>(null);
+  const [tableChoice, setTableChoice] = useState<Record<string, string>>({});
+  const [vipForm, setVipForm] = useState<string | null>(null);
+  const [vipGuestId, setVipGuestId] = useState<string>(DEMO_GUEST_IDS[0]);
+  const [vipPoints, setVipPoints] = useState(100);
+  const [vipNote, setVipNote] = useState("");
+  const [vipResult, setVipResult] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,8 +66,8 @@ export function FrontDeskPanel() {
 
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
-    if (storeEvents.length > 0) refresh();
-  }, [storeEvents, refresh]);
+    if (storeVersion > 0) refresh();
+  }, [storeVersion, refresh]);
 
   async function handleSeat(reservationId: string) {
     setBusy(reservationId);
@@ -56,6 +76,22 @@ export function FrontDeskPanel() {
       const result = await call("seatGuest", { reservationId }) as { success: boolean; error?: { message: string } };
       if (!result.success) setError(result.error?.message ?? "Failed to seat guest");
       else await refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCheckInAdvanced(reservationId: string) {
+    const tableId = tableChoice[reservationId];
+    if (!tableId) return;
+    setBusy(reservationId);
+    setError(null);
+    try {
+      // Reaches the raw checkInGuest op directly (seatGuest above is the
+      // composite: occupancy check + checkInGuest + validate, in one call).
+      const result = await call("checkInGuest", { reservationId, tableId }) as { success: boolean; error?: { message: string } };
+      if (!result.success) setError(result.error?.message ?? "Failed to check in guest");
+      else { setAdvanced(null); await refresh(); }
     } finally {
       setBusy(null);
     }
@@ -73,10 +109,50 @@ export function FrontDeskPanel() {
     }
   }
 
+  async function handleDetails(reservationId: string) {
+    if (details[reservationId]) {
+      setDetails((prev) => { const next = { ...prev }; delete next[reservationId]; return next; });
+      return;
+    }
+    setBusy(reservationId);
+    try {
+      const result = await call("getCheckinStatus", { reservationId }) as { success: boolean; data?: CheckinStatus };
+      if (result.success && result.data) setDetails((prev) => ({ ...prev, [reservationId]: result.data! }));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleHostVip(reservationId: string) {
+    if (!vipNote.trim()) return;
+    setBusy(reservationId);
+    setError(null);
+    setVipResult(null);
+    try {
+      const result = await call("hostVipGuest", {
+        reservationId,
+        guestId: vipGuestId,
+        pointsToAward: vipPoints,
+        visitNote: vipNote.trim(),
+      }) as { success: boolean; data?: Record<string, unknown>; error?: { message: string } };
+      if (!result.success) setError(result.error?.message ?? "Failed to host VIP guest");
+      else {
+        setVipResult(result.data ?? {});
+        setVipNote("");
+        await refresh();
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleCheckOut(reservationId: string) {
     setBusy(reservationId);
     setError(null);
     try {
+      // checkOutGuest carries requiresConfirmation:true but has no `confirm`
+      // input field — providers.tsx's ConfirmationDialog intercepts this call
+      // before it reaches the server, so no confirm flag is needed here.
       const result = await call("checkOutGuest", { reservationId }) as { success: boolean; error?: { message: string } };
       if (!result.success) setError(result.error?.message ?? "Failed to check out guest");
       else {
@@ -91,6 +167,8 @@ export function FrontDeskPanel() {
       setBusy(null);
     }
   }
+
+  const availableTables = tables.filter((t) => t.status === "available");
 
   return (
     <div className="card">
@@ -135,7 +213,7 @@ export function FrontDeskPanel() {
               borderRadius: 8, padding: "10px 14px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
               <div>
                 <span style={{ fontWeight: 600 }}>{r.guestName}</span>
                 <span style={{ color: "#6b7280", marginLeft: 10, fontSize: 13 }}>
@@ -143,17 +221,41 @@ export function FrontDeskPanel() {
                   {r.tableId && ` · ${r.tableId}`}
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => handleDetails(r.reservationId)}
+                  disabled={busy === r.reservationId}
+                  style={{ background: "#f3f4f6", color: "#374151", fontSize: 12 }}
+                >
+                  {details[r.reservationId] ? "Hide Details" : "Details"}
+                </button>
                 {r.status === "pending" && (
-                  <button
-                    type="button"
-                    aria-label={`Check in ${r.guestName}`}
-                    onClick={() => handleSeat(r.reservationId)}
-                    disabled={busy === r.reservationId}
-                    style={{ background: "#4f46e5", color: "#fff", fontSize: 13 }}
-                  >
-                    {busy === r.reservationId ? "Seating…" : "Check In"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      aria-label={`Check in ${r.guestName}`}
+                      onClick={() => handleSeat(r.reservationId)}
+                      disabled={busy === r.reservationId}
+                      style={{ background: "#4f46e5", color: "#fff", fontSize: 13 }}
+                    >
+                      {busy === r.reservationId ? "Seating…" : "Check In"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdvanced(advanced === r.reservationId ? null : r.reservationId)}
+                      style={{ background: "#f3f4f6", color: "#374151", fontSize: 12 }}
+                    >
+                      Advanced
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVipForm(vipForm === r.reservationId ? null : r.reservationId)}
+                      style={{ background: "#ede9fe", color: "#5b21b6", fontSize: 12 }}
+                    >
+                      Host VIP
+                    </button>
+                  </>
                 )}
                 {r.status === "checked-in" && (
                   <>
@@ -179,6 +281,65 @@ export function FrontDeskPanel() {
                 )}
               </div>
             </div>
+
+            {details[r.reservationId] && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10, fontSize: 12, color: "#6b7280" }}>
+                guestId: {details[r.reservationId].guestId} · seatedAt: {details[r.reservationId].seatedAt ?? "—"}
+                {details[r.reservationId].minutesSeated != null && ` · ${details[r.reservationId].minutesSeated}m seated`}
+              </div>
+            )}
+
+            {advanced === r.reservationId && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10, display: "flex", gap: 8 }}>
+                <select
+                  value={tableChoice[r.reservationId] ?? ""}
+                  onChange={(e) => setTableChoice((prev) => ({ ...prev, [r.reservationId]: e.target.value }))}
+                  style={{ flex: 1 }}
+                >
+                  <option value="">Choose a table…</option>
+                  {availableTables.map((t) => (
+                    <option key={t.tableId} value={t.tableId}>{t.tableId} (cap {t.capacity})</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!tableChoice[r.reservationId] || busy === r.reservationId}
+                  onClick={() => handleCheckInAdvanced(r.reservationId)}
+                  style={{ background: "#4f46e5", color: "#fff", fontSize: 12 }}
+                >
+                  checkInGuest
+                </button>
+              </div>
+            )}
+
+            {vipForm === r.reservationId && (
+              <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ fontSize: 11, color: "#9ca3af" }}>
+                  hostVipGuest — one call: preferences + loyalty + seat + award + log.
+                </p>
+                <div className="field-grid">
+                  <select value={vipGuestId} onChange={(e) => setVipGuestId(e.target.value)}>
+                    {DEMO_GUEST_IDS.map((id) => <option key={id} value={id}>{id}</option>)}
+                  </select>
+                  <input type="number" value={vipPoints} onChange={(e) => setVipPoints(Number(e.target.value))} min={1} />
+                </div>
+                <input placeholder="Visit note" value={vipNote} onChange={(e) => setVipNote(e.target.value)} />
+                <button
+                  type="button"
+                  disabled={busy === r.reservationId}
+                  onClick={() => handleHostVip(r.reservationId)}
+                  style={{ background: "#5b21b6", color: "#fff", fontSize: 12 }}
+                >
+                  {busy === r.reservationId ? "Hosting…" : "Host VIP Guest"}
+                </button>
+                {vipResult && (
+                  <pre style={{ fontSize: 11, background: "#f3f4f6", borderRadius: 6, padding: 8, overflowX: "auto", margin: 0 }}>
+                    {JSON.stringify(vipResult, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+
             {bills[r.reservationId] && (
               <div style={{ marginTop: 10, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
                 {bills[r.reservationId].items.length === 0 ? (

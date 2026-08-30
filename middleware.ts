@@ -1,30 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth";
+import { NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/login", "/api/logout", "/api/mcp", "/.well-known"];
-
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // Allow public paths and Next.js internals through
-  if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
-  ) {
-    return NextResponse.next();
-  }
-
-  const session = req.cookies.get(SESSION_COOKIE)?.value;
-  if (!session) {
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    return NextResponse.redirect(loginUrl);
-  }
-
+// Auth is stateless (HMAC-signed cookie, verified in lib/auth.ts — see
+// getOrProvisionUser). Middleware runs on the Edge runtime, which cannot import
+// node:crypto, so it never validates the cookie's signature — only route handlers
+// do. It used to redirect to /login when no cookie was present; that's gone now
+// because every route auto-provisions a fresh session for a first-time visitor
+// (see lib/auth.ts's getOrProvisionUser), so there is nothing left to gate.
+// This file is kept, rather than deleted, as the seam a real deployment would use
+// to add a real check.
+export function middleware() {
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/"],
 };

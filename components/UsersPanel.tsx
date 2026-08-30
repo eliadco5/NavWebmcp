@@ -17,9 +17,12 @@ const ROLE_COLORS: Record<Role, { bg: string; text: string }> = {
   admin:    { bg: "#fef3c7", text: "#92400e" },
 };
 
+// Read-only roster. Role changes now happen via the switcher in the header
+// (POST /api/switch-role, re-signs the caller's own cookie) rather than a PATCH
+// here — that PATCH mutated a module-level USERS constant in place, which
+// can't work once auth is stateless/HMAC-signed across serverless instances.
 export function UsersPanel() {
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [updating, setUpdating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch("/api/admin/users");
@@ -31,31 +34,14 @@ export function UsersPanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function changeRole(userId: string, role: Role) {
-    setUpdating(userId);
-    try {
-      const r = await fetch("/api/admin/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role }),
-      });
-      const data = await r.json();
-      if (data.success) {
-        setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role } : u));
-      }
-    } finally {
-      setUpdating(null);
-    }
-  }
-
   return (
     <div className="card">
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
-        User Management
-        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>admin</span>
+        Demo Users
+        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>read-only · admin</span>
       </h2>
       <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 14 }}>
-        Change roles live — takes effect on the next login or token refresh.
+        Use the role switcher in the header to change your own role — these are the seeded demo accounts, not editable here.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {users.map((u) => (
@@ -78,28 +64,12 @@ export function UsersPanel() {
                 <div style={{ fontSize: 11, color: "#9ca3af" }}>@{u.username}</div>
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{
-                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
-                background: ROLE_COLORS[u.role].bg, color: ROLE_COLORS[u.role].text,
-              }}>
-                {u.role}
-              </span>
-              <select
-                value={u.role}
-                disabled={updating === u.id}
-                onChange={(e) => changeRole(u.id, e.target.value as Role)}
-                style={{
-                  fontSize: 12, padding: "3px 6px", borderRadius: 4,
-                  border: "1px solid #e5e7eb", background: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="customer">customer</option>
-                <option value="support">support</option>
-                <option value="admin">admin</option>
-              </select>
-            </div>
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 12,
+              background: ROLE_COLORS[u.role].bg, color: ROLE_COLORS[u.role].text,
+            }}>
+              {u.role}
+            </span>
           </div>
         ))}
       </div>

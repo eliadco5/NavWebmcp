@@ -70,10 +70,17 @@ export async function bookOrchestration(
   const reservationExists = verifyRes.success && !!verifyRes.data?.reservation;
   const slotStillOpen = recheck.data?.slots.some((s) => s.id === slot.id) ?? false;
 
-  if (!reservationExists || slotStillOpen) {
+  // Only roll back when the reservation genuinely isn't there. `slotStillOpen`
+  // used to trigger the same rollback — but on a multi-instance deploy the
+  // re-check can legitimately land on a different serverless instance than the
+  // one that just wrote the reservation, making a perfectly successful booking
+  // look "inconsistent" and get cancelled. That's not a stale read to shrug off:
+  // it actively destroys a booking that already succeeded. `slotStillOpen` is
+  // now reported to the caller instead of acted on.
+  if (!reservationExists) {
     await call("cancelReservation", { reservationId: reservation.id, confirm: true });
     return fail("VALIDATION_FAILED", "Booking could not be validated (inconsistent state). Please try again.");
   }
 
-  return ok({ reservation, validated: true });
+  return ok({ reservation, validated: reservationExists && !slotStillOpen });
 }

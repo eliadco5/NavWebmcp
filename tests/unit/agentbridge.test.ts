@@ -54,40 +54,40 @@ describe("constructor + instructions", () => {
     expect(() => new AgentBridge()).not.toThrow();
   });
 
-  it("installs document.modelContext on construction", async () => {
+  it("installs document.modelContext! on construction", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     new AgentBridge();
-    expect(document.modelContext).toBeDefined();
+    expect(document.modelContext!).toBeDefined();
   });
 
-  it("sets instructions on document.modelContext when provided", async () => {
+  it("sets instructions on document.modelContext! when provided", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     new AgentBridge({ instructions: "hello" });
-    expect(document.modelContext.instructions).toBe("hello");
+    expect(document.modelContext!.instructions).toBe("hello");
   });
 
   it("leaves instructions null when no instructions option is provided", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     new AgentBridge();
-    expect(document.modelContext.instructions).toBeNull();
+    expect(document.modelContext!.instructions).toBeNull();
   });
 
-  it("sets document.modelContext.protocolVersion to PROTOCOL_VERSION", async () => {
+  it("sets document.modelContext!.protocolVersion to PROTOCOL_VERSION", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     const { PROTOCOL_VERSION } = await import("@/lib/protocol");
     new AgentBridge();
-    expect(document.modelContext.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(document.modelContext!.protocolVersion).toBe(PROTOCOL_VERSION);
   });
 });
 
 // ── register ─────────────────────────────────────────────────────────────────
 
 describe("register", () => {
-  it("registers a tool in document.modelContext.getTools()", async () => {
+  it("registers a tool in document.modelContext!.getTools!()", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     const bridge = new AgentBridge();
     bridge.register(fakeOp);
-    const tool = document.modelContext.getTools().find((t) => t.name === "fakeOp");
+    const tool = document.modelContext!.getTools!().find((t) => t.name === "fakeOp");
     expect(tool).toBeDefined();
   });
 
@@ -95,7 +95,7 @@ describe("register", () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     const bridge = new AgentBridge({ getUserRole: () => "customer" });
     bridge.register(adminOp);
-    const tool = document.modelContext.getTools().find((t) => t.name === "adminOp");
+    const tool = document.modelContext!.getTools!().find((t) => t.name === "adminOp");
     expect(tool).toBeUndefined();
   });
 
@@ -103,7 +103,7 @@ describe("register", () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     const bridge = new AgentBridge({ getUserRole: () => null });
     bridge.register(adminOp);
-    const tool = document.modelContext.getTools().find((t) => t.name === "adminOp");
+    const tool = document.modelContext!.getTools!().find((t) => t.name === "adminOp");
     expect(tool).toBeDefined();
   });
 
@@ -111,7 +111,7 @@ describe("register", () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
     const bridge = new AgentBridge({ getUserRole: () => "admin" });
     bridge.register(adminOp);
-    const tool = document.modelContext.getTools().find((t) => t.name === "adminOp");
+    const tool = document.modelContext!.getTools!().find((t) => t.name === "adminOp");
     expect(tool).toBeDefined();
   });
 
@@ -120,8 +120,8 @@ describe("register", () => {
     const bridge = new AgentBridge();
     bridge.register(fakeOp);
     bridge.register(writeOp);
-    expect(document.modelContext.getTools().find((t) => t.name === "fakeOp")).toBeDefined();
-    expect(document.modelContext.getTools().find((t) => t.name === "writeOp")).toBeDefined();
+    expect(document.modelContext!.getTools!().find((t) => t.name === "fakeOp")).toBeDefined();
+    expect(document.modelContext!.getTools!().find((t) => t.name === "writeOp")).toBeDefined();
   });
 });
 

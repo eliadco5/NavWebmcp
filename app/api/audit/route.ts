@@ -1,11 +1,12 @@
 import { cookies } from "next/headers";
 import { auditLog } from "@/lib/auditlog";
-import { userForSession, SESSION_COOKIE } from "@/lib/auth";
+import { getOrProvisionUser } from "@/lib/auth-tokens";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  const user = sessionId ? userForSession(sessionId) : null;
+  const { user } = getOrProvisionUser(cookieStore);
   if (!user) {
     return Response.json(
       { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },

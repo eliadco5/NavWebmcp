@@ -23,49 +23,49 @@ beforeEach(() => {
 // ── installWebMCPPolyfill ────────────────────────────────────────────────────
 
 describe("installWebMCPPolyfill", () => {
-  it("installs document.modelContext after calling", async () => {
+  it("installs document.modelContext! after calling", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(document.modelContext).toBeDefined();
+    expect(document.modelContext!).toBeDefined();
   });
 
   it("is idempotent: calling twice returns the same modelContext object", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    const first = document.modelContext;
+    const first = document.modelContext!;
     installWebMCPPolyfill();
-    expect(document.modelContext).toBe(first);
+    expect(document.modelContext!).toBe(first);
   });
 
   it("installed modelContext has registerTool method", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(typeof document.modelContext.registerTool).toBe("function");
+    expect(typeof document.modelContext!.registerTool).toBe("function");
   });
 
   it("installed modelContext has executeTool method", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(typeof document.modelContext.executeTool).toBe("function");
+    expect(typeof document.modelContext!.executeTool).toBe("function");
   });
 
   it("installed modelContext has getTools method", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(typeof document.modelContext.getTools).toBe("function");
+    expect(typeof document.modelContext!.getTools).toBe("function");
   });
 
   it("installed modelContext has ontoolchange property (initially null)", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect("ontoolchange" in document.modelContext).toBe(true);
-    expect(document.modelContext.ontoolchange).toBeNull();
+    expect("ontoolchange" in document.modelContext!).toBe(true);
+    expect(document.modelContext!.ontoolchange).toBeNull();
   });
 
   it("installed modelContext has instructions property", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect("instructions" in document.modelContext).toBe(true);
+    expect("instructions" in document.modelContext!).toBe(true);
   });
 });
 
@@ -83,33 +83,33 @@ describe("registerTool — valid names", () => {
   it("simple name registers without error", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("myTool"))).resolves.toBeUndefined();
+    await expect(document.modelContext!.registerTool(makeTool("myTool"))).resolves.toBeUndefined();
   });
 
   it("name with dots is accepted", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("my.tool.v2"))).resolves.toBeUndefined();
+    await expect(document.modelContext!.registerTool(makeTool("my.tool.v2"))).resolves.toBeUndefined();
   });
 
   it("name with underscores and dashes is accepted", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("my_tool-v2"))).resolves.toBeUndefined();
+    await expect(document.modelContext!.registerTool(makeTool("my_tool-v2"))).resolves.toBeUndefined();
   });
 
   it("name exactly 128 characters long is accepted", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const longName = "a".repeat(128);
-    await expect(document.modelContext.registerTool(makeTool(longName))).resolves.toBeUndefined();
+    await expect(document.modelContext!.registerTool(makeTool(longName))).resolves.toBeUndefined();
   });
 
   it("after registering, getTools() contains the tool", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await document.modelContext.registerTool(makeTool("myTool"));
-    const found = document.modelContext.getTools().find((t) => t.name === "myTool");
+    await document.modelContext!.registerTool(makeTool("myTool"));
+    const found = document.modelContext!.getTools!().find((t) => t.name === "myTool");
     expect(found).toBeDefined();
   });
 });
@@ -120,7 +120,7 @@ describe("registerTool — invalid names (DOMException DataError)", () => {
   it("empty string throws DOMException DataError", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool(""))).rejects.toMatchObject({
+    await expect(document.modelContext!.registerTool(makeTool(""))).rejects.toMatchObject({
       name: "DataError",
     });
   });
@@ -129,7 +129,7 @@ describe("registerTool — invalid names (DOMException DataError)", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const tooLong = "a".repeat(129);
-    await expect(document.modelContext.registerTool(makeTool(tooLong))).rejects.toMatchObject({
+    await expect(document.modelContext!.registerTool(makeTool(tooLong))).rejects.toMatchObject({
       name: "DataError",
     });
   });
@@ -137,7 +137,7 @@ describe("registerTool — invalid names (DOMException DataError)", () => {
   it("name with '/' throws DOMException DataError", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("my/tool"))).rejects.toMatchObject({
+    await expect(document.modelContext!.registerTool(makeTool("my/tool"))).rejects.toMatchObject({
       name: "DataError",
     });
   });
@@ -145,7 +145,7 @@ describe("registerTool — invalid names (DOMException DataError)", () => {
   it("name with spaces throws DOMException DataError", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("my tool"))).rejects.toMatchObject({
+    await expect(document.modelContext!.registerTool(makeTool("my tool"))).rejects.toMatchObject({
       name: "DataError",
     });
   });
@@ -153,7 +153,7 @@ describe("registerTool — invalid names (DOMException DataError)", () => {
   it("name with '@' throws DOMException DataError", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.registerTool(makeTool("my@tool"))).rejects.toMatchObject({
+    await expect(document.modelContext!.registerTool(makeTool("my@tool"))).rejects.toMatchObject({
       name: "DataError",
     });
   });
@@ -165,7 +165,7 @@ describe("executeTool", () => {
   it("throws DOMException NotFoundError for unknown tool", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    await expect(document.modelContext.executeTool("unknown", {})).rejects.toMatchObject({
+    await expect(document.modelContext!.executeTool!("unknown", {})).rejects.toMatchObject({
       name: "NotFoundError",
     });
   });
@@ -174,8 +174,8 @@ describe("executeTool", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const execute = vi.fn().mockResolvedValue("done");
-    await document.modelContext.registerTool({ name: "myTool", description: "d", execute });
-    await document.modelContext.executeTool("myTool", { x: 1 });
+    await document.modelContext!.registerTool({ name: "myTool", description: "d", execute });
+    await document.modelContext!.executeTool!("myTool", { x: 1 });
     expect(execute).toHaveBeenCalledWith({ x: 1 });
   });
 
@@ -183,8 +183,8 @@ describe("executeTool", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const execute = vi.fn().mockResolvedValue({ answer: 42 });
-    await document.modelContext.registerTool({ name: "calcTool", description: "d", execute });
-    const result = await document.modelContext.executeTool("calcTool", {});
+    await document.modelContext!.registerTool({ name: "calcTool", description: "d", execute });
+    const result = await document.modelContext!.executeTool!("calcTool", {});
     expect(result).toEqual({ answer: 42 });
   });
 
@@ -192,9 +192,9 @@ describe("executeTool", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const execute = vi.fn().mockResolvedValue(null);
-    await document.modelContext.registerTool({ name: "t", description: "d", execute });
+    await document.modelContext!.registerTool({ name: "t", description: "d", execute });
     const input = { foo: "bar", nested: { a: 1 } };
-    await document.modelContext.executeTool("t", input);
+    await document.modelContext!.executeTool!("t", input);
     expect(execute).toHaveBeenCalledWith(input);
   });
 });
@@ -206,17 +206,17 @@ describe("AbortSignal / unregister", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const controller = new AbortController();
-    await document.modelContext.registerTool(makeTool("abortable"), { signal: controller.signal });
-    expect(document.modelContext.getTools().find((t) => t.name === "abortable")).toBeDefined();
+    await document.modelContext!.registerTool(makeTool("abortable"), { signal: controller.signal });
+    expect(document.modelContext!.getTools!().find((t) => t.name === "abortable")).toBeDefined();
   });
 
   it("tool is removed from getTools() after controller.abort()", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const controller = new AbortController();
-    await document.modelContext.registerTool(makeTool("abortable"), { signal: controller.signal });
+    await document.modelContext!.registerTool(makeTool("abortable"), { signal: controller.signal });
     controller.abort();
-    expect(document.modelContext.getTools().find((t) => t.name === "abortable")).toBeUndefined();
+    expect(document.modelContext!.getTools!().find((t) => t.name === "abortable")).toBeUndefined();
   });
 });
 
@@ -227,54 +227,54 @@ describe("ontoolchange event", () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const listener = vi.fn();
-    document.modelContext.addEventListener("toolchange", listener);
-    await document.modelContext.registerTool(makeTool("evtTool"));
+    document.modelContext!.addEventListener("toolchange", listener);
+    await document.modelContext!.registerTool(makeTool("evtTool"));
     expect(listener).toHaveBeenCalledTimes(1);
-    document.modelContext.removeEventListener("toolchange", listener);
+    document.modelContext!.removeEventListener("toolchange", listener);
   });
 
   it("toolchange event has tool property equal to the registered tool", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const listener = vi.fn();
-    document.modelContext.addEventListener("toolchange", listener);
+    document.modelContext!.addEventListener("toolchange", listener);
     const tool = makeTool("evtTool2");
-    await document.modelContext.registerTool(tool);
+    await document.modelContext!.registerTool(tool);
     const evt = listener.mock.calls[0][0] as Event & { tool: unknown; action: string };
     expect(evt.tool).toBe(tool);
-    document.modelContext.removeEventListener("toolchange", listener);
+    document.modelContext!.removeEventListener("toolchange", listener);
   });
 
   it("toolchange event has action === 'registered' on register", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const listener = vi.fn();
-    document.modelContext.addEventListener("toolchange", listener);
-    await document.modelContext.registerTool(makeTool("evtTool3"));
+    document.modelContext!.addEventListener("toolchange", listener);
+    await document.modelContext!.registerTool(makeTool("evtTool3"));
     const evt = listener.mock.calls[0][0] as Event & { action: string };
     expect(evt.action).toBe("registered");
-    document.modelContext.removeEventListener("toolchange", listener);
+    document.modelContext!.removeEventListener("toolchange", listener);
   });
 
   it("toolchange event has action === 'unregistered' after abort", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const controller = new AbortController();
-    await document.modelContext.registerTool(makeTool("abortEvt"), { signal: controller.signal });
+    await document.modelContext!.registerTool(makeTool("abortEvt"), { signal: controller.signal });
     const listener = vi.fn();
-    document.modelContext.addEventListener("toolchange", listener);
+    document.modelContext!.addEventListener("toolchange", listener);
     controller.abort();
     const evt = listener.mock.calls[0][0] as Event & { action: string };
     expect(evt.action).toBe("unregistered");
-    document.modelContext.removeEventListener("toolchange", listener);
+    document.modelContext!.removeEventListener("toolchange", listener);
   });
 
   it("ontoolchange callback property is called on register", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
     const cb = vi.fn();
-    document.modelContext.ontoolchange = cb;
-    await document.modelContext.registerTool(makeTool("cbTool"));
+    document.modelContext!.ontoolchange = cb;
+    await document.modelContext!.registerTool(makeTool("cbTool"));
     expect(cb).toHaveBeenCalledTimes(1);
   });
 });
@@ -285,22 +285,22 @@ describe("instructions field", () => {
   it("is initially null", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(document.modelContext.instructions).toBeNull();
+    expect(document.modelContext!.instructions).toBeNull();
   });
 
   it("can be set and read back", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    document.modelContext.instructions = "test instructions";
-    expect(document.modelContext.instructions).toBe("test instructions");
+    document.modelContext!.instructions = "test instructions";
+    expect(document.modelContext!.instructions).toBe("test instructions");
   });
 
   it("can be updated multiple times", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    document.modelContext.instructions = "first";
-    document.modelContext.instructions = "second";
-    expect(document.modelContext.instructions).toBe("second");
+    document.modelContext!.instructions = "first";
+    document.modelContext!.instructions = "second";
+    expect(document.modelContext!.instructions).toBe("second");
   });
 });
 
@@ -310,21 +310,21 @@ describe("protocolVersion field", () => {
   it("is initially null", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    expect(document.modelContext.protocolVersion).toBeNull();
+    expect(document.modelContext!.protocolVersion).toBeNull();
   });
 
   it("can be set and read back", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    document.modelContext.protocolVersion = "1.0.0";
-    expect(document.modelContext.protocolVersion).toBe("1.0.0");
+    document.modelContext!.protocolVersion = "1.0.0";
+    expect(document.modelContext!.protocolVersion).toBe("1.0.0");
   });
 
   it("can be updated multiple times", async () => {
     const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
     installWebMCPPolyfill();
-    document.modelContext.protocolVersion = "1.0.0";
-    document.modelContext.protocolVersion = "1.1.0";
-    expect(document.modelContext.protocolVersion).toBe("1.1.0");
+    document.modelContext!.protocolVersion = "1.0.0";
+    document.modelContext!.protocolVersion = "1.1.0";
+    expect(document.modelContext!.protocolVersion).toBe("1.1.0");
   });
 });

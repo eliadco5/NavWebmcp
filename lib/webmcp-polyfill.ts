@@ -84,15 +84,49 @@ class ModelContextImpl extends EventTarget {
   }
 }
 
+/**
+ * The shape callers should actually assume `document.modelContext` has. Only
+ * `registerTool` is guaranteed by the draft spec; `getTools`/`executeTool` are
+ * polyfill-only conveniences that don't exist on a native implementation, and
+ * `instructions`/`protocolVersion` are AgentBridge extensions a native object
+ * may reject outright. Declaring the global as `ModelContextImpl` (i.e. every
+ * method required) was a lie for the native case — it's why calling
+ * `mc.getTools()` used to compile fine and then throw a TypeError at runtime
+ * the moment a real WebMCP implementation showed up. Making them optional here
+ * turns that into a build-time reminder to feature-detect at every call site.
+ */
+export interface ModelContextLike extends EventTarget {
+  registerTool(tool: ModelContextTool, options?: ModelContextRegisterToolOptions): Promise<void> | void;
+  ontoolchange?: ((event: ToolChangeEvent) => void) | null;
+  /** AgentBridge extension — not part of the WebMCP spec. */
+  instructions?: string | null;
+  /** AgentBridge extension — not part of the WebMCP spec. */
+  protocolVersion?: string | null;
+  /** Polyfill-only — not part of the WebMCP spec. */
+  getTools?(): ModelContextTool[];
+  /** Polyfill-only — not part of the WebMCP spec. */
+  executeTool?(name: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
 declare global {
   interface Document {
-    modelContext: ModelContextImpl;
+    modelContext?: ModelContextLike;
+  }
+  interface Navigator {
+    // The draft has moved the attachment point between `document` and
+    // `navigator` at different points in its history; detect both.
+    modelContext?: ModelContextLike;
   }
 }
 
 export function installWebMCPPolyfill(): void {
   if (typeof document === "undefined") return;
   if ("modelContext" in document) return; // native or already polyfilled
+  // A native implementation exposed at navigator.modelContext must never be
+  // shadowed by installing the polyfill onto document — that would render fine
+  // but leave the real agent-facing surface (navigator) with zero tools, which
+  // is a silent failure, not a crash: harder to notice, easier to ship.
+  if (typeof navigator !== "undefined" && "modelContext" in navigator) return;
 
   Object.defineProperty(document, "modelContext", {
     value: new ModelContextImpl(),
@@ -100,4 +134,12 @@ export function installWebMCPPolyfill(): void {
     configurable: false,
     enumerable: true,
   });
+}
+
+/** Resolve the live ModelContext, installing the polyfill only as a last resort. */
+export function getModelContext(): ModelContextLike {
+  if (typeof navigator !== "undefined" && navigator.modelContext) return navigator.modelContext;
+  if (typeof document !== "undefined" && document.modelContext) return document.modelContext;
+  installWebMCPPolyfill();
+  return document.modelContext!;
 }

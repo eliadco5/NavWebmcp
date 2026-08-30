@@ -30,8 +30,6 @@ let getLoaded: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let issueToken: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let updateUserRole: any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let verifyCredentials: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let userForToken: any
@@ -79,6 +77,7 @@ beforeEach(async () => {
     import('@/lib/operations/getReservation'),
     import('@/lib/loadedTools'),
     import('@/lib/auth'),
+    import('@/lib/auth-tokens'),
   ])
   explore = mods[0].explore
   search = mods[1].search
@@ -92,10 +91,9 @@ beforeEach(async () => {
   listReservations = mods[9].listReservations
   getReservation = mods[10].getReservation
   getLoaded = mods[11].getLoaded
-  issueToken = mods[12].issueToken
-  updateUserRole = mods[12].updateUserRole
   verifyCredentials = mods[12].verifyCredentials
-  userForToken = mods[12].userForToken
+  issueToken = mods[13].issueToken
+  userForToken = mods[13].userForToken
 })
 
 // ── Flow 1: Full booking flow ─────────────────────────────────────────────────
@@ -271,36 +269,48 @@ describe('Flow 4 — load_tools session', () => {
   })
 })
 
-// ── Flow 5: Role upgrade and token invalidation ───────────────────────────────
+// ── Flow 5: Role upgrade ──────────────────────────────────────────────────────
+//
+// There is no updateUserRole anymore — mutating a module-level USERS constant
+// in place cannot work once state has to survive across serverless instances.
+// /api/switch-role instead re-signs the caller's own session/token with a new
+// role baked into the payload (see lib/auth-tokens.ts). A consequence worth
+// testing explicitly: because tokens are stateless snapshots, not references
+// to a mutable user record, a token issued BEFORE a role change keeps carrying
+// its original role for its own lifetime — there is no server-side revocation.
 
-describe('Flow 5 — Role upgrade and token invalidation', () => {
+describe('Flow 5 — Role upgrade (re-mint, not mutate)', () => {
   it('1. issue token for alice (customer) — token is valid', async () => {
     const user = verifyCredentials('alice', 'password')
     expect(user).not.toBeNull()
     const token = issueToken(user)
     expect(typeof token).toBe('string')
     expect(token.length).toBeGreaterThan(0)
-    // Token should be valid right after issuing
     const found = userForToken(token)
     expect(found).not.toBeNull()
     expect(found.id).toBe('u_alice')
+    expect(found.role).toBe('customer')
   })
 
-  it('2. updateUserRole changes alice to admin', async () => {
-    const updated = updateUserRole('u_alice', 'admin')
-    expect(updated).not.toBeNull()
-    expect(updated.role).toBe('admin')
-  })
-
-  it('3. after updateUserRole, the original token is invalidated', async () => {
+  it('2. "role upgrade" re-mints a new token carrying role: admin for the same userId', async () => {
     const user = verifyCredentials('alice', 'password')
-    const token = issueToken(user)
-    // Verify it was valid before role change
-    expect(userForToken(token)).not.toBeNull()
-    // Change role — this invalidates all existing tokens for alice
-    updateUserRole('u_alice', 'admin')
-    // Token should now be invalid
-    const found = userForToken(token)
-    expect(found).toBeNull()
+    const upgraded = issueToken({ ...user, role: 'admin' })
+    const found = userForToken(upgraded)
+    expect(found).not.toBeNull()
+    expect(found.id).toBe('u_alice')
+    expect(found.role).toBe('admin')
+  })
+
+  it('3. the ORIGINAL customer token is unaffected by the upgrade — still valid, still customer', async () => {
+    const user = verifyCredentials('alice', 'password')
+    const originalToken = issueToken(user)
+    expect(userForToken(originalToken).role).toBe('customer')
+
+    // "Upgrade" — mints an independent token, does not touch the original.
+    issueToken({ ...user, role: 'admin' })
+
+    const found = userForToken(originalToken)
+    expect(found).not.toBeNull()
+    expect(found.role).toBe('customer')
   })
 })

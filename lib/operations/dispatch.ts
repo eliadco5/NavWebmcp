@@ -34,28 +34,32 @@ export async function runOne(
 ): Promise<Result<unknown>> {
   const op = getOpByName().get(name);
   if (!op) {
-    auditLog.record(name, args, false, "agent");
-    return fail("UNKNOWN_TOOL", `No operation named '${name}'.`);
+    const result = fail("UNKNOWN_TOOL", `No operation named '${name}'.`);
+    auditLog.record(name, args, false, "agent", result.error);
+    return result;
   }
   if (!roleSatisfies(ctx.role, op.roles)) {
-    auditLog.record(name, args, false, "agent");
-    return fail("FORBIDDEN", `Role '${ctx.role}' is not permitted to call '${name}'.`);
+    const result = fail("FORBIDDEN", `Role '${ctx.role}' is not permitted to call '${name}'.`);
+    auditLog.record(name, args, false, "agent", result.error);
+    return result;
   }
   const parsed = z.object(op.inputSchema as Record<string, z.ZodTypeAny>).safeParse(args);
   if (!parsed.success) {
-    auditLog.record(name, args, false, "agent");
-    return fail(
+    const result = fail(
       "INVALID_ARGS",
       parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
     );
+    auditLog.record(name, args, false, "agent", result.error);
+    return result;
   }
   try {
     const result = await op.handler(parsed.data, ctx);
-    auditLog.record(name, args, result.success, "agent");
+    auditLog.record(name, args, result.success, "agent", result.success ? result.data : result.error);
     return result as Result<unknown>;
   } catch (err) {
-    auditLog.record(name, args, false, "agent");
-    return fail("HANDLER_ERROR", String(err));
+    const result = fail("HANDLER_ERROR", String(err));
+    auditLog.record(name, args, false, "agent", result.error);
+    return result;
   }
 }
 

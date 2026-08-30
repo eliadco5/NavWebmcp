@@ -1,39 +1,9 @@
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
+import { crmLoyalty, computeLoyaltyTier, type LoyaltyAccount } from "@/lib/seed";
 
-interface LoyaltyRedemption {
-  date: string;
-  pointsRedeemed: number;
-  description: string;
-}
-
-interface LoyaltyAccount {
-  guestId: string;
-  tier: "bronze" | "silver" | "gold" | "platinum";
-  pointBalance: number;
-  lifetimePoints: number;
-  redemptionHistory: LoyaltyRedemption[];
-}
-
-declare global {
-  var __crmLoyalty: Map<string, LoyaltyAccount> | undefined;
-}
-
-const loyaltyMap = globalThis.__crmLoyalty ?? (globalThis.__crmLoyalty = new Map<string, LoyaltyAccount>([
-  ["g_001", { guestId: "g_001", tier: "gold", pointBalance: 4200, lifetimePoints: 12500, redemptionHistory: [{ date: "2024-05-10", pointsRedeemed: 500, description: "Free dessert" }] }],
-  ["g_002", { guestId: "g_002", tier: "silver", pointBalance: 1850, lifetimePoints: 4300, redemptionHistory: [] }],
-  ["g_003", { guestId: "g_003", tier: "platinum", pointBalance: 9800, lifetimePoints: 35000, redemptionHistory: [{ date: "2024-04-22", pointsRedeemed: 2000, description: "Complimentary dinner for two" }] }],
-  ["g_004", { guestId: "g_004", tier: "bronze", pointBalance: 320, lifetimePoints: 320, redemptionHistory: [] }],
-  ["g_005", { guestId: "g_005", tier: "silver", pointBalance: 2100, lifetimePoints: 5800, redemptionHistory: [{ date: "2024-03-15", pointsRedeemed: 300, description: "Complimentary appetizer" }] }],
-]));
-
-function computeTier(lifetimePoints: number): LoyaltyAccount["tier"] {
-  if (lifetimePoints >= 20000) return "platinum";
-  if (lifetimePoints >= 8000) return "gold";
-  if (lifetimePoints >= 2000) return "silver";
-  return "bronze";
-}
+const loyaltyMap = crmLoyalty();
 
 export const addLoyaltyPoints = defineOperation({
   name: "addLoyaltyPoints",
@@ -53,7 +23,7 @@ export const addLoyaltyPoints = defineOperation({
     const newBalance = account.pointBalance + points;
     const newLifetime = account.lifetimePoints + points;
     const previousTier = account.tier;
-    const currentTier = computeTier(newLifetime);
+    const currentTier = computeLoyaltyTier(newLifetime);
     const updated: LoyaltyAccount = { ...account, pointBalance: newBalance, lifetimePoints: newLifetime, tier: currentTier };
     loyaltyMap.set(guestId, updated);
     return ok({ loyalty: updated, pointsAdded: points, previousTier, currentTier, tierUpgrade: previousTier !== currentTier });
