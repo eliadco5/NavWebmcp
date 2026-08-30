@@ -6,6 +6,11 @@ WebMCP (`document.modelContext`) is a browser-native API that lets a page regist
 
 Built on [Next.js](https://nextjs.org) and the [Model Context Protocol](https://modelcontextprotocol.io).
 
+> This repo is also the implementation proof of the **AOD/ADD** methodology (AI-Oriented
+> Development / AI-Driven Development) — its own code and docs were produced by following that
+> approach: intent specs framed up front, work delegated to agents, and independent verification
+> before anything was accepted. The methodology itself is documented separately in `add-aod`.
+
 ---
 
 ## Benchmarks — efficiency, cost, effectiveness
