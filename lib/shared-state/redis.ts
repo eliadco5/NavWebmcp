@@ -1,21 +1,48 @@
-import { Redis } from "@upstash/redis";
+import { createClient, type RedisClientType } from "redis";
 
-// Absence of config is the local-dev/test fallback switch, not an error — see
-// lib/shared-state/index.ts. Cached after first call so every request doesn't
-// re-check env vars or construct a new client.
-let client: Redis | null | undefined;
+// Absence of REDIS_URL is the local-dev/test fallback switch, not an error — see
+// lib/shared-state/index.ts.
+//
+// node-redis holds a real TCP connection, unlike an HTTP client — it must be
+// reused across requests within the same warm serverless instance rather than
+// reconnected every call (each connect() is a round trip, and Redis providers
+// cap concurrent connections). Caching on a module-level variable is exactly
+// the same "survives while this instance is warm" pattern already used
+// throughout this codebase for globalThis singletons.
+let client: RedisClientType | undefined;
+let connecting: Promise<RedisClientType> | undefined;
 
-export function getRedis(): Redis | null {
-  if (client !== undefined) return client;
+function buildClient(url: string): RedisClientType {
+  const c = createClient({ url });
+  // node-redis throws if an 'error' event has no listener — a dropped
+  // connection would otherwise crash the whole Node process, not just this
+  // request. hydrate()/flush() (lib/shared-state/index.ts) separately catch
+  // failed commands and fail open; this only stops the crash.
+  c.on("error", (err) => {
+    console.warn("[shared-state] redis connection error:", err);
+  });
+  return c;
+}
 
-  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+/** Returns a connected client, or null when REDIS_URL isn't configured. */
+export async function getRedis(): Promise<RedisClientType | null> {
+  const url = process.env.REDIS_URL;
+  if (!url) return null;
 
-  client = url && token ? new Redis({ url, token }) : null;
-  return client;
+  if (client?.isReady) return client;
+
+  if (!connecting) {
+    client ??= buildClient(url);
+    const c = client;
+    connecting = (c.isOpen ? Promise.resolve(c) : c.connect().then(() => c)).finally(() => {
+      connecting = undefined;
+    });
+  }
+  return connecting;
 }
 
 /** Test-only: forget the cached client so a test can flip env vars and re-resolve. */
 export function resetRedisClientForTests(): void {
   client = undefined;
+  connecting = undefined;
 }

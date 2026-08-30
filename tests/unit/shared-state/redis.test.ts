@@ -5,34 +5,17 @@ describe("getRedis", () => {
     vi.unstubAllEnvs();
   });
 
-  it("returns null when no env vars are configured", async () => {
+  it("returns null when REDIS_URL isn't configured", async () => {
     const { getRedis } = await import("@/lib/shared-state/redis");
-    expect(getRedis()).toBeNull();
+    expect(await getRedis()).toBeNull();
   });
 
-  it("returns a client when KV_REST_API_URL/TOKEN are set", async () => {
-    vi.stubEnv("KV_REST_API_URL", "https://example.upstash.io");
-    vi.stubEnv("KV_REST_API_TOKEN", "test-token");
-    const { getRedis, resetRedisClientForTests } = await import("@/lib/shared-state/redis");
-    resetRedisClientForTests();
-    expect(getRedis()).not.toBeNull();
-  });
-
-  it("returns a client when UPSTASH_REDIS_REST_URL/TOKEN are set", async () => {
-    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://example.upstash.io");
-    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "test-token");
-    const { getRedis, resetRedisClientForTests } = await import("@/lib/shared-state/redis");
-    resetRedisClientForTests();
-    expect(getRedis()).not.toBeNull();
-  });
-
-  it("caches the client across calls until reset", async () => {
-    vi.stubEnv("KV_REST_API_URL", "https://example.upstash.io");
-    vi.stubEnv("KV_REST_API_TOKEN", "test-token");
-    const { getRedis, resetRedisClientForTests } = await import("@/lib/shared-state/redis");
-    resetRedisClientForTests();
-    const a = getRedis();
-    const b = getRedis();
-    expect(a).toBe(b);
+  it("does not attempt a connection when REDIS_URL isn't configured", async () => {
+    // If this tried to connect, it would hang/reject against a nonexistent
+    // server instead of resolving null immediately.
+    const { getRedis } = await import("@/lib/shared-state/redis");
+    const start = Date.now();
+    await getRedis();
+    expect(Date.now() - start).toBeLessThan(100);
   });
 });

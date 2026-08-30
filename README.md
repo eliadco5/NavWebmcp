@@ -355,7 +355,7 @@ Every call — agent-initiated or UI-initiated — is recorded with tool name, s
 
 By default every store (reservations, CRM, tasks, housekeeping, finance, the audit log) is in-memory per process — fine for `npm run dev`, but on Vercel each serverless instance has its own memory, so an MCP-driven write and a browser's poll can land on different instances and never see each other's data.
 
-To fix this on a real deployment, add **Upstash for Redis** via the Vercel Marketplace (Project → Storage → Marketplace Database Providers), connected to Production/Preview/Development. That auto-injects `KV_REST_API_URL` / `KV_REST_API_TOKEN`, which `lib/shared-state/` picks up automatically — no code changes needed. Without it, the app transparently falls back to today's in-memory behavior; this is why `npm test` and local dev need zero setup.
+To fix this on a real deployment, add a Redis database via the Vercel Marketplace (Project → Storage → Marketplace Database Providers) and connect it to Production/Preview/Development. That injects a `REDIS_URL` connection string, which `lib/shared-state/` (built on `node-redis`) picks up automatically — no code changes needed. Without it, the app transparently falls back to today's in-memory behavior; this is why `npm test` and local dev need zero setup. `vercel env pull .env.development.local` will only pick this up if the integration is also connected to the Development environment, not just Production.
 
 ### Gather-first, ask-once — context, capabilities, and instructions
 
