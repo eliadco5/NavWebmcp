@@ -1,7 +1,11 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { registry } from "@/lib/operations/registry";
+// Import from the index, not "./registry" directly — the index is what runs
+// registry.push(...) as a side effect. Importing the bare module here would read
+// an empty array unless some unrelated route happened to import the index first
+// in the same process (and never, once each route bundles independently).
+import { registry } from "@/lib/operations";
 import { auditLog } from "@/lib/auditlog";
 import { fail } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
