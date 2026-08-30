@@ -32,3 +32,4 @@ docs/social/
 
 # Local screen recordings — large binaries, not part of the repo
 docs/live-demo/
+.env*

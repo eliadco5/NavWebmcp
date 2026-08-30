@@ -6,6 +6,7 @@ import type { Role } from "@/lib/auth";
 import { userForToken } from "@/lib/auth-tokens";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
+import { withSharedState } from "@/lib/shared-state";
 
 // mcp-handler needs the Node runtime (lib/adapters/mcp.ts uses AsyncLocalStorage
 // from async_hooks) — don't let this get inferred to edge.
@@ -62,7 +63,13 @@ function getToken(req: Request): string | undefined {
   return (req as any).auth?.token as string | undefined;
 }
 
-const mcpHandlerWithRole = withMcpAuthRole(mcpHandler, getRole, getToken);
+// withSharedState wraps mcpHandler specifically (not withMcpAuthRole as a
+// whole): mcpHandler is what runs registerMcpTools (which reads getLoaded(token)
+// — needs Redis-backed state hydrated first) and op.handler (which writes it) —
+// see lib/adapters/mcp.ts. createMcpHandler awaits its initializer before
+// touching the transport, so hydrate-before/flush-after here brackets the
+// entire per-request lifecycle correctly with no change to lib/adapters/mcp.ts.
+const mcpHandlerWithRole = withMcpAuthRole(withSharedState(mcpHandler), getRole, getToken);
 
 // No resourceUrl here: mcp-handler builds the metadata URL as `${resourceUrl}${path}`,
 // so passing the full MCP_RESOURCE (".../api/mcp") produces a malformed

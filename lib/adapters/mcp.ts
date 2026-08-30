@@ -10,6 +10,7 @@ import { auditLog } from "@/lib/auditlog";
 import { fail } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { getLoaded } from "@/lib/loadedTools";
+import { flushCurrentSharedState } from "@/lib/shared-state";
 import type { Role } from "@/lib/auth";
 
 interface McpContext {
@@ -69,34 +70,46 @@ export function registerMcpTools(server: McpServer) {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (input: Record<string, unknown>, extra: any) => {
-        const userId: string | undefined = extra?.authInfo?.extra?.userId;
-        const role: Role | undefined = extra?.authInfo?.extra?.role;
-
-        if (!userId || !role) {
-          const err = fail("UNAUTHENTICATED", "A valid user token is required.");
-          auditLog.record(op.name, input, false, "agent", err.error);
-          return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
-        }
-
-        // Defense-in-depth: re-check role on every call
-        if (!roleSatisfies(role, op.roles)) {
-          const err = fail("FORBIDDEN", `Role '${role}' is not permitted to call '${op.name}'.`);
-          auditLog.record(op.name, input, false, "agent", err.error);
-          return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
-        }
-
+        // mcp-handler's Streamable HTTP transport resolves the route's own
+        // Response before this callback finishes running (the body is a
+        // stream, and the tool call executes as part of writing to it) — so
+        // withSharedState's wrapper-level flush (app/api/[transport]/route.ts)
+        // can fire before the mutation below happens. flushCurrentSharedState()
+        // here flushes at the moment completion is actually known, using the
+        // AsyncLocalStorage baseline that survives this same async boundary
+        // (mcpContext, right below, already relies on the same guarantee).
         try {
-          const bearerToken: string = extra?.authInfo?.token ?? "";
-          const result = await op.handler(input, { userId, role, token: bearerToken });
-          auditLog.record(op.name, input, result.success, "agent", result.success ? result.data : result.error);
-          if (result.success) {
-            return { content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }] };
-          } else {
-            return { content: [{ type: "text" as const, text: JSON.stringify(result.error, null, 2) }], isError: true };
+          const userId: string | undefined = extra?.authInfo?.extra?.userId;
+          const role: Role | undefined = extra?.authInfo?.extra?.role;
+
+          if (!userId || !role) {
+            const err = fail("UNAUTHENTICATED", "A valid user token is required.");
+            auditLog.record(op.name, input, false, "agent", err.error);
+            return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
           }
-        } catch (err) {
-          auditLog.record(op.name, input, false, "agent", { code: "HANDLER_ERROR", message: String(err) });
-          return { content: [{ type: "text" as const, text: String(err) }], isError: true };
+
+          // Defense-in-depth: re-check role on every call
+          if (!roleSatisfies(role, op.roles)) {
+            const err = fail("FORBIDDEN", `Role '${role}' is not permitted to call '${op.name}'.`);
+            auditLog.record(op.name, input, false, "agent", err.error);
+            return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
+          }
+
+          try {
+            const bearerToken: string = extra?.authInfo?.token ?? "";
+            const result = await op.handler(input, { userId, role, token: bearerToken });
+            auditLog.record(op.name, input, result.success, "agent", result.success ? result.data : result.error);
+            if (result.success) {
+              return { content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }] };
+            } else {
+              return { content: [{ type: "text" as const, text: JSON.stringify(result.error, null, 2) }], isError: true };
+            }
+          } catch (err) {
+            auditLog.record(op.name, input, false, "agent", { code: "HANDLER_ERROR", message: String(err) });
+            return { content: [{ type: "text" as const, text: String(err) }], isError: true };
+          }
+        } finally {
+          await flushCurrentSharedState();
         }
       }
     );

@@ -351,6 +351,12 @@ Every operation carries a `roles` array checked on every call. Three roles exist
 
 Every call — agent-initiated or UI-initiated — is recorded with tool name, success/failure, and caller type. The last 100 entries are polled by the UI from `/api/audit` every 4 seconds (SSE doesn't survive Vercel's serverless model — see `app/providers.tsx`).
 
+### Shared state on Vercel (optional)
+
+By default every store (reservations, CRM, tasks, housekeeping, finance, the audit log) is in-memory per process — fine for `npm run dev`, but on Vercel each serverless instance has its own memory, so an MCP-driven write and a browser's poll can land on different instances and never see each other's data.
+
+To fix this on a real deployment, add a Redis database via the Vercel Marketplace (Project → Storage → Marketplace Database Providers) and connect it to Production/Preview/Development. That injects a `REDIS_URL` connection string, which `lib/shared-state/` (built on `node-redis`) picks up automatically — no code changes needed. Without it, the app transparently falls back to today's in-memory behavior; this is why `npm test` and local dev need zero setup. `vercel env pull .env.development.local` will only pick this up if the integration is also connected to the Development environment, not just Production.
+
 ### Gather-first, ask-once — context, capabilities, and instructions
 
 Three protocol features work together to give the agent everything it needs before it says a word to the user:

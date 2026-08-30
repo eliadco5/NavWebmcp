@@ -17,12 +17,13 @@ export interface Reservation {
   userId: string;
 }
 
-export type StoreEvent =
-  | { type: "reservation.created"; reservation: Reservation }
-  | { type: "reservation.cancelled"; reservationId: string }
-  | { type: "availability.changed"; slotId: string; available: boolean };
-
-type Listener = (event: StoreEvent) => void;
+export interface BookingStoreSnapshot {
+  reservations: Reservation[];
+  /** Ids of slots currently unavailable. Everything else is available by
+   *  construction — see snapshot()/restore() below for why the slot window
+   *  itself is never persisted. */
+  taken: string[];
+}
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -53,7 +54,6 @@ function slotId(date: string, time: string): string {
 class BookingStore {
   private slots = new Map<string, Slot>();
   private reservations: Reservation[] = [];
-  private listeners: Listener[] = [];
 
   /** Seed the 5 daily time slots for `date` if they don't exist yet. Idempotent
    *  and cheap — safe to call on every read. */
@@ -76,17 +76,6 @@ class BookingStore {
       date.setDate(start.getDate() + d);
       this.ensureDate(date.toISOString().slice(0, 10));
     }
-  }
-
-  on(listener: Listener): () => void {
-    this.listeners.push(listener);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== listener);
-    };
-  }
-
-  private emit(event: StoreEvent) {
-    for (const l of this.listeners) l(event);
   }
 
   getSlots(): Slot[] {
@@ -140,9 +129,6 @@ class BookingStore {
     slot.available = false;
     this.reservations.push(reservation);
 
-    this.emit({ type: "reservation.created", reservation });
-    this.emit({ type: "availability.changed", slotId, available: false });
-
     return reservation;
   }
 
@@ -156,11 +142,6 @@ class BookingStore {
 
     const slot = this.getSlot(reservation.slotId);
     if (slot) slot.available = true;
-
-    this.emit({ type: "reservation.cancelled", reservationId: id });
-    if (slot) {
-      this.emit({ type: "availability.changed", slotId: slot.id, available: true });
-    }
 
     return "ok";
   }
@@ -179,10 +160,31 @@ class BookingStore {
     const slot = this.getSlot(reservation.slotId);
     if (slot) slot.available = true;
 
-    this.emit({ type: "reservation.cancelled", reservationId: id });
-    if (slot) this.emit({ type: "availability.changed", slotId: slot.id, available: true });
-
     return "ok";
+  }
+
+  /** For lib/shared-state. Deliberately does NOT snapshot `slots` — it's a
+   *  rolling 7-day window regenerated deterministically from today's date (see
+   *  ensureWindow/ensureDate above), so persisting it would resurrect a stale
+   *  window on a cold instance days later. Only reservations plus which slot
+   *  ids they hold need to travel; ensureDate's self-heal rebuilds the rest. */
+  snapshot(): BookingStoreSnapshot {
+    const taken = Array.from(this.slots.values())
+      .filter((s) => !s.available)
+      .map((s) => s.id);
+    return { reservations: [...this.reservations], taken };
+  }
+
+  /** Restore IN PLACE — every module that imported `store` at load time holds this
+   *  same object reference, so replacing it here would leave them stale. */
+  restore(data: BookingStoreSnapshot): void {
+    this.reservations.length = 0;
+    this.reservations.push(...data.reservations);
+    for (const slot of this.slots.values()) slot.available = true;
+    for (const id of data.taken) {
+      const slot = this.getSlot(id); // getSlot() self-heals via ensureDate
+      if (slot) slot.available = false;
+    }
   }
 }
 

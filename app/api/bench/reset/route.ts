@@ -1,4 +1,5 @@
 import { resetAllSeedStores } from "@/lib/seed";
+import { withSharedState } from "@/lib/shared-state";
 
 // Re-seeds every operations store (CRM, tasks, housekeeping, finance,
 // front-office) to its initial demo state, in place. Two callers:
@@ -12,11 +13,15 @@ import { resetAllSeedStores } from "@/lib/seed";
 // visitor become admin with one click, so an admin-only check here would be
 // theatre, not security. This route only restores in-memory seed data — it
 // cannot destroy anything a real deployment would care about.
-export async function POST() {
+export const POST = withSharedState(async function POST() {
   if (process.env.DEMO_MODE === "false") {
     return Response.json({ success: false, error: { code: "FORBIDDEN", message: "Disabled." } }, { status: 404 });
   }
 
+  // Wrapped in withSharedState so the freshly reseeded data (not the stale
+  // hydrated-from-Redis data resetAllSeedStores() just overwrote) is what gets
+  // flushed back. booking/audit/loaded aren't touched by resetAllSeedStores(),
+  // so their snapshots won't have changed and flush skips writing them.
   resetAllSeedStores();
   return Response.json({ success: true });
-}
+});

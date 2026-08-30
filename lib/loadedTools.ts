@@ -49,3 +49,25 @@ export function removeLoaded(token: string, names: string[]): void {
 export function clearLoaded(token: string): void {
   store.entries.delete(token);
 }
+
+export type LoadedToolsSnapshot = [string, { names: string[]; touchedAt: number }][];
+
+/** For lib/shared-state. Sets aren't JSON-serializable, hence the array conversion. */
+export function snapshotLoaded(): LoadedToolsSnapshot {
+  return [...store.entries].map(([token, entry]) => [
+    token,
+    { names: [...entry.names], touchedAt: entry.touchedAt },
+  ]);
+}
+
+/** Restore IN PLACE — mirrors the reset-in-place contract used throughout lib/seed.
+ *  Applies the same 24h GC on the way in so a snapshot that sat in Redis past its
+ *  TTL doesn't resurrect tokens that should already be gone. */
+export function restoreLoaded(data: LoadedToolsSnapshot): void {
+  store.entries.clear();
+  const cutoff = Date.now() - GC_TTL_MS;
+  for (const [token, entry] of data) {
+    if (entry.touchedAt <= cutoff) continue;
+    store.entries.set(token, { names: new Set(entry.names), touchedAt: entry.touchedAt });
+  }
+}
