@@ -410,18 +410,26 @@ State is in-memory — resets on server restart.
 
 ### Connect an agent
 
+The MCP endpoint requires a bearer token (RFC 8707 audience-bound, 8-hour TTL — see
+the "MCP HTTP authentication" row in the table further down). Open the app, sign in,
+and copy your agent token from the "Connect an AI Agent" card — it'll need refreshing
+from there once it expires.
+
 **Claude Code:**
 
 ```bash
-claude mcp add --transport http booking http://localhost:3000/api/mcp
+claude mcp add --transport http booking http://localhost:3000/api/mcp \
+  --header "Authorization: Bearer <your-agent-token>"
 ```
 
-Or add to `.mcp.json` (already included in this repo):
+`.mcp.json` (already included in this repo) omits the header on purpose — a static
+token would go stale and can't be committed per-user — so `claude mcp add` (or editing
+the header in manually) is the supported path:
 
 ```json
 {
   "mcpServers": {
-    "agentbridge": {
+    "agentbridge-booking": {
       "type": "http",
       "url": "http://localhost:3000/api/mcp"
     }
@@ -431,7 +439,7 @@ Or add to `.mcp.json` (already included in this repo):
 
 Then ask: *"Book me a table for 2 tomorrow evening"*
 
-**Claude Desktop:** Settings → Connectors → Add custom connector → `http://localhost:3000/api/mcp`
+**Claude Desktop:** Settings → Connectors → Add custom connector → `http://localhost:3000/api/mcp`, then add the `Authorization: Bearer <token>` header.
 
 **MCP Inspector:**
 
