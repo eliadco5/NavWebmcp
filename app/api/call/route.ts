@@ -3,12 +3,14 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { registry } from "@/lib/operations";
 import { auditLog } from "@/lib/auditlog";
-import { userForSession, roleSatisfies, SESSION_COOKIE } from "@/lib/auth";
+import { roleSatisfies } from "@/lib/auth";
+import { getOrProvisionUser } from "@/lib/auth-tokens";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  const user = sessionId ? userForSession(sessionId) : null;
+  const { user } = getOrProvisionUser(cookieStore);
   if (!user) {
     return Response.json(
       { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },
@@ -48,7 +50,8 @@ export async function POST(req: NextRequest) {
 
   const result = await op.handler(parsed.data, { userId: user.id, role: user.role, token: "" });
   const success = (result as { success?: boolean }).success !== false;
-  auditLog.record(name, params ?? {}, success, "ui");
+  const output = success ? (result as { data?: unknown }).data : (result as { error?: unknown }).error;
+  auditLog.record(name, params ?? {}, success, "ui", output);
 
   return Response.json(result);
 }

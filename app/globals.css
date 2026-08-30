@@ -52,3 +52,54 @@ input:focus, select:focus { outline: 2px solid #4f46e5; outline-offset: 1px; }
 .badge-err   { background: #fee2e2; color: #991b1b; }
 .badge-ui    { background: #ede9fe; color: #5b21b6; }
 .badge-agent { background: #f0fdf4; color: #166534; }
+
+/* Layout primitives shared by AppShell and every panel. Added so the app works
+   in a phone-sized webview (the ChatGPT in-app browser) without a JS-driven
+   media query hook — a hook needs useEffect, so first paint is always wrong
+   and visibly flashes. */
+.container { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+.app-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+}
+
+/* Replaces the old hardcoded gridTemplateColumns: "1fr 1fr" — collapses to one
+   column under 640px with zero JS. */
+.grid-2 {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px; align-items: start;
+}
+.col { display: flex; flex-direction: column; gap: 24px; }
+
+/* Tab strip: scrolls sideways on a phone instead of wrapping and reflowing. */
+.tabs {
+  display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; padding-bottom: 8px; margin-bottom: 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 0 0 auto; font-size: 13px; padding: 6px 14px; border-radius: 99px;
+  background: #f3f4f6; color: #374151; white-space: nowrap;
+}
+.tab[aria-selected="true"] { background: #4f46e5; color: #fff; }
+
+/* The canonical list row, extracted out of the half-dozen places that used to
+   inline this exact style object. */
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; background: #f9fafb; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 10px 14px;
+}
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+
+@media (max-width: 640px) {
+  .container { padding: 16px 12px; }
+  .grid-2 { gap: 16px; }
+  .col { gap: 16px; }
+  .card { padding: 16px; }
+  /* iOS WKWebView (the ChatGPT in-app browser) zooms the viewport on focus for
+     any input under 16px — this is the fix. */
+  input, select, textarea { font-size: 16px; }
+  button { min-height: 40px; }
+}

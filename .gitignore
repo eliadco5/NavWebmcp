@@ -20,3 +20,15 @@ Thumbs.db
 
 # social media drafts/assets — not part of the app
 docs/social/
+
+# TypeScript incremental build cache — machine-specific, shouldn't be committed
+*.tsbuildinfo
+
+# Vercel CLI local state
+.vercel
+
+# Codex CLI local config — machine-specific, not app config
+.codex/
+
+# Local screen recordings — large binaries, not part of the repo
+docs/live-demo/

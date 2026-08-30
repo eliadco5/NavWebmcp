@@ -2,15 +2,28 @@
 
 import { useEffect, useRef, createContext, useContext, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { StoreEvent } from "@/lib/store";
 import type { AuditEntry } from "@/lib/auditlog";
-import { installWebMCPPolyfill } from "@/lib/webmcp-polyfill";
+import { getModelContext } from "@/lib/webmcp-polyfill";
+import type { ModelContextLike, ModelContextTool } from "@/lib/webmcp-polyfill";
 import { book } from "@/lib/ui-tools/book";
 import { seatGuest } from "@/lib/ui-tools/seatGuest";
 import { hostVipGuest } from "@/lib/ui-tools/hostVipGuest";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { registry } from "@/lib/operations";
+
+// Module-scoped, not component state: this only needs to survive React
+// StrictMode's double-invoked effects in dev (which used to be handled by
+// checking `mc.getTools().some(...)` — a polyfill-only method). A plain Set
+// does the same dedupe job without requiring any introspection API, so it
+// works identically against a native ModelContext that has no getTools() at all.
+const registeredTools = new Set<string>();
+
+function registerToolOnce(mc: ModelContextLike, tool: ModelContextTool): void {
+  if (registeredTools.has(tool.name)) return;
+  registeredTools.add(tool.name);
+  void mc.registerTool(tool);
+}
 
 interface AuthUser {
   id: string;
@@ -28,31 +41,34 @@ export async function serverCall(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, params }),
   });
-  if (res.status === 401) {
-    window.location.href = "/login";
-    return { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } };
-  }
+  // No redirect-to-/login on 401 here: /api/call auto-provisions an alice/customer
+  // session for any visitor with none (see getOrProvisionUser in lib/auth.ts), so a
+  // 401 now only means DEMO_MODE=false with a genuinely absent/expired session —
+  // in which case bouncing every failed call to /login would be the wrong UX for
+  // what's meant to be a one-off escape hatch, not the default flow.
   return res.json();
 }
 
 interface BridgeContextValue {
   call: (name: string, params?: Record<string, unknown>) => Promise<unknown>;
-  storeEvents: StoreEvent[];
+  storeVersion: number;
   auditEntries: AuditEntry[];
   confirmPending: { name: string; input: Record<string, unknown>; resolve: (v: boolean) => void } | null;
   user: AuthUser | null;
   agentToken: string | null;
   logout: () => Promise<void>;
+  switchRole: (role: "customer" | "support" | "admin") => Promise<void>;
 }
 
 const BridgeContext = createContext<BridgeContextValue>({
   call: serverCall,
-  storeEvents: [],
+  storeVersion: 0,
   auditEntries: [],
   confirmPending: null,
   user: null,
   agentToken: null,
   logout: async () => {},
+  switchRole: async () => {},
 });
 
 export function useBridge() {
@@ -63,40 +79,54 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [agentToken, setAgentToken] = useState<string | null>(null);
-  const [storeEvents, setStoreEvents] = useState<StoreEvent[]>([]);
+  const [storeVersion, setStoreVersion] = useState(0);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [confirmPending, setConfirmPending] = useState<BridgeContextValue["confirmPending"]>(null);
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
+  const lastAuditIdRef = useRef<string | null>(null);
 
-  // Auth check on mount
+  // Auth check on mount. /api/me auto-provisions an alice/customer session for a
+  // first-time visitor (see getOrProvisionUser), so this normally never 401s — a
+  // judge landing on the URL is signed in with zero clicks. A 401 only happens
+  // with DEMO_MODE=false and no session; that's left as a silent no-op rather than
+  // a redirect loop, since /login remains reachable directly.
   useEffect(() => {
     fetch("/api/me")
       .then(async (r) => {
-        if (r.status === 401) {
-          router.replace("/login");
-          return;
-        }
         const data = await r.json();
         if (data.success) {
           setUser(data.user);
           setAgentToken(data.agentToken);
         }
       })
-      .catch(() => router.replace("/login"));
-  }, [router]);
+      .catch(() => {});
+  }, []);
 
-  // Register the composite `book` and `seatGuest` tools into document.modelContext once the
-  // user is known. The same functions are used by the UI buttons — one code path, business
-  // logic in the page.
+  // Register the composite `book` and `seatGuest` tools into the live ModelContext
+  // once the user is known. The same functions are used by the UI buttons — one
+  // code path, business logic in the page.
+  //
+  // Everything in this effect is wrapped in try/catch and guarded by feature
+  // detection: `document.modelContext` may be a NATIVE WebMCP implementation
+  // (Chrome with the flag on, or eventually shipped by default) rather than the
+  // polyfill, and a native object doesn't have `getTools()`/`executeTool()` (see
+  // lib/webmcp-polyfill.ts) and may reject the non-spec `instructions`/
+  // `protocolVersion` extensions outright. Before this guarded, a native
+  // implementation made `mc.getTools()` throw a TypeError inside this effect —
+  // i.e. the exact browser surface this app is supposed to demo would blank the
+  // whole page.
   useEffect(() => {
     if (!user) return;
-    installWebMCPPolyfill();
-    const mc = document.modelContext;
-    mc.protocolVersion = PROTOCOL_VERSION;
-    mc.instructions ??= AGENT_INSTRUCTIONS;
+    try {
+      const mc = getModelContext();
+      try {
+        mc.protocolVersion = PROTOCOL_VERSION;
+        mc.instructions ??= AGENT_INSTRUCTIONS;
+      } catch {
+        // Non-spec extensions; a native implementation is allowed to reject them.
+      }
 
-    if (!mc.getTools().some((t) => t.name === "book")) {
-      mc.registerTool({
+      registerToolOnce(mc, {
         name: "book",
         title: "Book a Table",
         description:
@@ -115,52 +145,54 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
         execute: (input) => book(input as unknown as Parameters<typeof book>[0]),
       });
-    }
 
-    if ((user.role === "support" || user.role === "admin") && !mc.getTools().some((t) => t.name === "seatGuest")) {
-      mc.registerTool({
-        name: "seatGuest",
-        title: "Seat Guest",
-        description:
-          "Seat a guest in ONE step: confirms a table is available, checks the reservation in, " +
-          "and validates the seating. Prefer this over calling " +
-          "getOccupancy + checkInGuest separately.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            reservationId: { type: "string", description: "Reservation ID to check in" },
-            tableId: { type: "string", description: "Table to assign; if omitted an available table with sufficient capacity is auto-assigned" },
+      if (user.role === "support" || user.role === "admin") {
+        registerToolOnce(mc, {
+          name: "seatGuest",
+          title: "Seat Guest",
+          description:
+            "Seat a guest in ONE step: confirms a table is available, checks the reservation in, " +
+            "and validates the seating. Prefer this over calling " +
+            "getOccupancy + checkInGuest separately.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              reservationId: { type: "string", description: "Reservation ID to check in" },
+              tableId: { type: "string", description: "Table to assign; if omitted an available table with sufficient capacity is auto-assigned" },
+            },
+            required: ["reservationId"],
           },
-          required: ["reservationId"],
-        },
-        execute: (input) => seatGuest(input as unknown as Parameters<typeof seatGuest>[0]),
-      });
-    }
+          execute: (input) => seatGuest(input as unknown as Parameters<typeof seatGuest>[0]),
+        });
 
-    // hostVipGuest has no UI button — the CRM domain has no screens in this app —
-    // but it's still registered so the WebMCP surface (and the benchmark's lane C)
-    // can call it as a real in-page function, same as book and seatGuest.
-    if ((user.role === "support" || user.role === "admin") && !mc.getTools().some((t) => t.name === "hostVipGuest")) {
-      mc.registerTool({
-        name: "hostVipGuest",
-        title: "Host VIP Guest",
-        description:
-          "Host a VIP guest's visit in ONE step: reads their preferences and loyalty status, " +
-          "seats them, awards loyalty points for the visit, and logs a visit note. Prefer this over " +
-          "calling getGuestPreferences + getLoyaltyStatus + getOccupancy + checkInGuest + " +
-          "getCheckinStatus + addLoyaltyPoints + logCommunication separately.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            reservationId: { type: "string", description: "Reservation ID to check in" },
-            guestId: { type: "string", description: "The unique guest identifier" },
-            pointsToAward: { type: "number", description: "Loyalty points to award for this visit" },
-            visitNote: { type: "string", description: "Note describing the visit" },
+        // hostVipGuest has no UI button — the CRM domain has no screens in this app —
+        // but it's still registered so the WebMCP surface (and the benchmark's lane C)
+        // can call it as a real in-page function, same as book and seatGuest.
+        registerToolOnce(mc, {
+          name: "hostVipGuest",
+          title: "Host VIP Guest",
+          description:
+            "Host a VIP guest's visit in ONE step: reads their preferences and loyalty status, " +
+            "seats them, awards loyalty points for the visit, and logs a visit note. Prefer this over " +
+            "calling getGuestPreferences + getLoyaltyStatus + getOccupancy + checkInGuest + " +
+            "getCheckinStatus + addLoyaltyPoints + logCommunication separately.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              reservationId: { type: "string", description: "Reservation ID to check in" },
+              guestId: { type: "string", description: "The unique guest identifier" },
+              pointsToAward: { type: "number", description: "Loyalty points to award for this visit" },
+              visitNote: { type: "string", description: "Note describing the visit" },
+            },
+            required: ["reservationId", "guestId", "pointsToAward", "visitNote"],
           },
-          required: ["reservationId", "guestId", "pointsToAward", "visitNote"],
-        },
-        execute: (input) => hostVipGuest(input as unknown as Parameters<typeof hostVipGuest>[0]),
-      });
+          execute: (input) => hostVipGuest(input as unknown as Parameters<typeof hostVipGuest>[0]),
+        });
+      }
+    } catch (err) {
+      // A spec-drifted or unexpectedly strict native implementation should degrade
+      // tool registration, not blank the page.
+      console.warn("WebMCP tool registration failed:", err);
     }
 
     // Expose on window for console inspection (mirrors README pattern)
@@ -171,32 +203,62 @@ export function Providers({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
-  // Load initial audit log entries
+  // Poll the audit log rather than subscribing to SSE — see the comment in
+  // call() above for why SSE doesn't work on Vercel for this app. Polling every
+  // 4s while the tab is visible is the honest fix, not a downgrade: it's
+  // reliable across serverless instances, which the old stream never was.
+  //
+  // This is ALSO the only way data panels learn about agent-initiated writes.
+  // The bump inside call() below only fires for calls that went through this
+  // browser tab's own UI — an agent hitting /api/mcp directly (a different
+  // process, possibly a different serverless instance) never touches that
+  // code path. Diffing the audit log against the last-seen entry id and
+  // bumping storeVersion when a new *write* shows up is what makes "an agent
+  // just booked a table" show up in My Reservations without a manual refresh.
   useEffect(() => {
-    fetch("/api/audit")
-      .then(r => r.ok ? r.json() : null)
-      .then((data: AuditEntry[] | null) => {
-        if (data) setAuditEntries(data);
-      })
-      .catch(() => {});
-  }, []);
+    if (!user) return;
+    let cancelled = false;
 
-  // Subscribe to server-sent events
-  useEffect(() => {
-    const es = new EventSource("/api/events");
+    const fetchAudit = async () => {
+      if (document.hidden) return; // don't burn invocations on a backgrounded tab
+      try {
+        const res = await fetch("/api/audit");
+        if (!res.ok) return;
+        const data: AuditEntry[] = await res.json();
+        if (cancelled) return;
+        setAuditEntries(data);
 
-    es.addEventListener("store", (e) => {
-      const event = JSON.parse(e.data) as StoreEvent;
-      setStoreEvents((prev) => [event, ...prev].slice(0, 50));
-    });
+        const latest = data[0];
+        if (latest && latest.id !== lastAuditIdRef.current) {
+          if (lastAuditIdRef.current !== null) {
+            // Entries newer than the last-seen id, oldest first, so a burst of
+            // several calls between polls is still evaluated one by one.
+            const previousId = lastAuditIdRef.current;
+            const newEntries = [];
+            for (const entry of data) {
+              if (entry.id === previousId) break;
+              newEntries.push(entry);
+            }
+            const hasWrite = newEntries.some((e) => {
+              const op = registry.find((o) => o.name === e.operation);
+              return op?.permission === "write";
+            });
+            if (hasWrite) setStoreVersion((v) => v + 1);
+          }
+          lastAuditIdRef.current = latest.id;
+        }
+      } catch {
+        // transient network error — the next poll will retry
+      }
+    };
 
-    es.addEventListener("audit", (e) => {
-      const entry = JSON.parse(e.data) as AuditEntry;
-      setAuditEntries((prev) => [entry, ...prev].slice(0, 50));
-    });
-
-    return () => es.close();
-  }, []);
+    fetchAudit();
+    const interval = setInterval(fetchAudit, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user]);
 
   const handleConfirmation = useCallback(
     (name: string, input: Record<string, unknown>): Promise<boolean> => {
@@ -222,7 +284,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
         return { success: false, error: { code: "CONFIRMATION_DENIED", message: "User denied the action." } };
       }
     }
-    return serverCall(name, params);
+    const result = await serverCall(name, params);
+    // Bump storeVersion after a successful write so every panel watching it
+    // refetches — this is what used to be the SSE "store" event stream. SSE
+    // never worked on Vercel for this: no `maxDuration` on the route meant the
+    // connection was killed by the default function timeout every ~10-15s
+    // (EventSource just reconnects in a loop, each reconnect a billable
+    // invocation), and even a live connection only saw mutations from calls
+    // that happened to land on the SAME serverless instance as the stream.
+    // Bumping this on the instance that just handled the write is strictly
+    // more reliable than that server-push ever was.
+    const success = (result as { success?: boolean } | null)?.success !== false;
+    if (success && op?.permission === "write") {
+      setStoreVersion((v) => v + 1);
+    }
+    return result;
   }, [handleConfirmation]);
 
   const logout = useCallback(async () => {
@@ -232,8 +308,24 @@ export function Providers({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }, [router]);
 
+  // Demo-mode role switcher — re-mints the session cookie with the SAME userId and
+  // a new role (see app/api/switch-role/route.ts). Deliberately unauthenticated;
+  // exists so a judge can reach every role in one tap with no credentials.
+  const switchRole = useCallback(async (role: "customer" | "support" | "admin") => {
+    const res = await fetch("/api/switch-role", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setUser(data.user);
+      setAgentToken(data.agentToken);
+    }
+  }, []);
+
   return (
-    <BridgeContext.Provider value={{ call, storeEvents, auditEntries, confirmPending, user, agentToken, logout }}>
+    <BridgeContext.Provider value={{ call, storeVersion, auditEntries, confirmPending, user, agentToken, logout, switchRole }}>
       {children}
       {confirmPending && (
         <ConfirmationDialog

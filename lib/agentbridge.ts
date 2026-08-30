@@ -1,6 +1,7 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
-import { installWebMCPPolyfill } from "./webmcp-polyfill";
+import { getModelContext } from "./webmcp-polyfill";
+import type { ModelContextLike } from "./webmcp-polyfill";
 import type { StoreEvent } from "./store";
 import { auditLog } from "./auditlog";
 import type { OperationContext } from "./operations/types";
@@ -39,17 +40,25 @@ export class AgentBridge {
   private confirmationHandler: ConfirmationHandler;
   private getUserId: () => string | null;
   private getUserRole: () => Role | null;
+  private mc: ModelContextLike;
 
   constructor(options: AgentBridgeOptions = {}) {
-    installWebMCPPolyfill();
+    // getModelContext() prefers a native implementation over the polyfill and
+    // only installs the polyfill as a fallback — see lib/webmcp-polyfill.ts.
+    this.mc = getModelContext();
     this.confirmationHandler =
       options.onConfirmation ?? (() => Promise.resolve(true));
     this.getUserId = options.getUserId ?? (() => null);
     this.getUserRole = options.getUserRole ?? (() => null);
-    if (options.instructions !== undefined) {
-      document.modelContext.instructions = options.instructions;
+    try {
+      if (options.instructions !== undefined) {
+        this.mc.instructions = options.instructions;
+      }
+      this.mc.protocolVersion = PROTOCOL_VERSION;
+    } catch {
+      // instructions/protocolVersion are AgentBridge extensions, not spec —
+      // a native implementation is allowed to reject them.
     }
-    document.modelContext.protocolVersion = PROTOCOL_VERSION;
   }
 
   register(reg: AgentBridgeRegistration): void {
@@ -63,7 +72,7 @@ export class AgentBridge {
       $refStrategy: "none",
     });
 
-    document.modelContext.registerTool({
+    void this.mc.registerTool({
       name: reg.name,
       title: reg.title,
       description: reg.description,
@@ -112,18 +121,17 @@ export class AgentBridge {
     if (reg.requiresConfirmation) {
       const approved = await this.confirmationHandler(name, input);
       if (!approved) {
-        auditLog.record(name, input, false, "ui");
-        return {
-          success: false,
-          error: { code: "CONFIRMATION_DENIED", message: "User denied the action." },
-        };
+        const denial = { code: "CONFIRMATION_DENIED", message: "User denied the action." };
+        auditLog.record(name, input, false, "ui", denial);
+        return { success: false, error: denial };
       }
     }
 
     const ctx: OperationContext = { userId, role, token: "" };
     const result = await reg.handler(parsed.data as Record<string, unknown>, ctx);
     const success = (result as { success?: boolean }).success !== false;
-    auditLog.record(name, input, success, "ui");
+    const output = success ? (result as { data?: unknown }).data : (result as { error?: unknown }).error;
+    auditLog.record(name, input, success, "ui", output);
     return result;
   }
 

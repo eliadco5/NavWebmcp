@@ -1,10 +1,10 @@
 import { Providers } from "./providers";
-import { BookingApp } from "@/components/BookingApp";
+import { AppShell } from "@/components/AppShell";
 
 export default function Home() {
   return (
     <Providers>
-      <BookingApp />
+      <AppShell />
     </Providers>
   );
 }

@@ -1,10 +1,18 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
-import { userForToken, scopesForRole, MCP_RESOURCE } from "@/lib/auth";
+import { scopesForRole } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
+import { userForToken } from "@/lib/auth-tokens";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
+
+// mcp-handler needs the Node runtime (lib/adapters/mcp.ts uses AsyncLocalStorage
+// from async_hooks) — don't let this get inferred to edge.
+export const runtime = "nodejs";
+// Vercel's own function timeout. NOT the same as the `maxDuration` in the 3rd
+// config object below, which is mcp-handler's internal SSE poll timer.
+export const maxDuration = 60;
 
 const mcpHandler = createMcpHandler(
   (server) => {
@@ -20,6 +28,11 @@ const mcpHandler = createMcpHandler(
   {
     basePath: "/api",
     maxDuration: 60,
+    // Passing this config object at all replaces mcp-handler's own default
+    // (which would fall back to REDIS_URL/KV_URL and disableSse:false) — so
+    // without this flag, GET /api/sse throws "redisUrl is required" (500).
+    // Streamable HTTP (POST /api/mcp) doesn't use Redis and is unaffected.
+    disableSse: true,
   }
 );
 
@@ -51,9 +64,13 @@ function getToken(req: Request): string | undefined {
 
 const mcpHandlerWithRole = withMcpAuthRole(mcpHandler, getRole, getToken);
 
+// No resourceUrl here: mcp-handler builds the metadata URL as `${resourceUrl}${path}`,
+// so passing the full MCP_RESOURCE (".../api/mcp") produces a malformed
+// ".../api/mcp/.well-known/oauth-protected-resource". Omitting it lets mcp-handler
+// derive the origin from Vercel's own x-forwarded-host/x-forwarded-proto headers,
+// which is correct with zero config on every deployment (preview or production).
 const handler = withMcpAuth(mcpHandlerWithRole, verifyToken, {
   required: true,
-  resourceUrl: MCP_RESOURCE,
 });
 
 export { handler as GET, handler as POST, handler as DELETE };

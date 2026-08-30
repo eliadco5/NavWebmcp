@@ -111,9 +111,15 @@ describe("searchAvailability", () => {
     }
   });
 
-  it("returns empty array for a far-future date with no slots", async () => {
+  it("lazily seeds a far-future date on first touch instead of returning empty", async () => {
+    // The old fixed 7-day window meant any date outside it returned []
+    // forever — which is exactly the bug that broke booking across serverless
+    // instances (instance A's window and instance B's window disagreed).
+    // searchAvailability now seeds whatever date it's asked about, on demand.
     const store = await freshStore();
-    expect(store.searchAvailability("2099-12-31", 1)).toEqual([]);
+    const results = store.searchAvailability("2099-12-31", 1);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((s) => s.date === "2099-12-31")).toBe(true);
   });
 
   it("returns empty array when partySize exceeds all slot capacities", async () => {

@@ -70,28 +70,28 @@ export function registerMcpTools(server: McpServer) {
 
         if (!userId || !role) {
           const err = fail("UNAUTHENTICATED", "A valid user token is required.");
-          auditLog.record(op.name, input, false, "agent");
+          auditLog.record(op.name, input, false, "agent", err.error);
           return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
         }
 
         // Defense-in-depth: re-check role on every call
         if (!roleSatisfies(role, op.roles)) {
           const err = fail("FORBIDDEN", `Role '${role}' is not permitted to call '${op.name}'.`);
-          auditLog.record(op.name, input, false, "agent");
+          auditLog.record(op.name, input, false, "agent", err.error);
           return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
         }
 
         try {
           const bearerToken: string = extra?.authInfo?.token ?? "";
           const result = await op.handler(input, { userId, role, token: bearerToken });
-          auditLog.record(op.name, input, result.success, "agent");
+          auditLog.record(op.name, input, result.success, "agent", result.success ? result.data : result.error);
           if (result.success) {
             return { content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }] };
           } else {
             return { content: [{ type: "text" as const, text: JSON.stringify(result.error, null, 2) }], isError: true };
           }
         } catch (err) {
-          auditLog.record(op.name, input, false, "agent");
+          auditLog.record(op.name, input, false, "agent", { code: "HANDLER_ERROR", message: String(err) });
           return { content: [{ type: "text" as const, text: String(err) }], isError: true };
         }
       }

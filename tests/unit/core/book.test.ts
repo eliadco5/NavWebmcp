@@ -102,18 +102,27 @@ describe('bookOrchestration', () => {
     expect(call).not.toHaveBeenCalledWith('cancelReservation', expect.anything())
   })
 
-  it('VALIDATION_FAILED: slot still open in recheck → rollback + error', async () => {
+  // Deliberately NOT a rollback trigger. On a multi-instance deploy, this
+  // recheck can legitimately land on a different serverless instance than the
+  // one that just wrote the reservation — treating a stale read as grounds to
+  // cancel a booking that already succeeded is worse than the staleness
+  // itself. slotStillOpen is reported to the caller instead (validated: false).
+  it('slot still open in recheck → success with validated:false, no rollback', async () => {
     const call = makeMockCall({
       searchAvailability: [
         { success: true, data: { slots: [SLOT] } },      // step 1
-        { success: true, data: { slots: [SLOT] } },      // step 3 recheck — slot still open!
+        { success: true, data: { slots: [SLOT] } },      // step 3 recheck — slot still open
       ],
       createReservation: [{ success: true, data: { reservation: RESERVATION } }],
       getReservation:    [{ success: true, data: { reservation: RESERVATION } }],
     })
     const result = await bookOrchestration(INPUT, call)
-    expect(result.success).toBe(false)
-    if (!result.success) expect(result.error.code).toBe('VALIDATION_FAILED')
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.reservation).toEqual(RESERVATION)
+      expect(result.data.validated).toBe(false)
+    }
+    expect(call).not.toHaveBeenCalledWith('cancelReservation', expect.anything())
   })
 
   it('VALIDATION_FAILED: reservation not found in verify → rollback + error', async () => {
@@ -130,14 +139,14 @@ describe('bookOrchestration', () => {
     if (!result.success) expect(result.error.code).toBe('VALIDATION_FAILED')
   })
 
-  it('rollback calls cancelReservation with { reservationId, confirm: true }', async () => {
+  it('rollback calls cancelReservation with { reservationId, confirm: true } when reservation is missing', async () => {
     const call = makeMockCall({
       searchAvailability: [
         { success: true, data: { slots: [SLOT] } },
-        { success: true, data: { slots: [SLOT] } },      // slot still open → triggers rollback
+        { success: true, data: { slots: [] } },
       ],
       createReservation: [{ success: true, data: { reservation: RESERVATION } }],
-      getReservation:    [{ success: true, data: { reservation: RESERVATION } }],
+      getReservation:    [{ success: false, data: undefined }],  // triggers rollback
     })
     await bookOrchestration(INPUT, call)
     expect(call).toHaveBeenCalledWith('cancelReservation', {

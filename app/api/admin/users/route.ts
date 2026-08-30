@@ -1,29 +1,18 @@
-import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { userForSession, SESSION_COOKIE } from "@/lib/auth";
+import { listUsers } from "@/lib/auth";
+import { getOrProvisionUser } from "@/lib/auth-tokens";
 
-// Import the mutable USERS store
-import { listUsers, updateUserRole } from "@/lib/auth";
+// Read-only roster. Role changes now happen via /api/switch-role (client-side,
+// cookie-scoped) rather than a PATCH here — updateUserRole used to mutate a
+// module-level USERS constant in place, which cannot work across serverless
+// instances and is gone from lib/auth.ts along with this route's old PATCH handler.
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  const caller = sessionId ? userForSession(sessionId) : null;
+  const { user: caller } = getOrProvisionUser(cookieStore);
   if (!caller) return Response.json({ success: false, error: { code: "UNAUTHENTICATED" } }, { status: 401 });
   if (caller.role !== "admin") return Response.json({ success: false, error: { code: "FORBIDDEN" } }, { status: 403 });
 
   return Response.json({ success: true, users: listUsers() });
-}
-
-export async function PATCH(req: NextRequest) {
-  const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
-  const caller = sessionId ? userForSession(sessionId) : null;
-  if (!caller) return Response.json({ success: false, error: { code: "UNAUTHENTICATED" } }, { status: 401 });
-  if (caller.role !== "admin") return Response.json({ success: false, error: { code: "FORBIDDEN" } }, { status: 403 });
-
-  const { userId, role } = await req.json();
-  const updated = updateUserRole(userId, role);
-  if (!updated) return Response.json({ success: false, error: { code: "NOT_FOUND" } }, { status: 404 });
-  return Response.json({ success: true, user: updated });
 }

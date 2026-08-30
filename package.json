@@ -2,11 +2,14 @@
   "name": "agentbridge-demo",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run tests/unit tests/integration",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage tests/unit tests/integration",

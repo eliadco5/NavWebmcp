@@ -146,9 +146,16 @@ describe('bookOp happy path', () => {
 // ── Error paths ───────────────────────────────────────────────────────────────
 
 describe('bookOp error paths', () => {
-  it('NO_AVAILABILITY for a date with no slots', async () => {
+  // lib/store.ts lazily seeds any requested date on first touch (deterministic
+  // slot ids, no more "only a fixed 7-day window has data") — so a far-future
+  // date is no longer a way to get zero slots; a party size bigger than every
+  // slot's capacity (max is 8, at 18:00) still is.
+  it('NO_AVAILABILITY when party size exceeds every slot capacity', async () => {
+    // 20 is the schema max (z.number().max(20)) but still bigger than the
+    // biggest slot capacity (8, at 18:00) — so this is a real "no match", not
+    // a validation rejection.
     const result = await bookOp.handler(
-      { date: '2099-12-31', time: '18:00', partySize: 2, name: 'Alice' },
+      { date: '2099-12-31', time: '18:00', partySize: 20, name: 'Alice' },
       customerCtx
     )
     expect(result.success).toBe(false)

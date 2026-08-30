@@ -349,7 +349,7 @@ Every operation carries a `roles` array checked on every call. Three roles exist
 
 ### Audit log
 
-Every call — agent-initiated or UI-initiated — is recorded with tool name, success/failure, and caller type. The last 100 entries are streamed to the UI via SSE (`/api/events`).
+Every call — agent-initiated or UI-initiated — is recorded with tool name, success/failure, and caller type. The last 100 entries are polled by the UI from `/api/audit` every 4 seconds (SSE doesn't survive Vercel's serverless model — see `app/providers.tsx`).
 
 ### Gather-first, ask-once — context, capabilities, and instructions
 
@@ -721,12 +721,12 @@ export const yourToolOp = defineOperation({
 
 ```
 app/
-  page.tsx                 ← root page
-  providers.tsx            ← auth context, composite tool registration, SSE events
+  page.tsx                 ← root page — <Providers><AppShell/></Providers>
+  providers.tsx            ← auth bootstrap, composite tool registration, audit polling
   api/[transport]/route.ts ← MCP Streamable HTTP
   api/call/route.ts        ← UI operation dispatcher
-  api/events/route.ts      ← SSE stream (store + audit events)
-  api/bench/reset/route.ts ← dev-only store reset for scripts/bench.mjs and scripts/speedbase.mjs
+  api/switch-role/route.ts ← demo-mode role switcher (re-mints the caller's own session)
+  api/bench/reset/route.ts ← re-seeds every operations store; used by scripts/bench.mjs and the Agent tab's "Reset demo data" button
 
 lib/
   core/                    ← surface-agnostic orchestrations
