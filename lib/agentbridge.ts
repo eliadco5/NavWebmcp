@@ -112,8 +112,38 @@ export class AgentBridge {
       };
     }
 
+    // Confirmation before validation, not after: some confirmation-requiring ops
+    // (cancelReservation, cancelAnyReservation) have a REQUIRED `confirm: boolean`
+    // in their own schema — validating first meant a caller who hadn't already
+    // included it got INVALID_INPUT before the dialog ever had a chance to show.
+    //
+    // A caller that HAS already self-declared approval (passed confirm: true for
+    // an op whose own schema has that field) skips the dialog entirely and is
+    // trusted immediately — this is exactly how the real MCP-over-HTTP surface
+    // (lib/adapters/mcp.ts) already treats these same two ops for an external
+    // agent: no interactive block, `confirm: true` IS the approval. A genuinely
+    // autonomous in-page agent has no way to click a browser dialog, so requiring
+    // one on top of an already-self-declared confirm would just hang forever with
+    // no signal. The other 4 confirmation-requiring ops (checkOutGuest, deleteTask,
+    // issueRefund, applyNoShowFee) have no schema field to self-declare through, so
+    // they always show the dialog — it's the only approval channel they have.
+    let confirmedInput = input;
+    if (reg.requiresConfirmation) {
+      const hasOwnConfirmField = "confirm" in reg.inputSchema;
+      const selfDeclared = hasOwnConfirmField && input.confirm === true;
+      if (!selfDeclared) {
+        const approved = await this.confirmationHandler(name, input);
+        if (!approved) {
+          const denial = { code: "CONFIRMATION_DENIED", message: "User denied the action." };
+          auditLog.record(name, input, false, "ui", denial);
+          return { success: false, error: denial };
+        }
+        confirmedInput = { ...input, confirm: true };
+      }
+    }
+
     const schema = z.object(reg.inputSchema);
-    const parsed = schema.safeParse(input);
+    const parsed = schema.safeParse(confirmedInput);
     if (!parsed.success) {
       return {
         success: false,
@@ -122,15 +152,6 @@ export class AgentBridge {
           message: parsed.error.issues.map((i) => i.message).join("; "),
         },
       };
-    }
-
-    if (reg.requiresConfirmation) {
-      const approved = await this.confirmationHandler(name, input);
-      if (!approved) {
-        const denial = { code: "CONFIRMATION_DENIED", message: "User denied the action." };
-        auditLog.record(name, input, false, "ui", denial);
-        return { success: false, error: denial };
-      }
     }
 
     const ctx: OperationContext = { userId, role, token: "" };

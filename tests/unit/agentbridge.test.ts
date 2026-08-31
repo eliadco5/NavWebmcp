@@ -337,6 +337,112 @@ describe("call — confirmation", () => {
     await bridge.call("writeOp", { value: "x" });
     expect(handler).toHaveBeenCalled();
   });
+
+  // Regression: cancelReservation/cancelAnyReservation have a REQUIRED
+  // `confirm: boolean` in their own schema. Validating input before checking
+  // requiresConfirmation meant a caller who didn't already know to include it
+  // (e.g. a WebMCP agent calling document.modelContext.executeTool without
+  // reading the schema first) got INVALID_INPUT before the dialog ever showed
+  // — the action silently "did nothing" instead of prompting.
+  describe("ops whose own schema requires a confirm field", () => {
+    const confirmFieldOp = {
+      ...fakeOp,
+      name: "confirmFieldOp",
+      permission: "write" as const,
+      requiresConfirmation: true,
+      inputSchema: { reservationId: z.string(), confirm: z.boolean() },
+      handler: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
+    };
+
+    it("shows the confirmation dialog even when the caller omits confirm entirely", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const onConfirmation = vi.fn().mockResolvedValue(true);
+      const bridge = new AgentBridge({
+        getUserId: () => "u_alice",
+        getUserRole: () => "customer",
+        onConfirmation,
+      });
+      bridge.register(confirmFieldOp);
+
+      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean };
+
+      expect(onConfirmation).toHaveBeenCalledWith("confirmFieldOp", { reservationId: "res_001" });
+      expect(result.success).toBe(true);
+    });
+
+    it("approving the dialog satisfies the schema's own confirm requirement", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const handler = vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } });
+      const bridge = new AgentBridge({
+        getUserId: () => "u_alice",
+        getUserRole: () => "customer",
+        onConfirmation: async () => true,
+      });
+      bridge.register({ ...confirmFieldOp, handler });
+
+      await bridge.call("confirmFieldOp", { reservationId: "res_001" });
+
+      expect(handler).toHaveBeenCalledWith(
+        { reservationId: "res_001", confirm: true },
+        expect.anything()
+      );
+    });
+
+    it("denying the dialog still short-circuits before validation ever runs", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const handler = vi.fn();
+      const bridge = new AgentBridge({
+        getUserId: () => "u_alice",
+        getUserRole: () => "customer",
+        onConfirmation: async () => false,
+      });
+      bridge.register({ ...confirmFieldOp, handler });
+
+      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean; error: { code: string } };
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe("CONFIRMATION_DENIED");
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    // A genuinely autonomous agent driving document.modelContext can never
+    // click a browser dialog — if it already self-declared approval via the
+    // op's own confirm field, trust it and skip the dialog entirely, exactly
+    // like the real MCP-over-HTTP surface already does for an external agent.
+    it("skips the dialog entirely when the caller already passed confirm: true", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const onConfirmation = vi.fn().mockResolvedValue(true);
+      const handler = vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } });
+      const bridge = new AgentBridge({
+        getUserId: () => "u_alice",
+        getUserRole: () => "customer",
+        onConfirmation,
+      });
+      bridge.register({ ...confirmFieldOp, handler });
+
+      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001", confirm: true }) as { success: boolean };
+
+      expect(onConfirmation).not.toHaveBeenCalled();
+      expect(handler).toHaveBeenCalledWith({ reservationId: "res_001", confirm: true }, expect.anything());
+      expect(result.success).toBe(true);
+    });
+
+    it("does NOT skip the dialog for an op with no confirm field of its own, even if the caller passes one", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const onConfirmation = vi.fn().mockResolvedValue(true);
+      // writeOp's schema (from fakeOp) has no `confirm` field at all.
+      const bridge = new AgentBridge({
+        getUserId: () => "u_alice",
+        getUserRole: () => "customer",
+        onConfirmation,
+      });
+      bridge.register(writeOp);
+
+      await bridge.call("writeOp", { value: "x", confirm: true });
+
+      expect(onConfirmation).toHaveBeenCalled();
+    });
+  });
 });
 
 // ── call — handler result forwarding ─────────────────────────────────────────
