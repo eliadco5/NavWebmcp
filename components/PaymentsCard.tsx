@@ -81,12 +81,15 @@ export function PaymentsCard() {
     setBusy(paymentId);
     setError(null);
     try {
-      // issueRefund carries requiresConfirmation:true — the ConfirmationDialog
-      // in providers.tsx intercepts this call before it reaches the server.
+      // issueRefund carries requiresConfirmation:true AND its own confirm
+      // schema field (the server enforces this too, not just the UI dialog) —
+      // the ConfirmationDialog in providers.tsx approves first, then
+      // confirm: true here satisfies the op's own server-side check.
       const res = await call("issueRefund", {
         paymentId,
         reason: refundReason.trim(),
         ...(refundAmount && { amount: Number(refundAmount) }),
+        confirm: true,
       }) as { success: boolean; error?: { message: string } };
       if (!res.success) setError(res.error?.message ?? "Failed to issue refund");
       else {

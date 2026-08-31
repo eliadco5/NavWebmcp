@@ -180,10 +180,11 @@ export function FrontDeskPanel() {
     setBusy(reservationId);
     setError(null);
     try {
-      // checkOutGuest carries requiresConfirmation:true but has no `confirm`
-      // input field — providers.tsx's ConfirmationDialog intercepts this call
-      // before it reaches the server, so no confirm flag is needed here.
-      const result = await call("checkOutGuest", { reservationId }) as { success: boolean; error?: { message: string } };
+      // checkOutGuest carries requiresConfirmation:true AND its own confirm
+      // schema field (the server enforces this too, not just the UI dialog) —
+      // providers.tsx's ConfirmationDialog approves first, then confirm: true
+      // here satisfies the op's own server-side check.
+      const result = await call("checkOutGuest", { reservationId, confirm: true }) as { success: boolean; error?: { message: string } };
       if (!result.success) setError(result.error?.message ?? "Failed to check out guest");
       else {
         setBills((prev) => {

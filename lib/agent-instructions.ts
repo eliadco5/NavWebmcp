@@ -42,7 +42,7 @@ This prevents chatty back-and-forth: gather first, act once.
 ## Reading results
 - invoke wraps the inner result: a dispatched-but-failed call is { success: true, data: { success: false, error: {...} } }. Always check the inner success, not just the outer one.
 - Write operations (permission: "write") require all parameters confirmed by the user before executing.
-- If describe_tool shows a confirm parameter, omitting it returns CONFIRMATION_REQUIRED — ask the user, then re-call with confirm: true. If requiresConfirmation is true but there is no confirm parameter, the server will not stop you — get explicit user approval yourself before calling.
+- Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 
 ## Error codes
 UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · HANDLER_ERROR (retry at most once).

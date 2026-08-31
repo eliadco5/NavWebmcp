@@ -443,6 +443,68 @@ describe("call — confirmation", () => {
       expect(onConfirmation).toHaveBeenCalled();
     });
   });
+
+  // Audits every requiresConfirmation op in the REAL registry (not a synthetic
+  // fixture), so this fails loudly — rather than silently testing nothing — if
+  // a future op adds/removes requiresConfirmation or a confirm schema field.
+  // All 6 confirmation-requiring ops now enforce their own confirm field
+  // server-side (lib/operations/{cancelReservation,cancelAnyReservation,
+  // checkOutGuest,deleteTask,issueRefund,applyNoShowFee}.ts) — the "no confirm
+  // field of its own" category is pinned to empty on purpose, as proof the
+  // migration is complete; lib/agentbridge.test.ts's synthetic writeOp fixture
+  // above still covers that code path generically in case it's ever needed again.
+  describe("audited against the real registry", () => {
+    const REALISTIC_INPUT: Record<string, Record<string, unknown>> = {
+      cancelReservation: { reservationId: "test" },
+      cancelAnyReservation: { reservationId: "test" },
+      checkOutGuest: { reservationId: "test" },
+      deleteTask: { taskId: "test" },
+      issueRefund: { paymentId: "test", reason: "test reason" },
+      applyNoShowFee: { reservationId: "test", feeAmount: 10, reason: "test reason" },
+    };
+
+    it("ops with their own confirm field: skip the dialog when confirm:true is passed", async () => {
+      const { AgentBridge } = await import("@/lib/agentbridge");
+      const { registry } = await import("@/lib/operations");
+
+      const opsWithOwnConfirmField = registry.filter(
+        (op) => op.requiresConfirmation && "confirm" in op.inputSchema
+      );
+      // Pin the exact set so this test is the audit — a change here means the
+      // registry's confirmation shape changed and this file needs a look, not
+      // that the loop below silently covered zero or a different set of ops.
+      expect(opsWithOwnConfirmField.map((o) => o.name).sort()).toEqual([
+        "applyNoShowFee",
+        "cancelAnyReservation",
+        "cancelReservation",
+        "checkOutGuest",
+        "deleteTask",
+        "issueRefund",
+      ]);
+
+      for (const op of opsWithOwnConfirmField) {
+        const onConfirmation = vi.fn().mockResolvedValue(true);
+        const handler = vi.fn().mockResolvedValue({ success: true, data: {} });
+        const bridge = new AgentBridge({ getUserId: () => "u_x", getUserRole: () => "admin", onConfirmation });
+        bridge.register({ ...op, handler });
+
+        await bridge.call(op.name, { ...REALISTIC_INPUT[op.name], confirm: true });
+
+        expect(onConfirmation, `${op.name} should not show the dialog`).not.toHaveBeenCalled();
+        expect(handler, `${op.name} should still run once self-declared`).toHaveBeenCalled();
+      }
+    });
+
+    it("no requiresConfirmation op is missing its own confirm field", async () => {
+      const { registry } = await import("@/lib/operations");
+
+      const opsWithoutOwnConfirmField = registry.filter(
+        (op) => op.requiresConfirmation && !("confirm" in op.inputSchema)
+      );
+
+      expect(opsWithoutOwnConfirmField.map((o) => o.name)).toEqual([]);
+    });
+  });
 });
 
 // ── call — handler result forwarding ─────────────────────────────────────────

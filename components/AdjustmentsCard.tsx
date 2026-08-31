@@ -29,12 +29,15 @@ export function AdjustmentsCard() {
     setFeeError(null);
     setFeeResult(null);
     try {
-      // applyNoShowFee carries requiresConfirmation:true — the ConfirmationDialog
-      // in providers.tsx intercepts this call before it reaches the server.
+      // applyNoShowFee carries requiresConfirmation:true AND its own confirm
+      // schema field (the server enforces this too, not just the UI dialog) —
+      // the ConfirmationDialog in providers.tsx approves first, then
+      // confirm: true here satisfies the op's own server-side check.
       const res = await call("applyNoShowFee", {
         reservationId: reservationId.trim(),
         feeAmount,
         reason: feeReason.trim(),
+        confirm: true,
       }) as { success: boolean; data?: { adjustmentId: string }; error?: { message: string } };
       if (!res.success) setFeeError(res.error?.message ?? "Failed to apply no-show fee");
       else { setFeeResult(`Applied — ${res.data?.adjustmentId}`); setReservationId(""); setFeeReason(""); }

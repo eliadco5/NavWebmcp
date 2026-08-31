@@ -25,15 +25,23 @@ function generateMockBillItems(partySize: number) {
 export const checkOutGuest = defineOperation({
   name: "checkOutGuest",
   title: "Check Out Guest",
-  description: "Close a table: generate bill summary and mark table as available.",
+  description:
+    "Close a table: generate bill summary and mark table as available. " +
+    "This is a destructive action — confirmation is required. " +
+    "When calling via MCP, you MUST pass confirm: true to acknowledge the checkout.",
   permission: "write",
   requiresConfirmation: true,
   roles: ["support", "admin"],
   module: "frontoffice.checkout",
   inputSchema: {
     reservationId: z.string().describe("Reservation ID to check out"),
+    confirm: z.boolean().describe("Must be true to confirm checkout. Pass confirm: true to proceed."),
   },
-  async handler({ reservationId }, _ctx) {
+  async handler({ reservationId, confirm }, _ctx) {
+    if (!confirm) {
+      return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to confirm checking out this reservation.");
+    }
+
     const reservation = store.getReservationById(reservationId);
     if (!reservation) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
     if (reservation.status !== "checked-in") return fail("INVALID_STATE", `Reservation must be checked-in to check out; current status: ${reservation.status}`);

@@ -137,7 +137,7 @@ describe('seatGuestOp store consistency', () => {
   it('table becomes available again after checkOutGuest', async () => {
     const result = await seatGuestOp.handler({ reservationId: 'res_003' }, adminCtx)
     const tableId = result.data.checkin.tableId
-    await checkOutGuest.handler({ reservationId: 'res_003' }, adminCtx)
+    await checkOutGuest.handler({ reservationId: 'res_003', confirm: true }, adminCtx)
     const occ = await getOccupancy.handler({}, adminCtx)
     const table = occ.data.tables.find((t: { tableId: string }) => t.tableId === tableId)
     expect(table.status).toBe('available')

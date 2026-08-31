@@ -102,7 +102,7 @@ describe('hostVipGuestOp happy path', () => {
     const result = await hostVipGuestOp.handler(INPUT, adminCtx)
     expect(result.success).toBe(true)
     // clean up so other tests in this file that reuse res_003 aren't affected
-    await checkOutGuest.handler({ reservationId: 'res_003' }, adminCtx)
+    await checkOutGuest.handler({ reservationId: 'res_003', confirm: true }, adminCtx)
   })
 })
 
@@ -131,7 +131,7 @@ describe('hostVipGuestOp error paths', () => {
     const second = await hostVipGuestOp.handler(INPUT, adminCtx)
     expect(second.success).toBe(false)
     expect(second.error.code).toBe('ALREADY_CHECKED_IN')
-    await checkOutGuest.handler({ reservationId: 'res_003' }, adminCtx)
+    await checkOutGuest.handler({ reservationId: 'res_003', confirm: true }, adminCtx)
   })
 })
 

@@ -9,7 +9,9 @@ const adjustments = financeAdjustments();
 export const issueRefund = defineOperation({
   name: "issueRefund",
   title: "Issue Refund",
-  description: "Issue a refund for a payment. Requires confirmation. Admin only.",
+  description:
+    "Issue a refund for a payment. Admin only. This is a destructive action — confirmation is required. " +
+    "When calling via MCP, you MUST pass confirm: true to acknowledge the refund.",
   permission: "write",
   requiresConfirmation: true,
   roles: ["admin"],
@@ -22,8 +24,13 @@ export const issueRefund = defineOperation({
       .positive()
       .optional()
       .describe("Partial refund amount; omit to refund the full payment amount"),
+    confirm: z.boolean().describe("Must be true to confirm the refund. Pass confirm: true to proceed."),
   },
-  async handler({ paymentId, reason, amount }, ctx) {
+  async handler({ paymentId, reason, amount, confirm }, ctx) {
+    if (!confirm) {
+      return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to confirm issuing this refund.");
+    }
+
     const payment = payments.get(paymentId);
     if (!payment) {
       return fail("NOT_FOUND", `No payment found with ID ${paymentId}`);
