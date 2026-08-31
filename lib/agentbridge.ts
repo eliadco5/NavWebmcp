@@ -60,6 +60,14 @@ export class AgentBridge {
   }
 
   register(reg: AgentBridgeRegistration): void {
+    // Idempotent by name — callers (e.g. initAgentBridge) may re-loop the full
+    // registry on every role change to pick up newly-visible ops, so a name
+    // already registered here must no-op rather than register twice. The
+    // polyfill's own registerTool silently overwrites on a duplicate name, but
+    // a native implementation's behavior there is unspecified — dedupe here
+    // instead of leaning on that.
+    if (this.registrations.some((r) => r.name === reg.name)) return;
+
     const role = this.getUserRole();
     // Skip registration if the caller's role is not permitted
     if (role && !roleSatisfies(role, reg.roles)) return;

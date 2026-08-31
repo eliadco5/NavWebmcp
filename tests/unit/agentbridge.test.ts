@@ -123,6 +123,27 @@ describe("register", () => {
     expect(document.modelContext!.getTools!().find((t) => t.name === "fakeOp")).toBeDefined();
     expect(document.modelContext!.getTools!().find((t) => t.name === "writeOp")).toBeDefined();
   });
+
+  it("registering the same name twice is a no-op — safe to re-loop the full registry on every role change", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const bridge = new AgentBridge();
+    bridge.register(fakeOp);
+    expect(() => bridge.register(fakeOp)).not.toThrow();
+    expect(document.modelContext!.getTools!().filter((t) => t.name === "fakeOp").length).toBe(1);
+  });
+
+  it("a role upgrade between calls still registers a previously role-gated op", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    let role: "customer" | "admin" = "customer";
+    const bridge = new AgentBridge({ getUserRole: () => role });
+
+    bridge.register(adminOp); // skipped: customer can't see it yet
+    expect(document.modelContext!.getTools!().find((t) => t.name === "adminOp")).toBeUndefined();
+
+    role = "admin";
+    bridge.register(adminOp); // same call again, now visible
+    expect(document.modelContext!.getTools!().find((t) => t.name === "adminOp")).toBeDefined();
+  });
 });
 
 // ── call — authentication ─────────────────────────────────────────────────────

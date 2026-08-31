@@ -4,26 +4,13 @@ import { useEffect, useRef, createContext, useContext, useState, useCallback } f
 import { useRouter } from "next/navigation";
 import type { AuditEntry } from "@/lib/auditlog";
 import { getModelContext } from "@/lib/webmcp-polyfill";
-import type { ModelContextLike, ModelContextTool } from "@/lib/webmcp-polyfill";
+import { initAgentBridge } from "@/lib/adapters/webmcp";
 import { book } from "@/lib/ui-tools/book";
 import { seatGuest } from "@/lib/ui-tools/seatGuest";
 import { hostVipGuest } from "@/lib/ui-tools/hostVipGuest";
-import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { registry } from "@/lib/operations";
-
-// Module-scoped, not component state: this only needs to survive React
-// StrictMode's double-invoked effects in dev (which used to be handled by
-// checking `mc.getTools().some(...)` — a polyfill-only method). A plain Set
-// does the same dedupe job without requiring any introspection API, so it
-// works identically against a native ModelContext that has no getTools() at all.
-const registeredTools = new Set<string>();
-
-function registerToolOnce(mc: ModelContextLike, tool: ModelContextTool): void {
-  if (registeredTools.has(tool.name)) return;
-  registeredTools.add(tool.name);
-  void mc.registerTool(tool);
-}
+import type { Role } from "@/lib/auth";
 
 interface AuthUser {
   id: string;
@@ -84,6 +71,28 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [confirmPending, setConfirmPending] = useState<BridgeContextValue["confirmPending"]>(null);
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
   const lastAuditIdRef = useRef<string | null>(null);
+  // Read by initAgentBridge's getUserId/getUserRole closures (see the WebMCP
+  // registration effect below) so a role switch is reflected without needing
+  // to reconstruct the bridge — it's a page-lifetime singleton, only
+  // constructed once, but those closures are called fresh on every
+  // register()/call() and so always see the current value here.
+  const userRef = useRef<AuthUser | null>(null);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  // Moved above the WebMCP registration effect (was originally declared much
+  // later, alongside resolveConfirm/call) because that effect now needs to
+  // pass it to initAgentBridge as onConfirmation.
+  const handleConfirmation = useCallback(
+    (name: string, input: Record<string, unknown>): Promise<boolean> => {
+      return new Promise((resolve) => {
+        resolveRef.current = resolve;
+        setConfirmPending({ name, input, resolve });
+      });
+    },
+    []
+  );
 
   // Auth check on mount. /api/me auto-provisions an alice/customer session for a
   // first-time visitor (see getOrProvisionUser), so this normally never 401s — a
@@ -102,93 +111,36 @@ export function Providers({ children }: { children: React.ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // Register the composite `book` and `seatGuest` tools into the live ModelContext
-  // once the user is known. The same functions are used by the UI buttons — one
-  // code path, business logic in the page.
+  // Register the FULL operation registry into the live ModelContext once the
+  // user is known — every op, not just the 3 composites, via the same
+  // AgentBridge machinery lib/adapters/mcp.ts and the MCP-over-HTTP surface
+  // conceptually mirror. initAgentBridge builds each handler around
+  // serverCall (POST /api/call), never op.handler directly — op handlers read/
+  // write lib/store.ts's and lib/auditlog.ts's globalThis singletons, which in
+  // a browser resolve to the browser's OWN globalThis, a throwaway store the
+  // server (and Front Desk, and other tabs) never sees.
   //
   // Everything in this effect is wrapped in try/catch and guarded by feature
   // detection: `document.modelContext` may be a NATIVE WebMCP implementation
   // (Chrome with the flag on, or eventually shipped by default) rather than the
   // polyfill, and a native object doesn't have `getTools()`/`executeTool()` (see
   // lib/webmcp-polyfill.ts) and may reject the non-spec `instructions`/
-  // `protocolVersion` extensions outright. Before this guarded, a native
-  // implementation made `mc.getTools()` throw a TypeError inside this effect —
-  // i.e. the exact browser surface this app is supposed to demo would blank the
-  // whole page.
+  // `protocolVersion` extensions outright (AgentBridge's own constructor
+  // already try/catches that specific assignment, but registerTool() itself
+  // could still throw on a spec-drifted native implementation).
   useEffect(() => {
     if (!user) return;
     try {
-      const mc = getModelContext();
-      try {
-        mc.protocolVersion = PROTOCOL_VERSION;
-        mc.instructions ??= AGENT_INSTRUCTIONS;
-      } catch {
-        // Non-spec extensions; a native implementation is allowed to reject them.
-      }
-
-      registerToolOnce(mc, {
-        name: "book",
-        title: "Book a Table",
-        description:
-          "Book a table in ONE step: finds the matching open slot for the date and time, " +
-          "reserves it, and validates the booking. Prefer this over calling " +
-          "searchAvailability + createReservation separately.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            date: { type: "string", description: "Date in YYYY-MM-DD format" },
-            time: { type: "string", description: "Desired time slot, e.g. '18:00'" },
-            partySize: { type: "number", description: "Number of guests (1–20)" },
-            name: { type: "string", description: "Guest name for the reservation" },
-          },
-          required: ["date", "time", "partySize", "name"],
+      getModelContext(); // ensure the polyfill is installed before AgentBridge reaches for it
+      initAgentBridge(
+        {
+          instructions: AGENT_INSTRUCTIONS,
+          onConfirmation: handleConfirmation,
+          getUserId: () => userRef.current?.id ?? null,
+          getUserRole: () => (userRef.current?.role as Role | undefined) ?? null,
         },
-        execute: (input) => book(input as unknown as Parameters<typeof book>[0]),
-      });
-
-      if (user.role === "support" || user.role === "admin") {
-        registerToolOnce(mc, {
-          name: "seatGuest",
-          title: "Seat Guest",
-          description:
-            "Seat a guest in ONE step: confirms a table is available, checks the reservation in, " +
-            "and validates the seating. Prefer this over calling " +
-            "getOccupancy + checkInGuest separately.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              reservationId: { type: "string", description: "Reservation ID to check in" },
-              tableId: { type: "string", description: "Table to assign; if omitted an available table with sufficient capacity is auto-assigned" },
-            },
-            required: ["reservationId"],
-          },
-          execute: (input) => seatGuest(input as unknown as Parameters<typeof seatGuest>[0]),
-        });
-
-        // hostVipGuest has no UI button — the CRM domain has no screens in this app —
-        // but it's still registered so the WebMCP surface (and the benchmark's lane C)
-        // can call it as a real in-page function, same as book and seatGuest.
-        registerToolOnce(mc, {
-          name: "hostVipGuest",
-          title: "Host VIP Guest",
-          description:
-            "Host a VIP guest's visit in ONE step: reads their preferences and loyalty status, " +
-            "seats them, awards loyalty points for the visit, and logs a visit note. Prefer this over " +
-            "calling getGuestPreferences + getLoyaltyStatus + getOccupancy + checkInGuest + " +
-            "getCheckinStatus + addLoyaltyPoints + logCommunication separately.",
-          inputSchema: {
-            type: "object",
-            properties: {
-              reservationId: { type: "string", description: "Reservation ID to check in" },
-              guestId: { type: "string", description: "The unique guest identifier" },
-              pointsToAward: { type: "number", description: "Loyalty points to award for this visit" },
-              visitNote: { type: "string", description: "Note describing the visit" },
-            },
-            required: ["reservationId", "guestId", "pointsToAward", "visitNote"],
-          },
-          execute: (input) => hostVipGuest(input as unknown as Parameters<typeof hostVipGuest>[0]),
-        });
-      }
+        serverCall
+      );
     } catch (err) {
       // A spec-drifted or unexpectedly strict native implementation should degrade
       // tool registration, not blank the page.
@@ -201,7 +153,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       (window as unknown as Record<string, unknown>)["seatGuestTool"] = (input: Parameters<typeof seatGuest>[0]) => seatGuest(input);
       (window as unknown as Record<string, unknown>)["hostVipGuestTool"] = (input: Parameters<typeof hostVipGuest>[0]) => hostVipGuest(input);
     }
-  }, [user]);
+  }, [user, handleConfirmation]);
 
   // Poll the audit log rather than subscribing to SSE — see the comment in
   // call() above for why SSE doesn't work on Vercel for this app. Polling every
@@ -259,16 +211,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
       clearInterval(interval);
     };
   }, [user]);
-
-  const handleConfirmation = useCallback(
-    (name: string, input: Record<string, unknown>): Promise<boolean> => {
-      return new Promise((resolve) => {
-        resolveRef.current = resolve;
-        setConfirmPending({ name, input, resolve });
-      });
-    },
-    []
-  );
 
   function resolveConfirm(approved: boolean) {
     setConfirmPending(null);
