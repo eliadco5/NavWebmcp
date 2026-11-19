@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 1.0.0
+version: 1.1.0
 protocol: ">=1.0.0 <2.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -76,8 +76,9 @@ not through `tools/list`. Never guess operation names from what `tools/list` sho
   but not *where* it lives. `**` crosses segment boundaries, `*` matches within one
   segment, `?` matches a single character. A bare keyword with no glob metacharacters and
   no slash (e.g. `search("refund")`) is treated as `**/*refund*`.
-- **`describe_tool(name)`** — full input schema and metadata for one operation before
-  calling it. Accepts an array too: `describe_tool(["opA", "opB"])` returns both in one
+- **`describe_tool(name)`** — full input schema, output schema and metadata for one
+  operation before calling it. The output schema describes the success `data`, so you can
+  plan the next step without a trial call. Accepts an array too: `describe_tool(["opA", "opB"])` returns both in one
   call — never issue one call per name.
 
 Use `explore` when you have a known path to walk, `search` when you have a keyword and no
@@ -175,6 +176,14 @@ mechanism, rather than through `invoke`, typically returns its `data` unwrapped 
 and signals failure via the call's own error/`isError` mechanism instead of a nested
 envelope — read your specific transport's convention, but the *inner* `Result` shape from
 the operation itself is the same either way.
+
+On MCP (protocol ≥ 1.1.0), a successful native call also returns `structuredContent`:
+the same `data` as the JSON text block, already parsed and matching the tool's
+`outputSchema`. Prefer it over re-parsing the text.
+
+Input is validated strictly (≥ 1.1.0): an unknown or misspelt parameter fails with
+`INVALID_INPUT` / `INVALID_ARGS` rather than being silently ignored. Copy parameter names
+from the input schema exactly.
 
 ## 9. Gather-first, ask-once
 

@@ -230,7 +230,7 @@ When an agent connects to the MCP HTTP endpoint, `tools/list` returns **only the
 | `getCapabilities` | **Preflight** | What their role allows: `{ protocolVersion, capabilityHash, tools: [{ name, permission, requiresConfirmation }] }` |
 | `explore` | Discovery | Module tree navigation by dot-path |
 | `search` | Discovery | Find operations by Linux-style glob |
-| `describe_tool` | Discovery | Full JSON Schema for named operation(s) |
+| `describe_tool` | Discovery | Full input and output JSON Schema for named operation(s) |
 | `invoke` | Execution | Call any operation, single or batch, without loading |
 | `load_tools` | Session | Promote operations to native MCP tools for this session |
 | `unload_tools` | Session | Remove promoted tools from `tools/list` |
@@ -283,12 +283,14 @@ search({ "pattern": "*refund*" })
 
 Search is **role-scoped**: a `customer` token running `search({ pattern: "finance/**" })` returns nothing — finance is admin-only and results are filtered by role.
 
-**`describe_tool()` — get the full input schema before calling:**
+**`describe_tool()` — get the full input and output schema before calling:**
 
 ```json
 describe_tool({ "name": ["searchAvailability", "createReservation"] })
-// → [{ name, description, permission, inputSchema: { ... JSON Schema ... } }, ...]
+// → { tools: [{ name, description, permission, inputSchema: { ... }, outputSchema: { ... } }, ...] }
 ```
+
+`outputSchema` describes the success `data`, e.g. `searchAvailability` → `{ slots: Slot[], count, message }`, so an agent can plan the next call (here: pass a slot's `id` to `createReservation`) without a trial run.
 
 ### Execute
 
@@ -341,7 +343,7 @@ A composite tool (like `book`, `seatGuest`, or `hostVipGuest`) wraps multi-step 
 
 ### Two surfaces, one registry
 
-The same 48 business operations are exposed over both surfaces simultaneously. Adding an operation to `lib/operations/` and registering it in `lib/operations/index.ts` makes it automatically available on both the MCP HTTP endpoint and `document.modelContext` — with full RBAC, audit logging, and progressive disclosure on both. (The in-page WebMCP surface currently registers the three composite tools — `book`, `seatGuest`, `hostVipGuest` — rather than the full registry; see [In-page WebMCP](#in-page-webmcp-browser-console) below.)
+The same 48 business operations are exposed over both surfaces simultaneously. Adding an operation to `lib/operations/` and registering it in `lib/operations/index.ts` makes it automatically available on both the MCP HTTP endpoint and `document.modelContext` — with full RBAC, audit logging, and progressive disclosure on both. Each operation's `inputSchema` and `outputSchema` are published on both surfaces too: as MCP `inputSchema`/`outputSchema` (with `structuredContent` on results), and as the WebMCP `ModelContextTool` members of the same names. Where we follow or depart from the WebMCP draft is tracked in [`docs/webmcp-alignment.md`](docs/webmcp-alignment.md).
 
 ### RBAC and confirmation gates
 
@@ -468,13 +470,17 @@ Pass `Authorization: Bearer <token>` (your agent token is shown in the UI after 
 After signing in, open the browser console:
 
 ```javascript
-// List all available tools — the UI registers the composite tools the signed-in role can use
+// List all available tools — every operation the signed-in role may call is registered
 document.modelContext.getTools().map(t => t.name)
-// → ["book"]                           as customer
-// → ["book", "seatGuest", "hostVipGuest"]  as support/admin
+// → ["explore", "search", ..., "book", ...]   filtered by role
+
+// Each tool carries an input schema, an output schema and annotations
+const book = document.modelContext.getTools().find(t => t.name === "book")
+book.outputSchema   // anyOf: { success: true, data: { reservation, validated } } | { success: false, error }
+book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "1.0.0"
+document.modelContext.protocolVersion   // "1.1.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
@@ -489,7 +495,9 @@ await document.modelContext.executeTool("book", {
 
 `hostVipGuest` has no UI button — the CRM domain has no screens in this app — but it's registered and callable in-page the same way, which is exactly what the speedbase table in the Benchmarks section measures.
 
-The full `AgentBridge` SDK (`agentBridge.describe()`, `agentBridge.call(...)`, registering the whole operation registry in-page) exists in `lib/agentbridge.ts` and `lib/adapters/webmcp.ts` but is not currently wired into `app/providers.tsx` — only the three composite tools are registered. Wiring the full registry in-page is a tracked follow-up, not yet done.
+`app/providers.tsx` registers the whole operation registry through `initAgentBridge` (`lib/adapters/webmcp.ts`) once the user is known. Each call goes to the server via `POST /api/call`, so it gets the same RBAC, strict input validation and audit log as the UI. `window.agentBridge.describe()` lists everything registered, with schemas.
+
+The in-page `outputSchema` describes the full `Result` envelope, because that is what `execute()` returns. The data schema alone is in `describe_tool` and `agentBridge.describe()`. `executeTool` on the polyfill returns the raw object, not the JSON string the spec returns. That difference is deliberate; see [`docs/webmcp-alignment.md`](docs/webmcp-alignment.md).
 
 ### Operations catalogue
 
@@ -499,7 +507,7 @@ The full `AgentBridge` SDK (`agentBridge.describe()`, `agentBridge.call(...)`, r
 |---|---|
 | `explore` | Navigate the platform module tree by dot-path |
 | `search` | Find functions/modules by Linux-style glob |
-| `describe_tool` | Get full input schema for one or more named operations |
+| `describe_tool` | Get full input and output schema for one or more named operations |
 | `invoke` | Call any operation directly, single or batch |
 | `load_tools` | Promote operations to native MCP tools for this session |
 | `unload_tools` | Remove promoted tools from `tools/list` |
@@ -645,6 +653,7 @@ Parent/child relationships are inferred from dot-path prefixes; the tree is defi
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
+import { Id, ItemSchema } from "./schemas";
 
 export const yourOp = defineOperation({
   name: "yourOp",
@@ -655,15 +664,24 @@ export const yourOp = defineOperation({
   module: "reservation.search",   // places it in the module tree
   tags: ["booking"],
   inputSchema: {
-    id: z.string().describe("Resource ID"),
+    id: Id().describe("Resource ID"),        // every field needs .describe() and a bound
   },
+  outputSchema: {                            // the success `data`; required
+    item: ItemSchema,
+  },
+  untrustedOutput: false,                    // true if `data` contains user-written free text
   async handler({ id }, ctx) {
-    const result = store.getItem(id, ctx.userId);
-    if (!result) return fail("NOT_FOUND", `Item ${id} not found`);
-    return ok({ result });
+    const item = store.getItem(id, ctx.userId);
+    if (!item) return fail("NOT_FOUND", `Item ${id} not found`);
+    return ok({ item });                     // type-checked against outputSchema
   },
 });
 ```
+
+Notes:
+- Input is validated **strictly**: unknown keys are rejected. Use the shared field helpers in `lib/operations/schemas.ts` (`Id`, `IsoDate`, `TimeHHMM`, `ShortText`, `LongText`, `Money`, `Points`). `tests/unit/input-schema.test.ts` fails if any input string is left unbounded or any field has no description.
+- Put reusable entity schemas (`ReservationSchema`, `GuestSchema`, …) in `lib/operations/schemas.ts`. Its `SchemaTypeChecks` stop them drifting from the TypeScript types.
+- Use `as const` for literal fields such as `ok({ deleted: true as const })`, or TypeScript will widen them.
 
 2. **Register it in `lib/operations/index.ts`:**
 
@@ -672,7 +690,9 @@ import { yourOp } from "./your-op";
 registry.push(yourOp);
 ```
 
-The operation automatically appears on both surfaces with full RBAC, audit logging, and progressive disclosure. To add a new module to the tree, append an entry to `MODULE_DEFS` in `lib/modules.ts`.
+3. **Add a happy-path case to `tests/unit/output-contract.test.ts`.** That test fails until every registered op has one, and it checks that the returned `data` matches `outputSchema` exactly. This matters because the MCP SDK rejects a non-matching `structuredContent` at runtime.
+
+The operation automatically appears on both surfaces with full RBAC, audit logging, progressive disclosure, input/output schemas and annotations. To add a new module to the tree, append an entry to `MODULE_DEFS` in `lib/modules.ts`.
 
 ### Adding a composite tool
 
@@ -702,34 +722,25 @@ import { yourToolOrchestration } from "@/lib/core/your-tool";
 export const yourTool = (input: YourInput) => yourToolOrchestration(input, serverCall);
 ```
 
-**3. `app/providers.tsx`** — register into `document.modelContext` after auth:
-
-```typescript
-document.modelContext.registerTool({
-  name: "yourTool",
-  description: "Does X in one step.",
-  inputSchema: { /* JSON Schema */ },
-  execute: (input) => yourTool(input as YourInput),
-});
-```
-
-**4. `lib/operations/your-tool-op.ts`** — MCP surface:
+**3. `lib/operations/your-tool-op.ts`** — the operation both surfaces publish:
 
 ```typescript
 export const yourToolOp = defineOperation({
   name: "yourTool",
+  title: "Your Tool",
   description: "Does X in one step.",
   permission: "write",
   roles: ["customer", "admin"],
   module: "your.module",
   inputSchema: { /* zod shape */ },
+  outputSchema: { result: ResultSchema, validated: z.boolean() },  // = YourResult
   async handler(input, ctx) {
     return yourToolOrchestration(input, makeDispatch(ctx));
   },
 });
 ```
 
-**5.** Register in `lib/operations/index.ts`. The tool is now callable on both surfaces.
+**4.** Register it in `lib/operations/index.ts` and add a case to `tests/unit/output-contract.test.ts`. The tool is then registered in-page automatically by `initAgentBridge`, with no hand-written `registerTool` call. The browser wrapper from step 2 is only needed if the UI calls the composite itself.
 
 ### Project structure
 

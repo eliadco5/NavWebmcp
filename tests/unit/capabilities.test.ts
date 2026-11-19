@@ -32,9 +32,10 @@ describe("computeCapabilityHash", () => {
       title: "Synthetic",
       description: "test",
       inputSchema: {},
+      outputSchema: {},
       permission: "read",
       roles: ["admin"],
-      handler: async () => ({ success: true, data: null }),
+      handler: async () => ({ success: true, data: {} }),
     };
     const after = computeCapabilityHash([...registry, extraOp]);
     expect(before).not.toBe(after);
@@ -55,20 +56,39 @@ describe("computeCapabilityHash", () => {
       title: "A",
       description: "a",
       inputSchema: {},
+      outputSchema: {},
       permission: "read",
       roles: ["customer"],
-      handler: async () => ({ success: true, data: null }),
+      handler: async () => ({ success: true, data: {} }),
     };
     const op2: Operation = {
       name: "opB",
       title: "B",
       description: "b",
       inputSchema: {},
+      outputSchema: {},
       permission: "write",
       roles: ["admin"],
-      handler: async () => ({ success: true, data: null }),
+      handler: async () => ({ success: true, data: {} }),
     };
     expect(computeCapabilityHash([op1])).not.toBe(computeCapabilityHash([op2]));
+  });
+
+  it("changing only an op's output schema changes the hash", async () => {
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
+    const { z } = await import("zod");
+    const base: Operation = {
+      name: "opC",
+      title: "C",
+      description: "c",
+      inputSchema: {},
+      outputSchema: { a: z.string() },
+      permission: "read",
+      roles: ["customer"],
+      handler: async () => ({ success: true, data: { a: "x" } }),
+    };
+    const changed: Operation = { ...base, outputSchema: { a: z.string(), b: z.number() } };
+    expect(computeCapabilityHash([base])).not.toBe(computeCapabilityHash([changed]));
   });
 });
 

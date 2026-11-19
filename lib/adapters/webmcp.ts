@@ -41,9 +41,12 @@ export function initAgentBridge(
       title: op.title,
       description: op.description,
       inputSchema: op.inputSchema,
+      outputSchema: op.outputSchema,
       permission: op.permission,
       roles: op.roles,
       requiresConfirmation: op.requiresConfirmation,
+      untrustedOutput: op.untrustedOutput,
+      dispatchesOps: op.dispatchesOps,
       tags: op.tags,
       handler: (input) => dispatch(op.name, input),
     });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { store } from "@/lib/store";
 import { ok, fail } from "@/lib/result";
+import { Id } from "./schemas";
 
 export const cancelReservation = defineOperation({
   name: "cancelReservation",
@@ -15,12 +16,16 @@ export const cancelReservation = defineOperation({
   module: "reservation.booking",
   tags: ["booking", "reservation"],
   inputSchema: {
-    reservationId: z.string().describe("ID of the reservation to cancel"),
+    reservationId: Id().describe("ID of the reservation to cancel"),
     confirm: z
       .boolean()
       .describe(
         "Must be true to confirm cancellation. Pass confirm: true to proceed."
       ),
+  },
+  outputSchema: {
+    cancelled: z.literal(true),
+    reservationId: z.string(),
   },
   async handler({ reservationId, confirm }, ctx) {
     if (!confirm) {
@@ -34,6 +39,6 @@ export const cancelReservation = defineOperation({
     if (result === "not_found") return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
     if (result === "forbidden") return fail("FORBIDDEN", "You do not own this reservation");
 
-    return ok({ cancelled: true, reservationId });
+    return ok({ cancelled: true as const, reservationId });
   },
 });

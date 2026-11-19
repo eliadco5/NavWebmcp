@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { crmGuests, type Guest } from "@/lib/seed";
+import { ShortText, GuestSchema } from "./schemas";
 
 const guestsMap = crmGuests();
 
@@ -13,10 +14,11 @@ export const createGuest = defineOperation({
   roles: ["support", "admin"],
   module: "crm.guests",
   inputSchema: {
-    name: z.string().min(1).describe("Full name of the guest"),
-    email: z.string().email().describe("Guest email address"),
-    phone: z.string().min(1).describe("Guest phone number"),
+    name: ShortText(100).min(1).describe("Full name of the guest"),
+    email: ShortText(254).email().describe("Guest email address"),
+    phone: ShortText(32).min(1).describe("Guest phone number"),
   },
+  outputSchema: { guest: GuestSchema },
   async handler({ name, email, phone }, ctx) {
     const existing = Array.from(guestsMap.values()).find((g) => g.email === email);
     if (existing) return fail("CONFLICT", `A guest with email ${email} already exists`);

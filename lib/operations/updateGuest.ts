@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { crmGuests, type Guest } from "@/lib/seed";
+import { Id, ShortText, GuestSchema } from "./schemas";
 
 const guestsMap = crmGuests();
 
@@ -13,11 +14,12 @@ export const updateGuest = defineOperation({
   roles: ["support", "admin"],
   module: "crm.guests",
   inputSchema: {
-    guestId: z.string().describe("The unique guest identifier"),
-    name: z.string().min(1).optional().describe("Updated full name"),
-    email: z.string().email().optional().describe("Updated email address"),
-    phone: z.string().min(1).optional().describe("Updated phone number"),
+    guestId: Id().describe("The unique guest identifier"),
+    name: ShortText(100).min(1).optional().describe("Updated full name"),
+    email: ShortText(254).email().optional().describe("Updated email address"),
+    phone: ShortText(32).min(1).optional().describe("Updated phone number"),
   },
+  outputSchema: { guest: GuestSchema },
   async handler({ guestId, name, email, phone }, ctx) {
     const guest = guestsMap.get(guestId);
     if (!guest) return fail("NOT_FOUND", `Guest ${guestId} not found`);

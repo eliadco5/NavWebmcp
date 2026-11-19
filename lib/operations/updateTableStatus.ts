@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { housekeepingTableStatus } from "@/lib/seed";
+import { Id, TableCleaningSchema } from "./schemas";
 
 const tableStatusMap = housekeepingTableStatus();
 
@@ -13,10 +14,11 @@ export const updateTableStatus = defineOperation({
   roles: ["support", "admin"],
   module: "housekeeping.status",
   inputSchema: {
-    tableId: z.string().describe("The ID of the table to update (e.g. t_01)."),
+    tableId: Id().describe("The ID of the table to update (e.g. t_01)."),
     status: z.enum(["clean", "dirty", "in-progress"]).describe("New cleaning status for the table."),
-    updatedBy: z.string().describe("Staff member ID making the update."),
+    updatedBy: Id().describe("Staff member ID making the update."),
   },
+  outputSchema: { table: TableCleaningSchema },
   async handler({ tableId, status, updatedBy }, _ctx) {
     if (!tableStatusMap.has(tableId)) {
       return fail("NOT_FOUND", `Table ${tableId} does not exist.`);

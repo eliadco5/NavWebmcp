@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { removeLoaded } from "@/lib/loadedTools";
+import { ShortText } from "./schemas";
 
 export const unloadTools = defineOperation({
   name: "unload_tools",
@@ -11,7 +12,11 @@ export const unloadTools = defineOperation({
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    names: z.array(z.string()).min(1).describe("Function names to remove from native tools"),
+    names: z.array(ShortText(128).min(1)).min(1).max(50).describe("Function names to remove from native tools"),
+  },
+  outputSchema: {
+    removed: z.array(z.string()),
+    message: z.string(),
   },
   async handler({ names }, ctx) {
     removeLoaded(ctx.token, names);

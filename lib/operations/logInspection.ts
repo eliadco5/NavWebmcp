@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { housekeepingInspections, type InspectionRecord } from "@/lib/seed";
+import { Id, LongText, InspectionSchema } from "./schemas";
 
 const inspections = housekeepingInspections();
 
@@ -13,11 +14,12 @@ export const logInspection = defineOperation({
   roles: ["admin"],
   module: "housekeeping.inspections",
   inputSchema: {
-    tableId: z.string().describe("The ID of the table or area being inspected (e.g. t_03)."),
-    inspector: z.string().describe("Staff ID of the inspector logging the result."),
+    tableId: Id().describe("The ID of the table or area being inspected (e.g. t_03)."),
+    inspector: Id().describe("Staff ID of the inspector logging the result."),
     result: z.enum(["pass", "fail"]).describe("Outcome of the inspection."),
-    notes: z.string().describe("Inspector notes describing findings or confirmation of cleanliness."),
+    notes: LongText().describe("Inspector notes describing findings or confirmation of cleanliness."),
   },
+  outputSchema: { inspection: InspectionSchema },
   async handler({ tableId, inspector, result, notes }, _ctx) {
     if (!tableId.trim()) {
       return fail("INVALID_INPUT", "tableId must not be empty.");

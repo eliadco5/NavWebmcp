@@ -733,3 +733,82 @@ describe("destroy", () => {
     expect(() => bridge.destroy()).not.toThrow();
   });
 });
+
+// ── outputSchema + annotations ────────────────────────────────────────────────
+
+describe("register — outputSchema and annotations", () => {
+  const withOutput = { ...fakeOp, name: "withOutput", outputSchema: { result: z.string() } };
+
+  it("publishes the Result envelope as outputSchema, since execute() resolves to it", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    new AgentBridge().register(withOutput);
+    const tool = document.modelContext!.getTools!().find((t) => t.name === "withOutput")!;
+    const variants = (tool.outputSchema as { anyOf: Array<{ properties: Record<string, unknown> }> }).anyOf;
+    expect(variants).toHaveLength(2);
+    expect(variants[0].properties.success).toEqual({ type: "boolean", const: true });
+    expect(variants[0].properties.data).toMatchObject({ type: "object", properties: { result: { type: "string" } } });
+    expect(variants[1].properties.success).toEqual({ type: "boolean", const: false });
+    expect(variants[1].properties.error).toMatchObject({ required: ["code", "message"] });
+  });
+
+  it("omits outputSchema when the registration has none", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    new AgentBridge().register(fakeOp);
+    expect(document.modelContext!.getTools!().find((t) => t.name === "fakeOp")!.outputSchema).toBeUndefined();
+  });
+
+  it("derives annotations from permission, requiresConfirmation and untrustedOutput", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const bridge = new AgentBridge();
+    bridge.register(fakeOp);
+    bridge.register(writeOp);
+    bridge.register({ ...fakeOp, name: "notes", untrustedOutput: true });
+    const tools = document.modelContext!.getTools!();
+    expect(tools.find((t) => t.name === "fakeOp")!.annotations).toEqual({ readOnlyHint: true, consequentialHint: false, untrustedContentHint: false });
+    expect(tools.find((t) => t.name === "writeOp")!.annotations).toEqual({ readOnlyHint: false, consequentialHint: true, untrustedContentHint: false });
+    expect(tools.find((t) => t.name === "notes")!.annotations).toMatchObject({ untrustedContentHint: true });
+  });
+
+  it("an op that dispatches other ops (invoke) is not read-only, even with permission: read", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    new AgentBridge().register({ ...fakeOp, name: "relay", dispatchesOps: true });
+    expect(document.modelContext!.getTools!().find((t) => t.name === "relay")!.annotations).toEqual({
+      readOnlyHint: false, consequentialHint: true, untrustedContentHint: true,
+    });
+  });
+
+  it("the real registry's invoke op is flagged dispatchesOps", async () => {
+    const { registry } = await import("@/lib/operations");
+    expect(registry.find((o) => o.name === "invoke")!.dispatchesOps).toBe(true);
+  });
+
+  it("describe() includes the data outputSchema (not the envelope)", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const bridge = new AgentBridge();
+    bridge.register(withOutput);
+    const desc = bridge.describe() as { operations: Array<Record<string, unknown>> };
+    expect(desc.operations[0].outputSchema).toMatchObject({ type: "object", properties: { result: { type: "string" } } });
+  });
+
+  it("a rejected registerTool is logged, not left unhandled", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const bridge = new AgentBridge();
+    document.modelContext!.registerTool = () => Promise.reject(new TypeError("schema refused"));
+    bridge.register(fakeOp);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("fakeOp"), expect.any(TypeError));
+    warn.mockRestore();
+  });
+});
+
+describe("call — strict input", () => {
+  it("rejects unknown keys with INVALID_INPUT instead of dropping them", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const bridge = new AgentBridge({ getUserId: () => "u1", getUserRole: () => "admin" });
+    bridge.register(fakeOp);
+    const res = (await bridge.call("fakeOp", { value: "x", valu: "typo" })) as { success: boolean; error: { code: string } };
+    expect(res.success).toBe(false);
+    expect(res.error.code).toBe("INVALID_INPUT");
+  });
+});

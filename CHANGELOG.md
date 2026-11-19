@@ -22,6 +22,38 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 1.1.0
+
+Adopts the WebMCP `outputSchema` member (webmachinelearning/webmcp#254, in the draft of
+13 Nov 2026) and the matching MCP `outputSchema` / `structuredContent` pair. All
+additive; deliberate differences from the WebMCP spec are listed in
+`docs/webmcp-alignment.md`.
+
+- **Every operation declares an output schema** (the shape of its success `data`).
+  - MCP `tools/list` publishes it as `outputSchema`. Successful `tools/call` results
+    carry `structuredContent` (that same data), and still include the JSON text block.
+  - In-page WebMCP tools publish it wrapped in the `Result` envelope, since that is what
+    `execute()` resolves to: `{success: true, data} | {success: false, error}`.
+  - `describe_tool` returns `outputSchema` next to `inputSchema`.
+- **Tool annotations.**
+  - WebMCP: `readOnlyHint`, `consequentialHint` (= requiresConfirmation) and
+    `untrustedContentHint` (ops returning staff/guest-written text).
+  - MCP: `readOnlyHint`, `destructiveHint` and `title`.
+  - `invoke` is never marked read-only. It is declared `permission: "read"`, but it can
+    dispatch any op, including destructive ones, so its annotations are
+    `readOnlyHint: false`, `destructiveHint` / `consequentialHint: true`.
+- **Unknown input keys are rejected** with `INVALID_INPUT` / `INVALID_ARGS`. Before this
+  they were silently dropped, which contradicted the `additionalProperties: false` every
+  published input schema already declared. A misspelt optional field used to "succeed"
+  while doing nothing.
+- **Tighter input validation.** Every input string now has a length limit or a format.
+  `YYYY-MM-DD` dates are validated on the finance ops, `book.time` must be `HH:MM`, ids
+  must be non-empty, and money/points fields are capped at 100000.
+- **MCP error results** are always `{code, message}` in the text block. The
+  `UNAUTHENTICATED` and `FORBIDDEN` paths used to send the whole `Result` envelope there
+  instead.
+- `capabilityHash` now also changes when an operation's output schema changes.
+
 ## 1.0.0
 
 First versioned protocol. Named **NavWebMcp** — the layer of progressive tool

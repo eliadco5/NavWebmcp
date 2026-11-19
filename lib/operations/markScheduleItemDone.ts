@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { housekeepingScheduleItems } from "@/lib/seed";
+import { Id, ScheduleItemSchema } from "./schemas";
 
 const scheduleItems = housekeepingScheduleItems();
 
@@ -13,8 +14,9 @@ export const markScheduleItemDone = defineOperation({
   roles: ["support", "admin"],
   module: "housekeeping.schedule",
   inputSchema: {
-    scheduleId: z.string().describe("The ID of the schedule item to mark as done (e.g. sched_002)."),
+    scheduleId: Id().describe("The ID of the schedule item to mark as done (e.g. sched_002)."),
   },
+  outputSchema: { scheduleItem: ScheduleItemSchema },
   async handler({ scheduleId }, _ctx) {
     const item = scheduleItems.find((s) => s.id === scheduleId);
     if (!item) {

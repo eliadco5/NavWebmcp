@@ -1,6 +1,8 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { tasksStore } from "@/lib/seed";
+import { z } from "zod";
+import { TaskSchema } from "./schemas";
 
 const tasks = tasksStore();
 
@@ -12,6 +14,10 @@ export const getMyTasks = defineOperation({
   roles: ["customer", "support", "admin"],
   module: "tasks.assignments",
   inputSchema: {},
+  outputSchema: {
+    tasks: z.array(TaskSchema),
+    total: z.number().int(),
+  },
   async handler(_input, ctx) {
     const myTasks = [...tasks.values()].filter((t) => t.assigneeId === ctx.userId);
     return ok({ tasks: myTasks, total: myTasks.length });

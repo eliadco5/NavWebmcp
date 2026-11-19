@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { store } from "@/lib/store";
+import { Id, BillItemSchema } from "./schemas";
 
 const MOCK_MENU_ITEMS = [
   { name: "Grilled Salmon", price: 28.5 },
@@ -34,8 +35,17 @@ export const checkOutGuest = defineOperation({
   roles: ["support", "admin"],
   module: "frontoffice.checkout",
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to check out"),
+    reservationId: Id().describe("Reservation ID to check out"),
     confirm: z.boolean().describe("Must be true to confirm checkout. Pass confirm: true to proceed."),
+  },
+  outputSchema: {
+    reservationId: z.string(),
+    tableId: z.string().describe("The table that was freed"),
+    items: z.array(BillItemSchema),
+    subtotal: z.number(),
+    tax: z.number(),
+    total: z.number(),
+    generatedAt: z.string(),
   },
   async handler({ reservationId, confirm }, _ctx) {
     if (!confirm) {

@@ -9,15 +9,51 @@
  *     Promise<undefined> registerTool(ModelContextTool, ModelContextRegisterToolOptions?);
  *     attribute EventHandler ontoolchange;
  *   }
+ *
+ * Where this polyfill deliberately differs from the spec is listed in
+ * docs/webmcp-alignment.md.
  */
+
+/** Spec §4.2.1 ToolAnnotations. Hints only — agents must not trust them blindly. */
+export interface ToolAnnotations {
+  readOnlyHint?: boolean;
+  untrustedContentHint?: boolean;
+  consequentialHint?: boolean;
+  debugging?: boolean;
+}
 
 export interface ModelContextTool {
   name: string;
   title?: string;
   description: string;
   inputSchema?: Record<string, unknown>;
+  /** JSON Schema of the value `execute` resolves to (spec draft 13 Nov 2026). */
+  outputSchema?: Record<string, unknown>;
   execute: (input: Record<string, unknown>) => Promise<unknown>;
-  annotations?: Record<string, unknown>;
+  annotations?: ToolAnnotations;
+}
+
+interface StoredTool {
+  tool: ModelContextTool;
+  inputSchemaJson: string;
+  outputSchemaJson: string;
+}
+
+/** Spec "serialize a tool schema": undefined → "", non-object → TypeError,
+ *  unserializable (e.g. circular) → TypeError. */
+function serializeSchema(schema: unknown, field: string): string {
+  if (schema === undefined) return "";
+  if (schema === null || typeof schema !== "object") {
+    throw new TypeError(`${field} must be a JSON Schema object.`);
+  }
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(schema);
+  } catch (err) {
+    throw new TypeError(`${field} could not be serialized: ${String(err)}`);
+  }
+  if (json === undefined) throw new TypeError(`${field} serialized to undefined.`);
+  return json;
 }
 
 export interface ModelContextRegisterToolOptions {
@@ -30,7 +66,7 @@ export interface ToolChangeEvent extends Event {
 }
 
 class ModelContextImpl extends EventTarget {
-  private tools: Map<string, ModelContextTool> = new Map();
+  private tools: Map<string, StoredTool> = new Map();
   ontoolchange: ((event: ToolChangeEvent) => void) | null = null;
   /** AgentBridge extension — not part of the WebMCP spec. Behavioral instructions for in-page agents. */
   instructions: string | null = null;
@@ -48,7 +84,10 @@ class ModelContextImpl extends EventTarget {
       );
     }
 
-    this.tools.set(tool.name, tool);
+    const inputSchemaJson = serializeSchema(tool.inputSchema, "inputSchema");
+    const outputSchemaJson = serializeSchema(tool.outputSchema, "outputSchema");
+
+    this.tools.set(tool.name, { tool, inputSchemaJson, outputSchemaJson });
     this.dispatchToolChange(tool, "registered");
 
     if (options.signal) {
@@ -59,17 +98,23 @@ class ModelContextImpl extends EventTarget {
     }
   }
 
+  /** Schemas are returned as deep copies parsed from the serialized form, as in the spec. */
   getTools(): ModelContextTool[] {
-    return Array.from(this.tools.values());
+    return Array.from(this.tools.values(), ({ tool, inputSchemaJson, outputSchemaJson }) => ({
+      ...tool,
+      inputSchema: inputSchemaJson ? JSON.parse(inputSchemaJson) : undefined,
+      outputSchema: outputSchemaJson ? JSON.parse(outputSchemaJson) : undefined,
+    }));
   }
 
+  /** Returns the raw value, not the spec's JSON string — see docs/webmcp-alignment.md. */
   async executeTool(
     name: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown> = {}
   ): Promise<unknown> {
-    const tool = this.tools.get(name);
-    if (!tool) throw new DOMException(`Tool "${name}" not found`, "NotFoundError");
-    return tool.execute(input);
+    const stored = this.tools.get(name);
+    if (!stored) throw new DOMException(`Tool "${name}" not found`, "NotFoundError");
+    return stored.tool.execute(input);
   }
 
   private dispatchToolChange(
@@ -105,7 +150,7 @@ export interface ModelContextLike extends EventTarget {
   /** Polyfill-only — not part of the WebMCP spec. */
   getTools?(): ModelContextTool[];
   /** Polyfill-only — not part of the WebMCP spec. */
-  executeTool?(name: string, input: Record<string, unknown>): Promise<unknown>;
+  executeTool?(name: string, input?: Record<string, unknown>): Promise<unknown>;
 }
 
 declare global {

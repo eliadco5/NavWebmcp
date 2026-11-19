@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { financePayments, financeAdjustments } from "@/lib/seed";
+import { IsoDate } from "./schemas";
 
 const payments = financePayments();
 const adjustments = financeAdjustments();
@@ -14,7 +15,17 @@ export const getDailyRevenueSummary = defineOperation({
   roles: ["admin"],
   module: "finance.revenue",
   inputSchema: {
-    date: z.string().describe("Date in YYYY-MM-DD format"),
+    date: IsoDate().describe("Date in YYYY-MM-DD format"),
+  },
+  outputSchema: {
+    date: z.string(),
+    totalRevenue: z.number(),
+    totalCovers: z.number().int(),
+    transactionCount: z.number().int(),
+    adjustmentTotal: z.number().describe("Sum of refunds (negative), fees and manual adjustments"),
+    netRevenue: z.number(),
+    byCategory: z.record(z.number()).describe("Revenue keyed by category"),
+    byMethod: z.record(z.number()).describe("Revenue keyed by payment method"),
   },
   async handler({ date }, _ctx) {
     const dayPayments = [...payments.values()].filter((p) => p.date === date);

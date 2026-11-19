@@ -31,7 +31,7 @@ This prevents chatty back-and-forth: gather first, act once.
 - explore() with no args → platform overview.
 - explore("module.path") → sub-modules and available functions. Accepts wildcards ("x.*", "*") and arrays of paths.
 - search("**/*x*") → find functions/modules by path glob, anywhere in the tree (use when you know *what* but not *where*).
-- describe_tool(name) → full input schema before invoking. Accepts an array of names.
+- describe_tool(name) → full input and output schema before invoking. Accepts an array of names.
 
 ## Invocation
 - invoke({ name, args }) → call any function without loading it first (stateless, default choice).
@@ -41,6 +41,8 @@ This prevents chatty back-and-forth: gather first, act once.
 
 ## Reading results
 - invoke wraps the inner result: a dispatched-but-failed call is { success: true, data: { success: false, error: {...} } }. Always check the inner success, not just the outer one.
+- A function's outputSchema (from describe_tool or tools/list) describes its success data. On MCP, read structuredContent when present; it is the same data as the text block.
+- Unknown parameters are rejected (INVALID_INPUT), not ignored: use the exact names from the input schema.
 - Write operations (permission: "write") require all parameters confirmed by the user before executing.
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 

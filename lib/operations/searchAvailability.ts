@@ -3,6 +3,7 @@ import { defineOperation } from "./types";
 import { store } from "@/lib/store";
 import { ok } from "@/lib/result";
 import type { Slot } from "@/lib/store";
+import { IsoDate, SlotSchema } from "./schemas";
 
 export const searchAvailability = defineOperation({
   name: "searchAvailability",
@@ -14,16 +15,18 @@ export const searchAvailability = defineOperation({
   module: "reservation.availability",
   tags: ["booking", "availability"],
   inputSchema: {
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD")
-      .describe("Date to search in YYYY-MM-DD format"),
+    date: IsoDate().describe("Date to search in YYYY-MM-DD format"),
     partySize: z
       .number()
       .int()
       .min(1)
       .max(20)
       .describe("Number of people in the party"),
+  },
+  outputSchema: {
+    slots: z.array(SlotSchema).describe("Open slots that fit the party; pass a slot's id to createReservation"),
+    count: z.number().int(),
+    message: z.string(),
   },
   async handler({ date, partySize }, _ctx) {
     const slots: Slot[] = store.searchAvailability(date, partySize);

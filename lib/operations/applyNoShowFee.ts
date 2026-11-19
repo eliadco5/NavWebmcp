@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { financeAdjustments, type Adjustment } from "@/lib/seed";
+import { Id, Money, LongText } from "./schemas";
 
 const adjustments = financeAdjustments();
 
@@ -16,10 +17,16 @@ export const applyNoShowFee = defineOperation({
   roles: ["admin"],
   module: "finance.adjustments",
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to charge the no-show fee against"),
-    feeAmount: z.number().positive().describe("Fee amount to charge in the property currency"),
-    reason: z.string().min(5).describe("Reason for the no-show fee (e.g. guest did not call to cancel)"),
+    reservationId: Id().describe("Reservation ID to charge the no-show fee against"),
+    feeAmount: Money().describe("Fee amount to charge in the property currency"),
+    reason: LongText().min(5).describe("Reason for the no-show fee (e.g. guest did not call to cancel)"),
     confirm: z.boolean().describe("Must be true to confirm the fee. Pass confirm: true to proceed."),
+  },
+  outputSchema: {
+    adjustmentId: z.string(),
+    reservationId: z.string(),
+    feeAmount: z.number(),
+    timestamp: z.string(),
   },
   async handler({ reservationId, feeAmount, reason, confirm }, ctx) {
     if (!confirm) {

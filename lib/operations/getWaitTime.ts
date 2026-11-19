@@ -15,6 +15,12 @@ export const getWaitTime = defineOperation({
   inputSchema: {
     partySize: z.number().int().min(1).max(20).describe("Number of guests in the walk-in party"),
   },
+  outputSchema: {
+    partySize: z.number().int(),
+    estimatedWaitMinutes: z.number().int(),
+    tableAvailable: z.boolean().describe("True when a fitting table is free right now"),
+    message: z.string(),
+  },
   async handler({ partySize }, _ctx) {
     const now = Date.now();
 

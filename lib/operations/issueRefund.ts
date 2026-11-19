@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { financePayments, financeAdjustments, type Adjustment } from "@/lib/seed";
+import { Id, Money, LongText } from "./schemas";
 
 const payments = financePayments();
 const adjustments = financeAdjustments();
@@ -17,14 +18,19 @@ export const issueRefund = defineOperation({
   roles: ["admin"],
   module: "finance.adjustments",
   inputSchema: {
-    paymentId: z.string().describe("ID of the payment to refund"),
-    reason: z.string().min(5).describe("Reason for the refund"),
-    amount: z
-      .number()
-      .positive()
+    paymentId: Id().describe("ID of the payment to refund"),
+    reason: LongText().min(5).describe("Reason for the refund"),
+    amount: Money()
       .optional()
       .describe("Partial refund amount; omit to refund the full payment amount"),
     confirm: z.boolean().describe("Must be true to confirm the refund. Pass confirm: true to proceed."),
+  },
+  outputSchema: {
+    adjustmentId: z.string(),
+    paymentId: z.string(),
+    refundAmount: z.number(),
+    isPartial: z.boolean(),
+    timestamp: z.string(),
   },
   async handler({ paymentId, reason, amount, confirm }, ctx) {
     if (!confirm) {

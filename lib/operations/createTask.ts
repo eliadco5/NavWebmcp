@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { tasksStore, type Task } from "@/lib/seed";
+import { Id, ShortText, TaskPriority, TaskSchema } from "./schemas";
 
 // __tasksSeq is a plain working counter (not seed data), so it stays local —
 // every other global store lives in lib/seed/*.ts now.
@@ -19,12 +20,13 @@ export const createTask = defineOperation({
   roles: ["support", "admin"],
   module: "tasks.management",
   inputSchema: {
-    title: z.string().describe("Task title"),
-    department: z.string().describe("Department responsible for the task"),
-    priority: z.enum(["low", "medium", "high"]).describe("Task priority level"),
-    assigneeId: z.string().optional().describe("User ID to assign the task to"),
-    reservationId: z.string().optional().describe("Front-desk reservation this task relates to, if any"),
+    title: ShortText().min(1).describe("Task title"),
+    department: ShortText(100).min(1).describe("Department responsible for the task"),
+    priority: TaskPriority.describe("Task priority level"),
+    assigneeId: Id().optional().describe("User ID to assign the task to"),
+    reservationId: Id().optional().describe("Front-desk reservation this task relates to, if any"),
   },
+  outputSchema: { task: TaskSchema },
   async handler({ title, department, priority, assigneeId, reservationId }, _ctx) {
     globalThis.__tasksSeq = (globalThis.__tasksSeq ?? tasks.size) + 1;
     const taskId = `task_${String(globalThis.__tasksSeq).padStart(3, "0")}`;

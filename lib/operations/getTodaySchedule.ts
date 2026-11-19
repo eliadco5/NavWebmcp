@@ -1,6 +1,8 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { housekeepingScheduleItems } from "@/lib/seed";
+import { z } from "zod";
+import { ScheduleItemSchema } from "./schemas";
 
 const scheduleItems = housekeepingScheduleItems();
 
@@ -12,6 +14,12 @@ export const getTodaySchedule = defineOperation({
   roles: ["support", "admin"],
   module: "housekeeping.schedule",
   inputSchema: {},
+  outputSchema: {
+    scheduleItems: z.array(ScheduleItemSchema),
+    total: z.number().int(),
+    completed: z.number().int(),
+    pending: z.number().int(),
+  },
   async handler(_input, _ctx) {
     const total = scheduleItems.length;
     const completed = scheduleItems.filter((s) => s.done).length;

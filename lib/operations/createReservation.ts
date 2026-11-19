@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { store } from "@/lib/store";
 import { ok, fail } from "@/lib/result";
+import { Id, ShortText, ReservationSchema } from "./schemas";
 
 export const createReservation = defineOperation({
   name: "createReservation",
@@ -13,8 +14,8 @@ export const createReservation = defineOperation({
   module: "reservation.booking",
   tags: ["booking", "reservation"],
   inputSchema: {
-    slotId: z.string().describe("ID of the slot to book, from searchAvailability"),
-    name: z.string().min(1).max(100).describe("Guest name for the reservation"),
+    slotId: Id().describe("ID of the slot to book, from searchAvailability"),
+    name: ShortText(100).min(1).describe("Guest name for the reservation"),
     partySize: z
       .number()
       .int()
@@ -22,6 +23,7 @@ export const createReservation = defineOperation({
       .max(20)
       .describe("Number of people in the party"),
   },
+  outputSchema: { reservation: ReservationSchema },
   async handler({ slotId, name, partySize }, ctx) {
     const slot = store.getSlot(slotId);
     if (!slot) return fail("NOT_FOUND", `Slot ${slotId} not found`);

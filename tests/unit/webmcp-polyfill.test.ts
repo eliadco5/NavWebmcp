@@ -328,3 +328,68 @@ describe("protocolVersion field", () => {
     expect(document.modelContext!.protocolVersion).toBe("1.1.0");
   });
 });
+
+// ── outputSchema + annotations (WebMCP draft 13 Nov 2026) ────────────────────
+
+describe("registerTool — schemas and annotations", () => {
+  const outputSchema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+
+  it("getTools() returns outputSchema and annotations", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    await document.modelContext!.registerTool({
+      ...makeTool("withOutput"),
+      outputSchema,
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+    });
+    const t = document.modelContext!.getTools!().find((x) => x.name === "withOutput")!;
+    expect(t.outputSchema).toEqual(outputSchema);
+    expect(t.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true });
+  });
+
+  it("getTools() returns deep copies of the schemas, as the spec does", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const schema = structuredClone(outputSchema);
+    await document.modelContext!.registerTool({ ...makeTool("copied"), outputSchema: schema });
+    schema.required.push("mutatedAfterRegister");
+    const first = document.modelContext!.getTools!().find((x) => x.name === "copied")!;
+    expect(first.outputSchema).toEqual(outputSchema);
+    (first.outputSchema as { required: string[] }).required.push("mutatedCopy");
+    const second = document.modelContext!.getTools!().find((x) => x.name === "copied")!;
+    expect(second.outputSchema).toEqual(outputSchema);
+  });
+
+  it("an omitted outputSchema stays undefined", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    await document.modelContext!.registerTool(makeTool("noOutput"));
+    expect(document.modelContext!.getTools!().find((x) => x.name === "noOutput")!.outputSchema).toBeUndefined();
+  });
+
+  it("a non-object outputSchema rejects with TypeError", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    await expect(
+      document.modelContext!.registerTool({ ...makeTool("bad"), outputSchema: "" as unknown as Record<string, unknown> })
+    ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it("a circular outputSchema rejects with TypeError and is not registered", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const circular: Record<string, unknown> = { type: "object" };
+    circular.self = circular;
+    await expect(document.modelContext!.registerTool({ ...makeTool("circ"), outputSchema: circular })).rejects.toBeInstanceOf(TypeError);
+    expect(document.modelContext!.getTools!().find((x) => x.name === "circ")).toBeUndefined();
+  });
+
+  it("executeTool() defaults a missing input to {}", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const tool = makeTool("noInput");
+    await document.modelContext!.registerTool(tool);
+    await document.modelContext!.executeTool!("noInput");
+    expect(tool.execute).toHaveBeenCalledWith({});
+  });
+});

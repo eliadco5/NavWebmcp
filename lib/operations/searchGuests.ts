@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { crmGuests } from "@/lib/seed";
+import { ShortText, GuestSchema } from "./schemas";
 
 const guestsMap = crmGuests();
 
@@ -13,8 +14,13 @@ export const searchGuests = defineOperation({
   roles: ["support", "admin"],
   module: "crm.guests",
   inputSchema: {
-    query: z.string().describe("Name or email search term"),
+    query: ShortText().describe("Name or email search term"),
   },
+  outputSchema: {
+    guests: z.array(GuestSchema),
+    total: z.number().int(),
+  },
+  untrustedOutput: true,
   async handler({ query }, ctx) {
     const q = query.toLowerCase();
     const results = Array.from(guestsMap.values()).filter(

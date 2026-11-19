@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { tasksStore } from "@/lib/seed";
+import { Id } from "./schemas";
 
 const tasks = tasksStore();
 
@@ -16,8 +17,12 @@ export const deleteTask = defineOperation({
   module: "tasks.management",
   requiresConfirmation: true,
   inputSchema: {
-    taskId: z.string().describe("ID of the task to permanently delete"),
+    taskId: Id().describe("ID of the task to permanently delete"),
     confirm: z.boolean().describe("Must be true to confirm deletion. Pass confirm: true to proceed."),
+  },
+  outputSchema: {
+    deleted: z.literal(true),
+    taskId: z.string(),
   },
   async handler({ taskId, confirm }, _ctx) {
     if (!confirm) {
@@ -25,6 +30,6 @@ export const deleteTask = defineOperation({
     }
     if (!tasks.has(taskId)) return fail("NOT_FOUND", `Task ${taskId} not found`);
     tasks.delete(taskId);
-    return ok({ deleted: true, taskId });
+    return ok({ deleted: true as const, taskId });
   },
 });

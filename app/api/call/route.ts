@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { z } from "zod";
 import { registry } from "@/lib/operations";
+import { inputObject, checkOutput } from "@/lib/schema";
 import { auditLog } from "@/lib/auditlog";
 import { roleSatisfies } from "@/lib/auth";
 import { getOrProvisionUser } from "@/lib/auth-tokens";
@@ -37,8 +37,7 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
     );
   }
 
-  const schema = z.object(op.inputSchema);
-  const parsed = schema.safeParse(params ?? {});
+  const parsed = inputObject(op.inputSchema).safeParse(params ?? {});
   if (!parsed.success) {
     return Response.json({
       success: false,
@@ -50,8 +49,9 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
   }
 
   const result = await op.handler(parsed.data, { userId: user.id, role: user.role, token: "" });
-  const success = (result as { success?: boolean }).success !== false;
-  const output = success ? (result as { data?: unknown }).data : (result as { error?: unknown }).error;
+  const success = result.success;
+  const output = result.success ? result.data : result.error;
+  if (result.success) checkOutput(op.name, op.outputSchema, result.data);
   auditLog.record(name, params ?? {}, success, "ui", output);
 
   return Response.json(result);

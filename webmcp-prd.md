@@ -156,7 +156,7 @@ AgentBridge must work in browsers that do not yet implement `document.modelConte
 * A browser-native `document.modelContext : ModelContext` object
 * `registerTool(tool, options)` → Promise — registers a tool; unregister via `AbortSignal`
 * `ontoolchange` event — fires when tools are registered or unregistered
-* Tool schema: `name` (1–128 chars, `[A-Za-z0-9_.-]`), `title`, `description`, `inputSchema` (JSON Schema), `execute` (`Promise<any>(object input)`), `annotations`
+* Tool schema: `name` (1–128 chars, `[A-Za-z0-9_.-]`), `title`, `description`, `inputSchema` (JSON Schema), `outputSchema` (JSON Schema, added 2 Nov 2026 in webmachinelearning/webmcp#254), `execute` (`Promise<any>(object input)`), `annotations` (`readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging`)
 * `SecureContext` enforcement (HTTPS only)
 * Permissions-Policy feature `"tools"` (default allowlist `['self']`)
 * Origin-keyed agent cluster and `exposedTo` for cross-origin iframe visibility
@@ -170,7 +170,7 @@ The following capabilities are **not** defined by WebMCP and are owned by the Ag
 | Capability | WebMCP | AgentBridge |
 | --- | --- | --- |
 | `getTools()` / `executeTool()` discovery API | TODO (not yet specified) | Defined and stable in AgentBridge SDK |
-| Output-schema validation (`returns`, `error`) | Not mandated | Required — supports G4 |
+| Output-schema validation | `outputSchema` declared, but not validated by the browser (agents *may* reject) | Every op declares one; conformance enforced by contract tests, logged at runtime — supports G4 |
 | Permission scopes (read/write) | None | `permission` field + session authorization |
 | User confirmation UI | Not provided | Confirmation gates for sensitive operations |
 | Audit logging | None | Full call log with agent/op/user/timestamp |
@@ -216,7 +216,7 @@ The SDK instance is the primary developer-facing API. `document.modelContext` is
 
 ## 5.2 Operation Registry
 
-Applications register capabilities via the AgentBridge SDK. The SDK's `register()` method maps to `document.modelContext.registerTool()` and extends the WebMCP `ModelContextTool` schema with AgentBridge-specific fields (`permission`, `tags`, `returns`, `errors`):
+Applications register capabilities via the AgentBridge SDK. The SDK's `register()` method maps to `document.modelContext.registerTool()` and extends the WebMCP `ModelContextTool` schema with AgentBridge-specific fields (`permission`, `tags`, `errors`). The output schema uses the standard WebMCP `outputSchema` member rather than an extension:
 
 ```javascript
 bridge.register({
@@ -231,21 +231,26 @@ bridge.register({
     },
     required: ["productId"]
   },
+  outputSchema: {               // WebMCP: outputSchema (JSON Schema of what execute resolves to)
+    type: "object",
+    properties: { items: { type: "array" }, total: { type: "number" } },
+    required: ["items", "total"]
+  },
   execute: addToCart,           // WebMCP: execute (Promise<any>(object input))
+  annotations: { readOnlyHint: false },  // WebMCP: annotations
   // AgentBridge extensions:
   permission: "write",
   tags: ["commerce", "cart"],
-  returns: { $ref: "#/schemas/CartState" },
   errors: [{ code: "INVALID_INPUT" }, { code: "OUT_OF_STOCK" }]
 });
 ```
 
-`execute` resolves with MCP-style content blocks:
+`execute` resolves with the AgentBridge `Result` envelope. WebMCP defines no result wrapper and says author-defined errors go inside the response JSON, so the in-page `outputSchema` describes this envelope. The MCP surface instead returns `data` as `structuredContent` plus a JSON text block, and reports failures with `isError`:
 
 ```javascript
 async function addToCart(input) {
   const cart = await doAddToCart(input.productId, input.quantity);
-  return { content: [{ type: "text", text: JSON.stringify(cart) }] };
+  return { success: true, data: cart };   // or { success: false, error: { code, message } }
 }
 ```
 
@@ -367,13 +372,13 @@ For every operation:
   "title": "Add to Cart",
   "description": "...",
   "inputSchema": {},
-  "returns": {},
+  "outputSchema": {},
   "permission": "write",
   "tags": []
 }
 ```
 
-`name`, `title`, `description`, and `inputSchema` map to `ModelContextTool` fields. `returns`, `permission`, and `tags` are AgentBridge extensions.
+`name`, `title`, `description`, `inputSchema` and `outputSchema` map to `ModelContextTool` fields. `permission` and `tags` are AgentBridge extensions.
 
 ***
 
@@ -421,12 +426,13 @@ bridge.call(
 
 # 7.3 Parameter Validation
 
-Before execution, AgentBridge validates inputs against the operation's `inputSchema` (JSON Schema). WebMCP does not mandate output-schema validation; AgentBridge adds it as a requirement.
+Before execution, AgentBridge validates inputs against the operation's `inputSchema` (JSON Schema). WebMCP declares `outputSchema` but does not validate results against it; AgentBridge adds validation as a requirement.
 
 * Type validation (from `inputSchema`)
 * Required field validation (`required` array in JSON Schema)
 * Schema validation (full JSON Schema draft-07 support)
-* **Output validation** against `returns` schema (AgentBridge extension — not provided by WebMCP)
+* Unknown keys rejected (`additionalProperties: false` is enforced, not just advertised)
+* **Output validation** against `outputSchema`: contract-tested for every op; logged at runtime on the in-page/UI path; enforced by the MCP SDK on `structuredContent`
 
 Example `inputSchema`:
 
@@ -570,15 +576,16 @@ Returns:
         "required": ["productId"]
       },
 
-      "returns": {
-        "$ref": "#/schemas/CartState"
+      "outputSchema": {
+        "type": "object",
+        "properties": { "items": { "type": "array" }, "total": { "type": "number" } }
       }
     }
   ]
 }
 ```
 
-> `name`, `title`, `description`, and `inputSchema` are `ModelContextTool` fields from the WebMCP standard. `tags`, `permission`, `returns`, and the top-level `bridge`/`version`/`context` envelope are AgentBridge additions (WebMCP has no manifest versioning or context envelope).
+> `name`, `title`, `description`, `inputSchema` and `outputSchema` are `ModelContextTool` fields from the WebMCP standard. `tags`, `permission`, and the top-level `bridge`/`version`/`context` envelope are AgentBridge additions (WebMCP has no manifest versioning or context envelope).
 
 ***
 

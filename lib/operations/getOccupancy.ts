@@ -1,6 +1,7 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { store } from "@/lib/store";
+import { z } from "zod";
 
 // Average dining duration in minutes used for turnover estimate
 const AVG_DINING_MINUTES = 60;
@@ -13,6 +14,23 @@ export const getOccupancy = defineOperation({
   roles: ["support", "admin"],
   module: "frontoffice.occupancy",
   inputSchema: {},
+  outputSchema: {
+    tables: z.array(z.object({
+      tableId: z.string(),
+      status: z.enum(["available", "occupied", "reserved"]),
+      capacity: z.number().int(),
+      reservationId: z.string().nullable(),
+      seatedAt: z.string().nullable(),
+      minutesSeated: z.number().int().nullable(),
+      estimatedAvailableIn: z.number().int().nullable().describe("Minutes until the table is expected to free up"),
+    })),
+    summary: z.object({
+      total: z.number().int(),
+      available: z.number().int(),
+      occupied: z.number().int(),
+      reserved: z.number().int(),
+    }),
+  },
   async handler(_input, _ctx) {
     const now = Date.now();
     const tableList = Array.from(store.tables.values()).map((table) => {

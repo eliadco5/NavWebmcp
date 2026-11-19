@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { crmLoyalty, computeLoyaltyTier, type LoyaltyAccount } from "@/lib/seed";
+import { Id, Points, LongText, LoyaltySchema, LoyaltyTier } from "./schemas";
 
 const loyaltyMap = crmLoyalty();
 
@@ -13,9 +14,16 @@ export const addLoyaltyPoints = defineOperation({
   roles: ["support", "admin"],
   module: "crm.loyalty",
   inputSchema: {
-    guestId: z.string().describe("The unique guest identifier"),
-    points: z.number().int().positive().describe("Number of points to add"),
-    reason: z.string().min(1).describe("Reason for awarding points (e.g. visit date or event description)"),
+    guestId: Id().describe("The unique guest identifier"),
+    points: Points().describe("Number of points to add"),
+    reason: LongText().min(1).describe("Reason for awarding points (e.g. visit date or event description)"),
+  },
+  outputSchema: {
+    loyalty: LoyaltySchema.describe("The updated loyalty account"),
+    pointsAdded: z.number().int(),
+    previousTier: LoyaltyTier,
+    currentTier: LoyaltyTier,
+    tierUpgrade: z.boolean().describe("True when this award moved the guest to a higher tier"),
   },
   async handler({ guestId, points, reason }, ctx) {
     const account = loyaltyMap.get(guestId);

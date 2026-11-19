@@ -1,26 +1,14 @@
 import { ok, fail } from "@/lib/result";
 import type { Result } from "@/lib/result";
+import type { GuestPreferences, LoyaltyAccount } from "@/lib/seed";
+
+export type { GuestPreferences, LoyaltyAccount };
 
 export interface HostVipGuestInput {
   reservationId: string;
   guestId: string;
   pointsToAward: number;
   visitNote: string;
-}
-
-export interface GuestPreferences {
-  guestId: string;
-  dietaryRestrictions: string[];
-  seatingPreference: string;
-  specialNotes: string;
-  updatedAt: string | null;
-}
-
-export interface LoyaltyAccount {
-  guestId: string;
-  tier: "bronze" | "silver" | "gold" | "platinum";
-  pointBalance: number;
-  lifetimePoints: number;
 }
 
 export interface HostVipGuestResult {

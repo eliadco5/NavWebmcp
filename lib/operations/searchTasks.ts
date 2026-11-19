@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { tasksStore } from "@/lib/seed";
+import { Id, ShortText, TaskStatus, TaskSchema } from "./schemas";
 
 const tasks = tasksStore();
 
@@ -13,11 +14,16 @@ export const searchTasks = defineOperation({
   roles: ["support", "admin"],
   module: "tasks.management",
   inputSchema: {
-    department: z.string().optional().describe("Filter by department"),
-    status: z.enum(["open", "in_progress", "completed", "cancelled"]).optional().describe("Filter by task status"),
-    assigneeId: z.string().optional().describe("Filter by assigned user ID"),
-    reservationId: z.string().optional().describe("Filter by related reservation ID"),
+    department: ShortText(100).optional().describe("Filter by department"),
+    status: TaskStatus.optional().describe("Filter by task status"),
+    assigneeId: Id().optional().describe("Filter by assigned user ID"),
+    reservationId: Id().optional().describe("Filter by related reservation ID"),
   },
+  outputSchema: {
+    tasks: z.array(TaskSchema),
+    total: z.number().int(),
+  },
+  untrustedOutput: true,
   async handler({ department, status, assigneeId, reservationId }, _ctx) {
     const results = [...tasks.values()].filter((t) => {
       if (department !== undefined && t.department !== department) return false;

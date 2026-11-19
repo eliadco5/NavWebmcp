@@ -1,6 +1,7 @@
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { getUserById } from "@/lib/auth";
+import { z } from "zod";
 
 export const getContext = defineOperation({
   name: "getContext",
@@ -11,6 +12,12 @@ export const getContext = defineOperation({
   alwaysOn: true,
   tags: ["context"],
   inputSchema: {},
+  outputSchema: {
+    page: z.string(),
+    authenticated: z.boolean(),
+    locale: z.string(),
+    user: z.object({ id: z.string(), displayName: z.string() }).nullable(),
+  },
   async handler(_input, ctx) {
     const user = getUserById(ctx.userId);
     return ok({

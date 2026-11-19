@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { store } from "@/lib/store";
+import { Id, ReservationStatus } from "./schemas";
 
 export const getCheckinStatus = defineOperation({
   name: "getCheckinStatus",
@@ -11,7 +12,17 @@ export const getCheckinStatus = defineOperation({
   roles: ["support", "admin"],
   module: "frontoffice.checkin",
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to look up"),
+    reservationId: Id().describe("Reservation ID to look up"),
+  },
+  outputSchema: {
+    reservationId: z.string(),
+    guestName: z.string(),
+    guestId: z.string().optional().describe("Linked CRM guest, if any"),
+    partySize: z.number().int(),
+    status: ReservationStatus,
+    tableId: z.string().nullable(),
+    seatedAt: z.string().nullable(),
+    minutesSeated: z.number().int().nullable(),
   },
   async handler({ reservationId }, _ctx) {
     const reservation = store.getReservationById(reservationId);

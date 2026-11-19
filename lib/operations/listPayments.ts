@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { financePayments } from "@/lib/seed";
+import { IsoDate, PaymentMethodSchema, PaymentSchema } from "./schemas";
 
 const payments = financePayments();
 
@@ -13,11 +14,17 @@ export const listPayments = defineOperation({
   roles: ["admin"],
   module: "finance.payments",
   inputSchema: {
-    date: z.string().describe("Date in YYYY-MM-DD format"),
-    method: z
-      .enum(["cash", "credit_card", "debit_card", "digital_wallet"])
+    date: IsoDate().describe("Date in YYYY-MM-DD format"),
+    method: PaymentMethodSchema
       .optional()
       .describe("Filter by payment method"),
+  },
+  outputSchema: {
+    date: z.string(),
+    method: PaymentMethodSchema.nullable().describe("The filter applied, or null for all methods"),
+    count: z.number().int(),
+    total: z.number().describe("Sum of non-refunded payments"),
+    payments: z.array(PaymentSchema).describe("Oldest first"),
   },
   async handler({ date, method }, _ctx) {
     let results = [...payments.values()].filter((p) => p.date === date);

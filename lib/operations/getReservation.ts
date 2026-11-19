@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { store } from "@/lib/store";
 import { ok, fail } from "@/lib/result";
+import { Id, ReservationSchema } from "./schemas";
 
 export const getReservation = defineOperation({
   name: "getReservation",
@@ -12,8 +13,9 @@ export const getReservation = defineOperation({
   module: "reservation.search",
   tags: ["booking", "reservation"],
   inputSchema: {
-    reservationId: z.string().describe("ID of the reservation to retrieve"),
+    reservationId: Id().describe("ID of the reservation to retrieve"),
   },
+  outputSchema: { reservation: ReservationSchema },
   async handler({ reservationId }, ctx) {
     const reservation = store.getReservation(reservationId, ctx.userId);
     if (!reservation) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);

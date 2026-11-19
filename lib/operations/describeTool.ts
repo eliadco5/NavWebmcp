@@ -3,35 +3,44 @@ import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { getOpByName } from "./dispatch";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
+import { ShortText, DescribedToolSchema } from "./schemas";
 
-function describeOne(name: string, role: string) {
+function describeOne(name: string, role: string): z.infer<typeof DescribedToolSchema> {
   const op = getOpByName().get(name);
   if (!op) return { name, error: "UNKNOWN_TOOL", message: `No operation named '${name}'.` };
   if (!roleSatisfies(role as never, op.roles)) return { name, error: "FORBIDDEN", message: `Role '${role}' cannot access '${name}'.` };
-  const jsonSchema = zodToJsonSchema(z.object(op.inputSchema as Record<string, z.ZodTypeAny>), { $refStrategy: "none" });
   return {
     name: op.name, title: op.title, description: op.description,
     permission: op.permission, roles: op.roles, module: op.module,
     requiresConfirmation: op.requiresConfirmation ?? false,
     parallelSafe: op.parallelSafe ?? (op.permission === "read"),
-    inputSchema: jsonSchema,
+    inputSchema: toJsonSchema(inputObject(op.inputSchema)),
+    outputSchema: toJsonSchema(outputObject(op.outputSchema)),
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const describeTool = defineOperation<any, any>({
+export const describeTool = defineOperation({
   name: "describe_tool",
   title: "Describe Tool",
-  description: "Return the full input schema and metadata for one or more functions by name. Use after explore() to get exact parameters before invoking.",
+  description:
+    "Return the full input schema, output schema and metadata for one or more functions by name. " +
+    "Use after explore() to get exact parameters before invoking.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    name: z.union([z.string(), z.array(z.string())]).describe("Function name or array of names to describe."),
+    name: z
+      .union([ShortText(128).min(1), z.array(ShortText(128).min(1)).max(50)])
+      .describe("Function name or array of names to describe."),
+  },
+  // A single name returns one entry at the top level; an array returns { tools }.
+  outputSchema: {
+    ...DescribedToolSchema.partial().shape,
+    tools: z.array(DescribedToolSchema).optional().describe("Present when an array of names was requested"),
   },
   async handler({ name }, ctx) {
     if (typeof name === "string") return ok(describeOne(name, ctx.role));
-    return ok({ tools: name.map((n: string) => describeOne(n, ctx.role)) });
+    return ok({ tools: name.map((n) => describeOne(n, ctx.role)) });
   },
 });

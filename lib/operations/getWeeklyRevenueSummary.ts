@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { financePayments, financeAdjustments } from "@/lib/seed";
+import { IsoDate } from "./schemas";
 
 const payments = financePayments();
 const adjustments = financeAdjustments();
@@ -34,7 +35,23 @@ export const getWeeklyRevenueSummary = defineOperation({
   roles: ["admin"],
   module: "finance.revenue",
   inputSchema: {
-    weekStartDate: z.string().describe("First day of the week in YYYY-MM-DD format"),
+    weekStartDate: IsoDate().describe("First day of the week in YYYY-MM-DD format"),
+  },
+  outputSchema: {
+    weekStartDate: z.string(),
+    weekEndDate: z.string(),
+    totalRevenue: z.number(),
+    netRevenue: z.number(),
+    totalCovers: z.number().int(),
+    totalTransactions: z.number().int(),
+    days: z.array(z.object({
+      date: z.string(),
+      totalRevenue: z.number(),
+      totalCovers: z.number().int(),
+      transactionCount: z.number().int(),
+      adjustmentTotal: z.number(),
+      netRevenue: z.number(),
+    })).describe("Seven entries, one per day"),
   },
   async handler({ weekStartDate }, _ctx) {
     const start = new Date(weekStartDate);

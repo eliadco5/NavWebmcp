@@ -11,7 +11,25 @@ import { fail } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { getLoaded } from "@/lib/loadedTools";
 import { flushCurrentSharedState } from "@/lib/shared-state";
+import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
 import type { Role } from "@/lib/auth";
+import type { Operation } from "@/lib/operations/types";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyOp = Operation<any, any>;
+
+export function mcpAnnotations(op: AnyOp) {
+  return {
+    title: op.title,
+    readOnlyHint: op.permission === "read" && !op.dispatchesOps,
+    destructiveHint: op.requiresConfirmation === true || op.dispatchesOps === true,
+  };
+}
+
+/** Every failure, whatever its origin, goes out as the same `{code, message}` shape. */
+function errorResult(error: { code: string; message: string }) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(error, null, 2) }], isError: true };
+}
 
 interface McpContext {
   role: Role;
@@ -59,14 +77,16 @@ export function registerMcpTools(server: McpServer) {
     // Non-alwaysOn ops are only registered if explicitly loaded
     if (!op.alwaysOn && !loaded.has(op.name)) continue;
 
-    const zodShape = op.inputSchema as Record<string, z.ZodTypeAny>;
-
     server.registerTool(
       op.name,
       {
         title: op.title,
         description: op.description,
-        inputSchema: zodShape,
+        // Strict object, so the SDK's own input validation rejects unknown keys too.
+        inputSchema: inlineSchema(inputObject(op.inputSchema as Record<string, z.ZodTypeAny>)),
+        // The SDK requires structuredContent matching this on every non-error result.
+        outputSchema: inlineSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>)),
+        annotations: mcpAnnotations(op),
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (input: Record<string, unknown>, extra: any) => {
@@ -85,28 +105,31 @@ export function registerMcpTools(server: McpServer) {
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
             auditLog.record(op.name, input, false, "agent", err.error);
-            return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
+            return errorResult(err.error);
           }
 
           // Defense-in-depth: re-check role on every call
           if (!roleSatisfies(role, op.roles)) {
             const err = fail("FORBIDDEN", `Role '${role}' is not permitted to call '${op.name}'.`);
             auditLog.record(op.name, input, false, "agent", err.error);
-            return { content: [{ type: "text" as const, text: JSON.stringify(err, null, 2) }], isError: true };
+            return errorResult(err.error);
           }
 
           try {
             const bearerToken: string = extra?.authInfo?.token ?? "";
             const result = await op.handler(input, { userId, role, token: bearerToken });
             auditLog.record(op.name, input, result.success, "agent", result.success ? result.data : result.error);
-            if (result.success) {
-              return { content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }] };
-            } else {
-              return { content: [{ type: "text" as const, text: JSON.stringify(result.error, null, 2) }], isError: true };
-            }
+            if (!result.success) return errorResult(result.error);
+            // The text block is kept for clients that predate structuredContent
+            // (and for scripts/bench.mjs, which parses content[0].text).
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }],
+              structuredContent: result.data as Record<string, unknown>,
+            };
           } catch (err) {
-            auditLog.record(op.name, input, false, "agent", { code: "HANDLER_ERROR", message: String(err) });
-            return { content: [{ type: "text" as const, text: String(err) }], isError: true };
+            const error = { code: "HANDLER_ERROR", message: String(err) };
+            auditLog.record(op.name, input, false, "agent", error);
+            return errorResult(error);
           }
         } finally {
           await flushCurrentSharedState();

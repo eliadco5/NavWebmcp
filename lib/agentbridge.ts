@@ -1,7 +1,7 @@
-import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
 import { getModelContext } from "./webmcp-polyfill";
-import type { ModelContextLike } from "./webmcp-polyfill";
+import type { ModelContextLike, ToolAnnotations } from "./webmcp-polyfill";
+import { inputObject, envelopeSchema, outputObject, toJsonSchema } from "./schema";
 import { auditLog } from "./auditlog";
 import type { OperationContext } from "./operations/types";
 import type { Role } from "./auth";
@@ -13,11 +13,26 @@ export interface AgentBridgeRegistration {
   title?: string;
   description: string;
   inputSchema: z.ZodRawShape;
+  /** Shape of the success `data`; published wrapped in the Result envelope. */
+  outputSchema?: z.ZodRawShape;
   permission: "read" | "write";
   roles: Role[];
   requiresConfirmation?: boolean;
+  untrustedOutput?: boolean;
+  dispatchesOps?: boolean;
   tags?: string[];
   handler: (input: Record<string, unknown>, ctx: OperationContext) => Promise<unknown>;
+}
+
+export function webmcpAnnotations(
+  reg: Pick<AgentBridgeRegistration, "permission" | "requiresConfirmation" | "untrustedOutput" | "dispatchesOps">
+): ToolAnnotations {
+  return {
+    readOnlyHint: reg.permission === "read" && !reg.dispatchesOps,
+    consequentialHint: reg.requiresConfirmation === true || reg.dispatchesOps === true,
+    // invoke relays whatever the called op returns, which may be user-written text.
+    untrustedContentHint: reg.untrustedOutput === true || reg.dispatchesOps === true,
+  };
 }
 
 export type ConfirmationHandler = (
@@ -74,18 +89,23 @@ export class AgentBridge {
 
     this.registrations.push(reg);
 
-    const jsonSchema = zodToJsonSchema(z.object(reg.inputSchema), {
-      $refStrategy: "none",
-    });
-
-    void this.mc.registerTool({
+    // execute() resolves to the full Result envelope, so that is what the
+    // published outputSchema describes.
+    const registered = this.mc.registerTool({
       name: reg.name,
       title: reg.title,
       description: reg.description,
-      inputSchema: jsonSchema as Record<string, unknown>,
+      inputSchema: toJsonSchema(inputObject(reg.inputSchema)),
+      ...(reg.outputSchema && { outputSchema: toJsonSchema(envelopeSchema(reg.outputSchema)) }),
+      annotations: webmcpAnnotations(reg),
       execute: async (input: Record<string, unknown>) => {
         return this.call(reg.name, input);
       },
+    });
+    // A native implementation can reject (e.g. a schema it refuses to serialize);
+    // surface that instead of leaving an unhandled rejection.
+    Promise.resolve(registered).catch((err: unknown) => {
+      console.warn(`[AgentBridge] registerTool('${reg.name}') was rejected:`, err);
     });
   }
 
@@ -138,12 +158,13 @@ export class AgentBridge {
           auditLog.record(name, input, false, "ui", denial);
           return { success: false, error: denial };
         }
-        confirmedInput = { ...input, confirm: true };
+        // Only inject the field where the schema declares it; strict input
+        // validation below would reject it anywhere else.
+        if (hasOwnConfirmField) confirmedInput = { ...input, confirm: true };
       }
     }
 
-    const schema = z.object(reg.inputSchema);
-    const parsed = schema.safeParse(confirmedInput);
+    const parsed = inputObject(reg.inputSchema).safeParse(confirmedInput);
     if (!parsed.success) {
       return {
         success: false,
@@ -181,9 +202,8 @@ export class AgentBridge {
         roles: r.roles,
         tags: r.tags ?? [],
         requiresConfirmation: r.requiresConfirmation ?? false,
-        inputSchema: zodToJsonSchema(z.object(r.inputSchema), {
-          $refStrategy: "none",
-        }),
+        inputSchema: toJsonSchema(inputObject(r.inputSchema)),
+        ...(r.outputSchema && { outputSchema: toJsonSchema(outputObject(r.outputSchema)) }),
       })),
     };
   }

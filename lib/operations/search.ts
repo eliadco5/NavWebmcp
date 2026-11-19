@@ -3,9 +3,9 @@ import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { searchTree } from "@/lib/modules";
 import { registry } from "./registry";
+import { ShortText, SearchFnSchema, ModuleNodeSchema } from "./schemas";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const search = defineOperation<any, any>({
+export const search = defineOperation({
   name: "search",
   title: "Search",
   description:
@@ -19,13 +19,16 @@ export const search = defineOperation<any, any>({
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    pattern: z
-      .string()
+    pattern: ShortText(200)
       .min(1)
       .describe(
         "Linux-style glob matched against module/function paths. " +
         "Examples: \"**/*reservation*\", \"finance/**\", \"*refund*\", or a bare keyword like \"reservation\"."
       ),
+  },
+  outputSchema: {
+    functions: z.array(SearchFnSchema),
+    modules: z.array(ModuleNodeSchema),
   },
   async handler({ pattern }, ctx) {
     return ok(searchTree(pattern, ctx.role, registry));

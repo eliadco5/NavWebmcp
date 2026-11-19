@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { tasksStore, type Task } from "@/lib/seed";
+import { Id, TaskSchema } from "./schemas";
 
 const tasks = tasksStore();
 
@@ -13,8 +14,9 @@ export const completeTask = defineOperation({
   roles: ["customer", "support", "admin"],
   module: "tasks.assignments",
   inputSchema: {
-    taskId: z.string().describe("ID of the task to mark as completed"),
+    taskId: Id().describe("ID of the task to mark as completed"),
   },
+  outputSchema: { task: TaskSchema },
   async handler({ taskId }, ctx) {
     const task = tasks.get(taskId);
     if (!task) return fail("NOT_FOUND", `Task ${taskId} not found`);

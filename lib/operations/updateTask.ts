@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { tasksStore, type Task } from "@/lib/seed";
+import { Id, TaskStatus, TaskPriority, TaskSchema } from "./schemas";
 
 const tasks = tasksStore();
 
@@ -13,11 +14,12 @@ export const updateTask = defineOperation({
   roles: ["support", "admin"],
   module: "tasks.management",
   inputSchema: {
-    taskId: z.string().describe("ID of the task to update"),
-    status: z.enum(["open", "in_progress", "completed", "cancelled"]).optional().describe("New task status"),
-    priority: z.enum(["low", "medium", "high"]).optional().describe("New task priority"),
-    assigneeId: z.string().optional().describe("User ID to reassign the task to"),
+    taskId: Id().describe("ID of the task to update"),
+    status: TaskStatus.optional().describe("New task status"),
+    priority: TaskPriority.optional().describe("New task priority"),
+    assigneeId: Id().optional().describe("User ID to reassign the task to"),
   },
+  outputSchema: { task: TaskSchema },
   async handler({ taskId, status, priority, assigneeId }, _ctx) {
     const task = tasks.get(taskId);
     if (!task) return fail("NOT_FOUND", `Task ${taskId} not found`);

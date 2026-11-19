@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { seatGuestOrchestration } from "@/lib/core/seatGuest";
 import { makeDispatch } from "./dispatch";
+import { Id, CheckinSchema } from "./schemas";
 
 export const seatGuestOp = defineOperation({
   name: "seatGuest",
@@ -15,8 +16,12 @@ export const seatGuestOp = defineOperation({
   module: "frontoffice.checkin",
   tags: ["checkin", "frontoffice"],
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to check in"),
-    tableId: z.string().optional().describe("Table to assign; if omitted an available table with sufficient capacity is auto-assigned"),
+    reservationId: Id().describe("Reservation ID to check in"),
+    tableId: Id().optional().describe("Table to assign; if omitted an available table with sufficient capacity is auto-assigned"),
+  },
+  outputSchema: {
+    checkin: CheckinSchema,
+    validated: z.boolean(),
   },
   async handler(input, ctx) {
     return seatGuestOrchestration(input, makeDispatch(ctx));

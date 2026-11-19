@@ -2,6 +2,8 @@ import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { store } from "@/lib/store";
 import { today } from "@/lib/seed/store";
+import { z } from "zod";
+import { ReservationStatus } from "./schemas";
 
 export const listFrontDeskReservations = defineOperation({
   name: "listFrontDeskReservations",
@@ -11,6 +13,15 @@ export const listFrontDeskReservations = defineOperation({
   roles: ["support", "admin"],
   module: "frontoffice.checkin",
   inputSchema: {},
+  outputSchema: {
+    reservations: z.array(z.object({
+      reservationId: z.string(),
+      guestName: z.string(),
+      partySize: z.number().int(),
+      status: ReservationStatus,
+      tableId: z.string().nullable(),
+    })).describe("Today's reservations, plus undated front-desk ones"),
+  },
   async handler(_input, _ctx) {
     // Front-desk-seeded reservations have no date (they're not tied to slot
     // inventory); a booking made via the Reservations tab always has one. Only

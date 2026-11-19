@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { hostVipGuestOrchestration } from "@/lib/core/hostVipGuest";
 import { makeDispatch } from "./dispatch";
+import { Id, Points, LongText, PreferencesSchema, LoyaltySchema } from "./schemas";
 
 export const hostVipGuestOp = defineOperation({
   name: "hostVipGuest",
@@ -16,11 +17,19 @@ export const hostVipGuestOp = defineOperation({
   module: "frontoffice.checkin",
   tags: ["checkin", "frontoffice", "crm"],
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to check in"),
-    guestId: z.string().describe("The unique guest identifier"),
-    pointsToAward: z.number().int().positive().describe("Loyalty points to award for this visit"),
-    visitNote: z.string().min(1).describe("Note describing the visit, used for both the loyalty reason and the logged communication"),
+    reservationId: Id().describe("Reservation ID to check in"),
+    guestId: Id().describe("The unique guest identifier"),
+    pointsToAward: Points().describe("Loyalty points to award for this visit"),
+    visitNote: LongText().min(1).describe("Note describing the visit, used for both the loyalty reason and the logged communication"),
   },
+  outputSchema: {
+    preferences: PreferencesSchema,
+    loyaltyBefore: LoyaltySchema.describe("Loyalty account before the award"),
+    loyaltyAfter: LoyaltySchema.describe("Loyalty account after the award"),
+    tierUpgrade: z.boolean(),
+    validated: z.boolean(),
+  },
+  untrustedOutput: true,
   async handler(input, ctx) {
     return hostVipGuestOrchestration(input, makeDispatch(ctx));
   },

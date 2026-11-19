@@ -13,12 +13,13 @@ function djb2(s: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Stable canonical string for an operation (name + permission + sorted roles + sorted inputSchema keys). */
+/** Stable canonical string for an operation (name + permission + sorted roles + sorted input/output schema keys). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function opFingerprint(op: Operation<any, any>): string {
   const schemaKeys = Object.keys(op.inputSchema).sort().join(",");
+  const outputKeys = Object.keys(op.outputSchema ?? {}).sort().join(",");
   const roles = [...op.roles].sort().join(",");
-  return `${op.name}|${op.permission}|${roles}|${schemaKeys}|${op.module ?? ""}|${op.parallelSafe ?? ""}`;
+  return `${op.name}|${op.permission}|${roles}|${schemaKeys}|${outputKeys}|${op.module ?? ""}|${op.parallelSafe ?? ""}`;
 }
 
 /**
@@ -42,7 +43,7 @@ export function visibleOps(role: Role, registry: Operation<any, any>[]): Operati
 export interface CapabilityManifestTool {
   name: string;
   title: string;
-  permission: string;
+  permission: "read" | "write";
   roles: Role[];
   requiresConfirmation: boolean;
 }

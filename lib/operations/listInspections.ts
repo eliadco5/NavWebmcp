@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { housekeepingInspections } from "@/lib/seed";
+import { Id, InspectionSchema } from "./schemas";
 
 const inspections = housekeepingInspections();
 
@@ -13,8 +14,12 @@ export const listInspections = defineOperation({
   roles: ["admin"],
   module: "housekeeping.inspections",
   inputSchema: {
-    tableId: z.string().optional().describe("Filter inspections by table ID. Omit to return all."),
+    tableId: Id().optional().describe("Filter inspections by table ID. Omit to return all."),
     result: z.enum(["pass", "fail"]).optional().describe("Filter by inspection result."),
+  },
+  outputSchema: {
+    inspections: z.array(InspectionSchema).describe("Newest first"),
+    total: z.number().int(),
   },
   async handler({ tableId, result }, _ctx) {
     let records = [...inspections];

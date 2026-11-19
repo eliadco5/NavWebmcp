@@ -2,9 +2,9 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { store } from "@/lib/store";
+import { Id, BillItemSchema } from "./schemas";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const getBillSummary = defineOperation<any, any>({
+export const getBillSummary = defineOperation({
   name: "getBillSummary",
   title: "Get Bill Summary",
   description: "Get the bill summary for a seated reservation.",
@@ -12,7 +12,17 @@ export const getBillSummary = defineOperation<any, any>({
   roles: ["customer", "support", "admin"],
   module: "frontoffice.checkout",
   inputSchema: {
-    reservationId: z.string().describe("Reservation ID to retrieve bill for"),
+    reservationId: Id().describe("Reservation ID to retrieve bill for"),
+  },
+  outputSchema: {
+    reservationId: z.string(),
+    status: z.enum(["open", "closed"]).describe("open = guest still seated (running preview); closed = bill generated at checkout"),
+    guestName: z.string(),
+    items: z.array(BillItemSchema),
+    total: z.number(),
+    note: z.string().optional().describe("Present when status is open"),
+    tableId: z.string().optional().describe("Present when status is closed"),
+    generatedAt: z.string().optional().describe("Present when status is closed"),
   },
   async handler({ reservationId }, ctx) {
     const reservation = store.getReservationById(reservationId);
@@ -36,12 +46,12 @@ export const getBillSummary = defineOperation<any, any>({
       if (reservation.status !== "checked-in") {
         return fail("NOT_FOUND", "No bill found for this reservation");
       }
-      return ok({ reservationId, status: "open", guestName: reservation.name, items: [], total: 0, note: "Bill will be generated at checkout" });
+      return ok({ reservationId, status: "open" as const, guestName: reservation.name, items: [], total: 0, note: "Bill will be generated at checkout" });
     }
 
     return ok({
       reservationId,
-      status: "closed",
+      status: "closed" as const,
       guestName: reservation.name,
       tableId: bill.tableId,
       items: bill.items,
