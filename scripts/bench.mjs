@@ -562,16 +562,26 @@ function sumObservationTokens(steps) {
 // Drives the booking form for one iteration, appending an observation snapshot after
 // every interaction to `steps`. Shared by laneDBooking and laneDJourney so the two
 // don't drift out of sync on selectors.
-async function runBookingUiSteps(page, { date, time, guestName }, steps) {
-  steps.push(await captureObservation(page));
-  await page.getByLabel("Date").fill(date);
-  steps.push(await captureObservation(page));
-  await page.getByLabel("Party Size").fill("2");
-  steps.push(await captureObservation(page));
-  await page.getByRole("button", { name: "Search" }).click();
+// The app is tabbed (components/AppShell.tsx). A step that starts on the wrong tab
+// can never find its controls, so each one selects its own tab first.
+async function openTab(page, label) {
+  await page.getByRole("tab", { name: label, exact: true }).click();
+}
 
-  const row = page.locator("div", { hasText: time }).filter({ has: page.getByRole("button", { name: "Book" }) }).last();
-  const bookInRow = row.getByRole("button", { name: "Book" });
+async function runBookingUiSteps(page, { date, time, guestName }, steps) {
+  await openTab(page, "Reservations");
+  steps.push(await captureObservation(page));
+  await page.getByLabel("Date", { exact: true }).fill(date);
+  steps.push(await captureObservation(page));
+  // exact everywhere: string names match case-insensitive substrings, so "Search"
+  // would also hit Activity Log rows like "searchAvailability", and "Party Size"
+  // the walk-in WaitTimeCard's "Party size" input on the same tab.
+  await page.getByLabel("Party Size", { exact: true }).fill("2");
+  steps.push(await captureObservation(page));
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  const row = page.locator("div", { hasText: time }).filter({ has: page.getByRole("button", { name: "Book", exact: true }) }).last();
+  const bookInRow = row.getByRole("button", { name: "Book", exact: true });
   // waitFor(), not count()/isVisible() — those check immediately and race the
   // async searchAvailability fetch triggered by the Search click above.
   const rowVisible = await bookInRow
@@ -583,10 +593,10 @@ async function runBookingUiSteps(page, { date, time, guestName }, steps) {
   if (!rowVisible) return false;
   await bookInRow.click();
   steps.push(await captureObservation(page));
-  await page.getByLabel("Guest Name").fill(guestName);
+  await page.getByLabel("Guest Name", { exact: true }).fill(guestName);
   steps.push(await captureObservation(page));
-  await page.getByRole("button", { name: "Confirm Booking" }).click();
-  await page.getByLabel("Guest Name").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+  await page.getByRole("button", { name: "Confirm Booking", exact: true }).click();
+  await page.getByLabel("Guest Name", { exact: true }).waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
   steps.push(await captureObservation(page));
   return true;
 }
@@ -595,6 +605,7 @@ async function runBookingUiSteps(page, { date, time, guestName }, steps) {
 // Diaz), appending an observation snapshot after every interaction to `steps`. Shared
 // by laneDCheckin and laneDJourney.
 async function runCheckinUiSteps(page, steps, iterLabel) {
+  await openTab(page, "Front Desk");
   const checkInBtn = page.getByRole("button", { name: /Check in Carol Diaz/i });
   // isVisible() checks immediately and does NOT wait despite taking a `timeout`
   // option (that only bounds internal actionability checks) — waitFor() is the
@@ -626,7 +637,7 @@ async function runCheckinUiSteps(page, steps, iterLabel) {
   // checkOutGuest requires confirmation — approve the dialog the same way a human
   // would. The dialog mounts after a React state update, not synchronously with
   // the click, so wait for it rather than assuming it's already there.
-  const confirmBtn = page.getByRole("button", { name: "Confirm" });
+  const confirmBtn = page.getByRole("button", { name: "Confirm", exact: true });
   await confirmBtn.waitFor({ state: "visible", timeout: 5000 });
   await confirmBtn.click();
   await checkOutBtn.waitFor({ state: "hidden", timeout: 5000 });
@@ -676,6 +687,7 @@ async function laneDCheckin(n) {
         // events, so the page must reload to see the restored "pending" reservation.
         await page.request.post(`${BASE}/api/bench/reset`);
         await page.reload();
+        await openTab(page, "Front Desk");
         await page.getByRole("button", { name: /Check in Carol Diaz/i }).waitFor({ state: "visible", timeout: 10000 });
       }
     }
@@ -715,6 +727,7 @@ async function laneDJourney(n) {
         // Same reload requirement as laneDCheckin — front-office writes emit no SSE.
         await page.request.post(`${BASE}/api/bench/reset`);
         await page.reload();
+        await openTab(page, "Front Desk");
         await page.getByRole("button", { name: /Check in Carol Diaz/i }).waitFor({ state: "visible", timeout: 10000 });
       }
     }
