@@ -95,21 +95,26 @@ describe('seatGuestOrchestration', () => {
     expect(call).not.toHaveBeenCalledWith('checkOutGuest', expect.anything())
   })
 
-  it('VALIDATION_FAILED: table still not occupied in recheck → rollback + error', async () => {
+  // Deliberately NOT a failure (same as book's slotStillOpen): on a multi-instance
+  // deploy the occupancy recheck can read stale state after a successful check-in.
+  it('table still shows available in recheck → success with validated:false', async () => {
     const call = makeMockCall({
       getOccupancy: [
         { success: true, data: AVAILABLE_TABLES },
-        { success: true, data: AVAILABLE_TABLES },   // recheck: t_01 still "available" — seating didn't stick
+        { success: true, data: AVAILABLE_TABLES },   // recheck: t_01 still "available"
       ],
       checkInGuest: [{ success: true, data: CHECKIN_INFO }],
       getCheckinStatus: [{ success: true, data: { status: 'checked-in' } }],
     })
     const result = await seatGuestOrchestration(INPUT, call)
-    expect(result.success).toBe(false)
-    if (!result.success) expect(result.error.code).toBe('VALIDATION_FAILED')
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.checkin).toEqual(CHECKIN_INFO)
+      expect(result.data.validated).toBe(false)
+    }
   })
 
-  it('VALIDATION_FAILED: getCheckinStatus reports non-checked-in status → rollback + error', async () => {
+  it('VALIDATION_FAILED: getCheckinStatus reports non-checked-in status → error', async () => {
     const call = makeMockCall({
       getOccupancy: [
         { success: true, data: AVAILABLE_TABLES },
@@ -123,17 +128,18 @@ describe('seatGuestOrchestration', () => {
     if (!result.success) expect(result.error.code).toBe('VALIDATION_FAILED')
   })
 
-  it('rollback calls checkOutGuest with { reservationId }', async () => {
+  // checkOutGuest bills and frees the table; it must never be used as an "undo".
+  it.each([
+    ['status not checked-in', { status: 'pending' }, TABLES_AFTER_SEAT],
+    ['table not occupied', { status: 'checked-in' }, AVAILABLE_TABLES],
+  ])('never calls checkOutGuest when validation disagrees (%s)', async (_why, status, recheck) => {
     const call = makeMockCall({
-      getOccupancy: [
-        { success: true, data: AVAILABLE_TABLES },
-        { success: true, data: AVAILABLE_TABLES },   // still not occupied → triggers rollback
-      ],
+      getOccupancy: [{ success: true, data: AVAILABLE_TABLES }, { success: true, data: recheck }],
       checkInGuest: [{ success: true, data: CHECKIN_INFO }],
-      getCheckinStatus: [{ success: true, data: { status: 'checked-in' } }],
+      getCheckinStatus: [{ success: true, data: status }],
     })
     await seatGuestOrchestration(INPUT, call)
-    expect(call).toHaveBeenCalledWith('checkOutGuest', { reservationId: INPUT.reservationId })
+    expect(call).not.toHaveBeenCalledWith('checkOutGuest', expect.anything())
   })
 
   it('checkInGuest is called with reservationId and tableId from input', async () => {

@@ -76,10 +76,16 @@ export async function seatGuestOrchestration(
       (t) => t.tableId === checkin.tableId && t.status === "occupied"
     ) ?? false;
 
-  if (!checkedIn || !tableOccupied) {
-    await call("checkOutGuest", { reservationId });
-    return fail("VALIDATION_FAILED", "Check-in could not be validated (inconsistent state). Please try again.");
+  // No rollback, same reasoning as lib/core/book.ts. checkOutGuest is not an undo:
+  // it bills the visit, frees the table and closes the reservation. And a failed
+  // re-check right after a successful checkInGuest is almost always a stale read
+  // from another serverless instance, so "rolling back" would bill and evict a
+  // guest who really was seated. If the check-in truly didn't happen, checkOutGuest
+  // would be rejected anyway (it requires status checked-in).
+  if (!checkedIn) {
+    return fail("VALIDATION_FAILED", "Check-in could not be confirmed (inconsistent state). Check getCheckinStatus before retrying.");
   }
 
-  return ok({ checkin, validated: true });
+  // The occupancy recheck is reported, not acted on.
+  return ok({ checkin, validated: tableOccupied });
 }
