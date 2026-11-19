@@ -67,6 +67,8 @@ node scripts/bench.mjs --flow=checkin --headed --slowmo=250 --demo   # watch a l
 
 Both write their results to `docs/*-data.js` / `docs/*-results.json`. Open `docs/presentation.html` in a browser for the full slide deck with live numbers.
 
+The Playwright lane (D) drives the real, tabbed UI. Each step first selects its own tab (Reservations or Front Desk), including after a reload, and matches labels exactly. A loose match would also hit Activity Log rows such as `searchAvailability`, or the walk-in "Party size" input that shares the Reservations tab. If you rename a tab or a form label, update `scripts/bench.mjs` to match.
+
 ---
 
 ## The core idea
@@ -115,7 +117,17 @@ sequenceDiagram
     Surface-->>Agent: { reservation, validated: true }
 ```
 
-The agent sees none of steps 1–3. If the post-condition check fails (reservation missing or slot still open), the orchestration rolls back via `cancelReservation` and returns a typed error. Source: `lib/core/book.ts`. `seatGuest` (`lib/core/seatGuest.ts`) and `hostVipGuest` (`lib/core/hostVipGuest.ts`) follow the identical pattern for front-desk seating and a 7-step CRM+front-desk chain, respectively.
+The agent sees none of steps 1–3. Source: `lib/core/book.ts`. `seatGuest` (`lib/core/seatGuest.ts`) and `hostVipGuest` (`lib/core/hostVipGuest.ts`) follow the same pattern for front-desk seating and a 7-step CRM+front-desk chain, respectively.
+
+**When the post-condition check disagrees.** The check runs right after a write that succeeded. On a multi-instance deploy it can land on a server instance that hasn't seen that write yet, so a failed check usually means a stale read, not a failed write. The composites therefore only act when the write itself is genuinely missing:
+
+| Composite | Write not visible afterwards | Secondary check disagrees |
+|---|---|---|
+| `book` | Reservation missing → cancels it (harmless if absent) and returns `VALIDATION_FAILED` | Slot still shows open → success with `validated: false` |
+| `seatGuest` | Status not `checked-in` → `VALIDATION_FAILED`, no rollback | Table not yet shown occupied → success with `validated: false` |
+| `hostVipGuest` | Status not `checked-in` → `VALIDATION_FAILED` before any points are awarded, no rollback | — |
+
+`seatGuest` and `hostVipGuest` never "undo" with `checkOutGuest`. Checking out bills the visit and frees the table, which is the wrong outcome for a guest who really was seated.
 
 ### 2. One registry, two surfaces
 
@@ -339,7 +351,7 @@ Only 8 navigation/meta tools appear at connect time (~180 tokens). Business oper
 
 ### Composite operations
 
-A composite tool (like `book`, `seatGuest`, or `hostVipGuest`) wraps multi-step orchestration behind a single agent-facing call — precondition checks, the write itself, and post-condition validation all happen invisibly, with a compensating rollback on failure. The orchestration logic lives in `lib/core/` (surface-agnostic), injected with either an HTTP caller (browser) or an in-process dispatcher (server). Context accumulation is zero: the agent has nothing to re-read.
+A composite tool (like `book`, `seatGuest`, or `hostVipGuest`) wraps multi-step orchestration behind a single agent-facing call — precondition checks, the write itself, and post-condition validation all happen invisibly. A failed validation returns a typed error, or `validated: false` when only a possibly-stale re-check disagrees (see the table under [The core idea](#the-core-idea)). The orchestration logic lives in `lib/core/` (surface-agnostic), injected with either an HTTP caller (browser) or an in-process dispatcher (server). Context accumulation is zero: the agent has nothing to re-read.
 
 ### Two surfaces, one registry
 
@@ -480,7 +492,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "1.1.0"
+document.modelContext.protocolVersion   // "1.2.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
@@ -498,6 +510,23 @@ await document.modelContext.executeTool("book", {
 `app/providers.tsx` registers the whole operation registry through `initAgentBridge` (`lib/adapters/webmcp.ts`) once the user is known. Each call goes to the server via `POST /api/call`, so it gets the same RBAC, strict input validation and audit log as the UI. `window.agentBridge.describe()` lists everything registered, with schemas.
 
 The in-page `outputSchema` describes the full `Result` envelope, because that is what `execute()` returns. The data schema alone is in `describe_tool` and `agentBridge.describe()`. `executeTool` on the polyfill returns the raw object, not the JSON string the spec returns. That difference is deliberate; see [`docs/webmcp-alignment.md`](docs/webmcp-alignment.md).
+
+Cancellation and events follow the spec (protocol ≥ 1.2.0):
+
+```javascript
+// Lifecycle events, fired at document.modelContext with the tool's name
+document.modelContext.addEventListener("toolactivated", (e) => console.log("started", e.toolName))
+document.modelContext.addEventListener("toolcancel",    (e) => console.log("cancelled", e.toolName))
+
+// Cancel a call: execute() gets its own AbortSignal, which AgentBridge passes to the server request
+const ctrl = new AbortController()
+const pending = document.modelContext.executeTool("listReservations", {}, { signal: ctrl.signal })
+ctrl.abort("user stopped")   // pending rejects with "user stopped"; toolcancel fires; any late result is ignored
+
+// Tool names are unique: registering a second "book" rejects with InvalidStateError
+```
+
+If the caller cancels while a confirmation dialog is open, the operation is never sent to the server and returns `CANCELLED`.
 
 ### Operations catalogue
 

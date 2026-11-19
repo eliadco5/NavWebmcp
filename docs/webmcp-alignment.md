@@ -10,7 +10,7 @@ which was added on 2 Nov 2026 in
   native implementation
 - `lib/agentbridge.ts`, which registers our operations into whichever `modelContext` is
   present
-- NavWebMcp protocol **1.1.0** (`lib/protocol.ts`, `CHANGELOG.md`)
+- NavWebMcp protocol **1.2.0** (`lib/protocol.ts`, `CHANGELOG.md`)
 
 **The goal is alignment, not a clone.** Tools that AgentBridge registers must work on a
 native `modelContext` exactly as the spec describes. The polyfill is a development
@@ -35,7 +35,7 @@ either an **extension** (we add something the spec doesn't define) or a **diverg
 | `inputSchema` | Optional JSON Schema `object` | Always sent. A strict object with `additionalProperties: false`, generated from Zod | ✅ |
 | `outputSchema` | Optional JSON Schema `object`. Serialized at registration and returned as a deep copy | Always sent. Describes the **`Result` envelope** that `execute` resolves to (see below). The polyfill serializes it, returns deep copies, and throws `TypeError` for non-object or circular schemas | ✅ |
 | `annotations` | `readOnlyHint`, `untrustedContentHint`, `consequentialHint`, `debugging` | `readOnlyHint` ← `permission: "read"`. `consequentialHint` ← `requiresConfirmation`. `untrustedContentHint` ← `untrustedOutput`. `invoke` dispatches other ops, so it is never marked read-only and always gets `consequentialHint` and `untrustedContentHint`. We never set `debugging` | ✅ |
-| `execute(input, {signal})` | The callback receives an `AbortSignal` | Only `input` is passed, so a running call can't be cancelled | ⏳ Revisit when an agent we support starts sending `toolcancel` |
+| `execute(input, {signal})` | The callback receives an `AbortSignal` from a new per-execution `AbortController` | Same. AgentBridge passes the signal on to `fetch('/api/call')`. If the caller cancels while a confirmation dialog is open, the op never reaches the server (`CANCELLED`) | ✅ (1.2.0) |
 
 ### What our `outputSchema` describes
 
@@ -56,16 +56,16 @@ data schema inside `data`.
 | API | Spec | Ours | Status |
 |---|---|---|---|
 | `registerTool(tool, {signal, exposedTo})` | Returns `Promise<undefined>`. Unregisters when `signal` aborts | Same, including abort-to-unregister | ✅ |
-| Duplicate name | Rejects with `InvalidStateError` | The polyfill **overwrites** silently. `AgentBridge.register()` dedupes by name first, so this never happens in our own code | ↔️ Revisit if third-party code registers into our polyfill |
+| Duplicate name | Rejects with `InvalidStateError`, checked before name validation and again after schema serialization | Same. A name can be reused once its registration is aborted | ✅ (1.2.0) |
 | Invalid name | Rejects with `InvalidStateError` | Throws `DOMException` with name `DataError` | ↔️ Minor. Only the error name differs |
 | `registerTool` rejection handling | — | AgentBridge catches rejections and logs them (it used to discard the promise) | ✅ |
 | `getTools({fromOrigins})` | Returns `Promise<sequence<RegisteredTool>>` | **Synchronous** array, polyfill only | ↔️ Revisit when we consume tools from a native implementation |
-| `executeTool(registeredTool, input, {signal})` | Takes a `RegisteredTool` object. Resolves with a **JSON string**. Missing input defaults to `{}` | Takes a tool **name**. Resolves with the **raw value**. Missing input defaults to `{}` | ↔️ **Deliberate.** Our tests and console use read the value directly. Native-only callers (real browser agents) never touch the polyfill, so they can't be affected |
+| `executeTool(registeredTool, input, {signal})` | Takes a `RegisteredTool` object. Resolves with a **JSON string**. Missing input defaults to `{}`. Aborting `signal` rejects with its reason, aborts the tool's signal, fires `toolcancel`, and ignores any later result | Takes a tool **name**. Resolves with the **raw value**. Defaults and cancellation behave as in the spec | ↔️ **Deliberate** for the name and the raw value. Our tests and console use read the value directly. Native-only callers (real browser agents) never touch the polyfill, so they can't be affected. Cancellation ✅ (1.2.0) |
 | `RegisteredTool.window` / `.origin` | Present | Absent | ⏳ Not needed while there's a single origin |
 | `exposedTo` / `fromOrigins`, and the `tools` Permissions Policy | Two-sided cross-origin opt-in | Not implemented. Everything is same-origin | ⏳ Revisit if a tool is ever embedded cross-origin (iframe) |
 | `toolchange` event | Fired on register and unregister | Fired, and also carries `tool` and `action` properties | ➕ |
-| `toolactivated` / `toolcancel` events | Defined | Not fired | ⏳ Same trigger as `execute` signal above |
-| Error types | `NotFoundError`, `DataError`, `OperationError`, `AbortError` | Only `NotFoundError` (unknown tool). Our failures come back inside the envelope instead | ↔️ Covered by the envelope |
+| `toolactivated` / `toolcancel` events | `ToolActivatedEvent` / `ToolCancelEvent` with `toolName`, fired at the `ModelContext`. `toolactivated` comes right after `execute` is invoked, before it settles | Same, plus the `ontoolactivated` / `ontoolcancel` handler attributes | ✅ (1.2.0) |
+| Error types | `NotFoundError`, `DataError`, `OperationError`, `AbortError` | `NotFoundError` for an unknown tool, `InvalidStateError` for a duplicate name, and the caller's abort reason on cancel. Other failures come back inside the envelope | ↔️ Covered by the envelope |
 
 ## Extensions (not in the spec)
 

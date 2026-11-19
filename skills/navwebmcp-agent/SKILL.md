@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 1.1.0
+version: 1.2.0
 protocol: ">=1.0.0 <2.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -220,6 +220,7 @@ confirmation is actually enforced:**
 | `NOT_FOUND` | A referenced entity or module path doesn't exist | Not retryable with the same identifier. |
 | `CONFIRMATION_REQUIRED` | A `confirm` parameter was omitted on a gated operation | Ask the user, re-call with `confirm: true`. |
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
+| `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
 | `HANDLER_ERROR` | Unhandled server-side failure | Transient or a bug. Retry at most once. |
 
 Servers may define additional domain-specific error codes beyond this protocol-level set.

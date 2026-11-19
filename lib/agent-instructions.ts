@@ -47,5 +47,5 @@ This prevents chatty back-and-forth: gather first, act once.
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 
 ## Error codes
-UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · HANDLER_ERROR (retry at most once).
+UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once).
 `.trim();

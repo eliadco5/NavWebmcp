@@ -29,8 +29,35 @@ export interface ModelContextTool {
   inputSchema?: Record<string, unknown>;
   /** JSON Schema of the value `execute` resolves to (spec draft 13 Nov 2026). */
   outputSchema?: Record<string, unknown>;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
+  execute: (input: Record<string, unknown>, options?: ToolExecuteCallbackOptions) => Promise<unknown>;
   annotations?: ToolAnnotations;
+}
+
+/** Spec ToolExecuteCallbackOptions: aborted when the caller cancels this execution. */
+export interface ToolExecuteCallbackOptions {
+  signal: AbortSignal;
+}
+
+export interface ModelContextExecuteToolOptions {
+  signal?: AbortSignal;
+}
+
+/** Spec ToolActivatedEvent: fired at the ModelContext right after `execute` is invoked. */
+export class ToolActivatedEvent extends Event {
+  readonly toolName: string;
+  constructor(type: string, init: EventInit & { toolName?: string } = {}) {
+    super(type, init);
+    this.toolName = init.toolName ?? "";
+  }
+}
+
+/** Spec ToolCancelEvent: fired at the ModelContext when a pending execution is cancelled. */
+export class ToolCancelEvent extends Event {
+  readonly toolName: string;
+  constructor(type: string, init: EventInit & { toolName?: string } = {}) {
+    super(type, init);
+    this.toolName = init.toolName ?? "";
+  }
 }
 
 interface StoredTool {
@@ -68,6 +95,8 @@ export interface ToolChangeEvent extends Event {
 class ModelContextImpl extends EventTarget {
   private tools: Map<string, StoredTool> = new Map();
   ontoolchange: ((event: ToolChangeEvent) => void) | null = null;
+  ontoolactivated: ((event: ToolActivatedEvent) => void) | null = null;
+  ontoolcancel: ((event: ToolCancelEvent) => void) | null = null;
   /** AgentBridge extension — not part of the WebMCP spec. Behavioral instructions for in-page agents. */
   instructions: string | null = null;
   /** AgentBridge extension — not part of the WebMCP spec. Semver of the NavWebMcp protocol contract. */
@@ -77,6 +106,9 @@ class ModelContextImpl extends EventTarget {
     tool: ModelContextTool,
     options: ModelContextRegisterToolOptions = {}
   ): Promise<void> {
+    // Spec order: duplicate check before name validation, repeated after schema
+    // serialization (a schema's toJSON can register a tool of the same name).
+    this.assertNotRegistered(tool.name);
     if (!tool.name || !/^[A-Za-z0-9_.-]{1,128}$/.test(tool.name)) {
       throw new DOMException(
         `Tool name "${tool.name}" is invalid. Must match [A-Za-z0-9_.-], 1-128 chars.`,
@@ -86,6 +118,7 @@ class ModelContextImpl extends EventTarget {
 
     const inputSchemaJson = serializeSchema(tool.inputSchema, "inputSchema");
     const outputSchemaJson = serializeSchema(tool.outputSchema, "outputSchema");
+    this.assertNotRegistered(tool.name);
 
     this.tools.set(tool.name, { tool, inputSchemaJson, outputSchemaJson });
     this.dispatchToolChange(tool, "registered");
@@ -107,14 +140,58 @@ class ModelContextImpl extends EventTarget {
     }));
   }
 
-  /** Returns the raw value, not the spec's JSON string — see docs/webmcp-alignment.md. */
-  async executeTool(
+  /**
+   * Returns the raw value, not the spec's JSON string — see docs/webmcp-alignment.md.
+   * Cancellation follows the spec: each execution gets its own AbortController;
+   * aborting `options.signal` rejects with the caller's reason, aborts the tool's
+   * signal, fires `toolcancel`, and any later result is ignored.
+   */
+  executeTool(
     name: string,
-    input: Record<string, unknown> = {}
+    input: Record<string, unknown> = {},
+    options: ModelContextExecuteToolOptions = {}
   ): Promise<unknown> {
     const stored = this.tools.get(name);
-    if (!stored) throw new DOMException(`Tool "${name}" not found`, "NotFoundError");
-    return stored.tool.execute(input);
+    if (!stored) return Promise.reject(new DOMException(`Tool "${name}" not found`, "NotFoundError"));
+    const callerSignal = options.signal;
+    if (callerSignal?.aborted) return Promise.reject(callerSignal.reason);
+
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      let settled = false;
+      const onCallerAbort = () => {
+        if (settled) return;
+        settled = true;
+        reject(callerSignal!.reason);
+        controller.abort(callerSignal!.reason);
+        this.fire(new ToolCancelEvent("toolcancel", { toolName: name }), this.ontoolcancel);
+      };
+      callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+
+      let pending: Promise<unknown>;
+      try {
+        pending = Promise.resolve(stored.tool.execute(input, { signal: controller.signal }));
+      } catch (err) {
+        pending = Promise.reject(err);
+      }
+      this.fire(new ToolActivatedEvent("toolactivated", { toolName: name }), this.ontoolactivated);
+
+      pending.then(
+        (value) => { if (!settled) { settled = true; callerSignal?.removeEventListener("abort", onCallerAbort); resolve(value); } },
+        (err) => { if (!settled) { settled = true; callerSignal?.removeEventListener("abort", onCallerAbort); reject(err); } }
+      );
+    });
+  }
+
+  private assertNotRegistered(name: string) {
+    if (this.tools.has(name)) {
+      throw new DOMException(`A tool named "${name}" is already registered.`, "InvalidStateError");
+    }
+  }
+
+  private fire<E extends Event>(event: E, handler: ((e: E) => void) | null) {
+    this.dispatchEvent(event);
+    handler?.(event);
   }
 
   private dispatchToolChange(
@@ -143,6 +220,8 @@ class ModelContextImpl extends EventTarget {
 export interface ModelContextLike extends EventTarget {
   registerTool(tool: ModelContextTool, options?: ModelContextRegisterToolOptions): Promise<void> | void;
   ontoolchange?: ((event: ToolChangeEvent) => void) | null;
+  ontoolactivated?: ((event: ToolActivatedEvent) => void) | null;
+  ontoolcancel?: ((event: ToolCancelEvent) => void) | null;
   /** AgentBridge extension — not part of the WebMCP spec. */
   instructions?: string | null;
   /** AgentBridge extension — not part of the WebMCP spec. */
@@ -150,7 +229,7 @@ export interface ModelContextLike extends EventTarget {
   /** Polyfill-only — not part of the WebMCP spec. */
   getTools?(): ModelContextTool[];
   /** Polyfill-only — not part of the WebMCP spec. */
-  executeTool?(name: string, input?: Record<string, unknown>): Promise<unknown>;
+  executeTool?(name: string, input?: Record<string, unknown>, options?: ModelContextExecuteToolOptions): Promise<unknown>;
 }
 
 declare global {

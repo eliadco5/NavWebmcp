@@ -384,6 +384,7 @@ describe("call — confirmation", () => {
 
       expect(handler).toHaveBeenCalledWith(
         { reservationId: "res_001", confirm: true },
+        expect.anything(),
         expect.anything()
       );
     });
@@ -423,7 +424,7 @@ describe("call — confirmation", () => {
       const result = await bridge.call("confirmFieldOp", { reservationId: "res_001", confirm: true }) as { success: boolean };
 
       expect(onConfirmation).not.toHaveBeenCalled();
-      expect(handler).toHaveBeenCalledWith({ reservationId: "res_001", confirm: true }, expect.anything());
+      expect(handler).toHaveBeenCalledWith({ reservationId: "res_001", confirm: true }, expect.anything(), expect.anything());
       expect(result.success).toBe(true);
     });
 
@@ -810,5 +811,41 @@ describe("call — strict input", () => {
     const res = (await bridge.call("fakeOp", { value: "x", valu: "typo" })) as { success: boolean; error: { code: string } };
     expect(res.success).toBe(false);
     expect(res.error.code).toBe("INVALID_INPUT");
+  });
+});
+
+describe("call — cancellation", () => {
+  it("passes the caller's signal through to the handler", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const handler = vi.fn().mockResolvedValue({ success: true, data: {} });
+    const bridge = new AgentBridge({ getUserId: () => "u1", getUserRole: () => "admin" });
+    bridge.register({ ...fakeOp, name: "sig", handler });
+    const controller = new AbortController();
+    await bridge.call("sig", { value: "x" }, { signal: controller.signal });
+    expect(handler).toHaveBeenCalledWith({ value: "x" }, expect.anything(), { signal: controller.signal });
+  });
+
+  it("does not run the op if the caller cancelled while the confirmation dialog was open", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const handler = vi.fn().mockResolvedValue({ success: true, data: {} });
+    const controller = new AbortController();
+    const bridge = new AgentBridge({
+      getUserId: () => "u1",
+      getUserRole: () => "admin",
+      onConfirmation: async () => { controller.abort(); return true; },
+    });
+    bridge.register({ ...writeOp, name: "guarded", handler });
+    const res = (await bridge.call("guarded", { value: "x" }, { signal: controller.signal })) as { error: { code: string } };
+    expect(res.error.code).toBe("CANCELLED");
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("execute() forwards the WebMCP signal to the handler", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const handler = vi.fn().mockResolvedValue({ success: true, data: {} });
+    const bridge = new AgentBridge({ getUserId: () => "u1", getUserRole: () => "admin" });
+    bridge.register({ ...fakeOp, name: "viaExecute", handler });
+    await document.modelContext!.executeTool!("viaExecute", { value: "x" });
+    expect(handler.mock.calls[0][2].signal).toBeInstanceOf(AbortSignal);
   });
 });
