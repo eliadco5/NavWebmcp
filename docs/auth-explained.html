@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How login and permissions work — AgentBridge Booking</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --card-bg:        #ffffff;
+
+    --series-1: #2a78d6; /* customer */
+    --series-2: #eb6834; /* support  */
+    --series-3: #1baf7a; /* admin    */
+    --series-4: #eda100; /* UI door */
+    --series-5: #e87ba4; /* in-page agent door */
+    --series-7: #4a3aa7; /* MCP agent door */
+
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --card-bg:        #232322;
+
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --series-5: #d55181;
+      --series-7: #9085e9;
+
+      --status-good:     #0ca30c;
+      --status-warning:  #fab219;
+      --status-serious:  #ec835a;
+      --status-critical: #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --card-bg:        #232322;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-7: #9085e9;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+  }
+  body { padding: 0 0 80px; }
+
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    padding: 40px 0 32px;
+    margin-bottom: 8px;
+  }
+  header.hero h1 { font-size: 28px; margin: 0 0 8px; }
+  header.hero p.lede { color: var(--text-secondary); font-size: 16px; margin: 0 0 16px; max-width: 700px; }
+
+  #theme-toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    background: var(--card-bg); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+  }
+
+  nav.toc {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0;
+  }
+  nav.toc a {
+    font-size: 13px; color: var(--text-secondary); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px;
+  }
+  nav.toc a:hover { color: var(--text-primary); border-color: var(--baseline); }
+
+  section { padding: 36px 0; border-bottom: 1px solid var(--gridline); }
+  section:last-of-type { border-bottom: none; }
+  h2 { font-size: 20px; margin: 0 0 6px; }
+  h2 .num { color: var(--text-muted); font-weight: 500; margin-right: 8px; }
+  .section-intro { color: var(--text-secondary); margin: 0 0 20px; max-width: 700px; }
+
+  .card-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin: 16px 0;
+  }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+  .card .icon { font-size: 22px; display: block; margin-bottom: 8px; }
+  .card h3 { font-size: 14px; margin: 0 0 6px; }
+  .card p { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  .code-ref {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    font-size: 12px; color: var(--text-muted); background: var(--surface-1);
+    border: 1px dashed var(--border); border-radius: 6px; padding: 4px 10px; margin: 6px 0;
+  }
+  .code-ref .label { color: var(--text-secondary); font-family: system-ui, sans-serif; font-weight: 600; }
+
+  dl.glossary { display: grid; gap: 14px; margin: 0; }
+  dl.glossary div { display: grid; grid-template-columns: 160px 1fr; gap: 16px; align-items: baseline; }
+  dl.glossary dt { font-weight: 600; font-size: 14px; }
+  dl.glossary dd { margin: 0; color: var(--text-secondary); font-size: 14px; }
+  @media (max-width: 600px) { dl.glossary div { grid-template-columns: 1fr; } }
+
+  /* Role ladder */
+  .ladder { display: flex; flex-direction: column-reverse; gap: 6px; max-width: 480px; margin: 20px 0; }
+  .rung { display: flex; align-items: center; gap: 12px; }
+  .rung .bar {
+    height: 44px; border-radius: 8px; display: flex; align-items: center;
+    padding: 0 16px; color: #fff; font-weight: 600; font-size: 14px;
+  }
+  .rung .who { font-size: 12px; color: var(--text-muted); }
+  .rung.admin .bar { width: 100%; background: var(--series-3); }
+  .rung.support .bar { width: 72%; background: var(--series-2); }
+  .rung.customer .bar { width: 46%; background: var(--series-1); }
+  .ladder-caption { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  /* Table generic */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+  td.center, th.center { text-align: center; }
+  caption { text-align: left; caption-side: top; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; padding: 3px 10px; border-radius: 999px; color: #fff; }
+  .chip.customer { background: var(--series-1); }
+  .chip.support { background: var(--series-2); }
+  .chip.admin { background: var(--series-3); }
+
+  .status-yes { color: var(--status-good); font-weight: 700; }
+  .status-no { color: var(--text-muted); }
+
+  /* Token anatomy */
+  .token-anatomy { display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch; margin: 20px 0 8px; }
+  .seg {
+    flex: 1 1 auto; min-width: 90px; padding: 10px 12px; border-radius: 8px;
+    font-size: 12px; color: #fff; display: flex; flex-direction: column; gap: 4px;
+  }
+  .seg .k { font-weight: 700; }
+  .seg .v { opacity: 0.9; font-family: ui-monospace, monospace; font-size: 11px; }
+  .seg.payload { background: var(--series-1); }
+  .seg.dot { flex: 0 0 auto; align-self: center; color: var(--text-muted); font-weight: 700; padding: 0 4px; }
+  .seg.sig { background: var(--series-7); }
+
+  /* Timeline */
+  .timeline { display: flex; gap: 0; margin: 24px 0; overflow-x: auto; }
+  .tl-step { flex: 1; min-width: 150px; position: relative; padding: 0 12px 0 0; }
+  .tl-step .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--series-1); margin-bottom: 10px; }
+  .tl-step .line { position: absolute; top: 5px; left: 12px; right: -12px; height: 2px; background: var(--baseline); }
+  .tl-step:last-child .line { display: none; }
+  .tl-step h4 { font-size: 13px; margin: 0 0 4px; }
+  .tl-step p { font-size: 12px; color: var(--text-secondary); margin: 0; }
+
+  /* Swimlanes */
+  .lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 20px 0; }
+  .lane { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .lane .lane-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .lane .lane-head .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .lane.ui .lane-head .dot { background: var(--series-4); }
+  .lane.webmcp .lane-head .dot { background: var(--series-5); }
+  .lane.mcp .lane-head .dot { background: var(--series-7); }
+  .lane h4 { font-size: 13px; margin: 0; }
+  .lane ol { margin: 0; padding-left: 20px; font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px; }
+  .lane ol li strong { color: var(--text-primary); }
+
+  /* Confirmation flow */
+  .flow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 20px 0; }
+  .flow .step {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; font-size: 12px; max-width: 200px;
+  }
+  .flow .arrow { color: var(--text-muted); font-size: 16px; }
+  .flow .step.warn { border-color: var(--status-warning); }
+  .flow .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--status-warning); }
+
+  details { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin: 10px 0; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details[open] summary { margin-bottom: 10px; }
+
+  .checklist { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .checklist li { display: flex; gap: 10px; font-size: 14px; align-items: flex-start; }
+  .checklist li::before { content: "☑"; color: var(--status-good); font-size: 15px; line-height: 1.4; }
+
+  .filemap { font-size: 13px; }
+  .filemap dt { font-family: ui-monospace, monospace; color: var(--text-primary); }
+
+  .faq h4 { font-size: 14px; margin: 0; }
+  .caption { font-size: 12px; color: var(--text-muted); }
+
+  /* Planned-feature banner */
+  .planned-banner {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--surface-1); border: 1px solid var(--status-warning);
+    border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700;
+    color: var(--status-warning); margin-bottom: 16px;
+  }
+  .permission-formula {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 20px 0;
+    font-size: 13px;
+  }
+  .permission-formula .term {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 14px;
+  }
+  .permission-formula .op { color: var(--text-muted); font-weight: 700; font-size: 15px; }
+  .permission-formula .grant { border-color: var(--status-good); color: var(--status-good); font-weight: 600; }
+  .permission-formula .deny { border-color: var(--status-critical); color: var(--status-critical); font-weight: 600; }
+</style>
+</head>
+<body>
+<button id="theme-toggle" onclick="toggleTheme()">🌓 Toggle theme</button>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>How login and permissions work</h1>
+    <p class="lede">
+      A walkthrough of authentication ("who are you?") and authorization ("what are you
+      allowed to do?") in the AgentBridge Booking demo — written to work for a
+      non-technical reader, a new hire, and a developer picking up the code for the
+      first time. Skim the plain-language parts; the small dashed
+      <span class="code-ref"><span class="label">code</span> <code>like this</code></span>
+      boxes point at the exact file if you want to go deeper.
+    </p>
+    <nav class="toc">
+      <a href="#thirty-seconds">30-second version</a>
+      <a href="#glossary">Glossary</a>
+      <a href="#who">Who's who</a>
+      <a href="#credentials">Credentials</a>
+      <a href="#lifecycle">Life of a login</a>
+      <a href="#doors">Three doors in</a>
+      <a href="#authorization">What each role can do</a>
+      <a href="#planned-access">Planned: custom roles &amp; permissions</a>
+      <a href="#developers">For developers</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="thirty-seconds">
+  <h2><span class="num">1</span>The 30-second version</h2>
+  <p class="section-intro">Think of the app as a hotel, and think about what happens when you walk in.</p>
+  <div class="card-grid">
+    <div class="card">
+      <span class="icon">🪪</span>
+      <h3>Logging in = getting a key card</h3>
+      <p>The front desk checks who you are once, then hands you a key card. You show the card, not your ID, every time you open a door after that.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🍪</span>
+      <h3>The session cookie is that key card</h3>
+      <p>Your browser holds a small signed cookie. It proves who you are for up to 7 days without you logging in again.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🗝️</span>
+      <h3>Your role decides which doors open</h3>
+      <p>A guest's card opens the room. A manager's card opens the office and the safe. Same idea here: customer, support, or admin.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🤖</span>
+      <h3>An AI agent gets its own, shorter-lived card</h3>
+      <p>An assistant acting on your behalf carries a separate card that expires in 8 hours, not 7 days — a shorter leash for something automated.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🛑</span>
+      <h3>Risky actions get an "are you sure?"</h3>
+      <p>Canceling a reservation, refunding a payment, checking someone out, deleting a task — these always pause for confirmation before they happen.</p>
+    </div>
+  </div>
+</section>
+
+<section id="glossary">
+  <h2><span class="num">2</span>Glossary</h2>
+  <p class="section-intro">Plain-English definitions for the words used throughout this page.</p>
+  <dl class="glossary">
+    <div><dt>Authentication</dt><dd>Proving who you are. ("You are alice.")</dd></div>
+    <div><dt>Authorization</dt><dd>Deciding what you're allowed to do, now that we know who you are. ("Alice may book a table, but not issue a refund.")</dd></div>
+    <div><dt>Session</dt><dd>The period during which the app remembers you're logged in.</dd></div>
+    <div><dt>Cookie</dt><dd>A small piece of text the browser stores and automatically sends back on every request — here, it's the proof-of-login for a person using the website.</dd></div>
+    <div><dt>Token</dt><dd>Like a cookie, but designed to be copy-pasted and handed to a separate program (an AI agent) instead of living quietly in a browser.</dd></div>
+    <div><dt>Role</dt><dd>A label — customer, support, or admin — that determines which actions are allowed.</dd></div>
+    <div><dt>HMAC signature</dt><dd>A tamper-proof stamp glued to a cookie or token. Anyone can read it, but only the server (which holds the secret key) can produce a valid stamp — so a forged or edited one is instantly detected.</dd></div>
+    <div><dt>MCP</dt><dd>Model Context Protocol — the standard an external AI agent uses to call this app's tools over the network.</dd></div>
+    <div><dt>WebMCP</dt><dd>The same idea, but for an agent running inside the web page itself, alongside a human using the same browser tab.</dd></div>
+  </dl>
+</section>
+
+<section id="who">
+  <h2><span class="num">3</span>Who's who</h2>
+  <p class="section-intro">
+    The demo ships with three built-in users, one per role. Roles are ranked — a higher
+    role can do everything a lower one can, plus more.
+  </p>
+  <table>
+    <thead><tr><th>Username</th><th>Role</th><th>Think of them as</th></tr></thead>
+    <tbody>
+      <tr><td>alice</td><td><span class="chip customer">customer</span></td><td>A guest booking and managing their own visit</td></tr>
+      <tr><td>carol</td><td><span class="chip support">support</span></td><td>Front-desk / hotel staff, handling many guests</td></tr>
+      <tr><td>bob</td><td><span class="chip admin">admin</span></td><td>Management — full access, including money and reports</td></tr>
+    </tbody>
+  </table>
+  <div class="code-ref"><span class="label">code</span><code>lib/auth.ts:36-40</code> (the three seeded users) · <code>lib/auth.ts:14</code> (the rank table)</div>
+
+  <div class="ladder">
+    <div class="rung admin"><div class="bar">Admin</div><div class="who">can do everything below, plus payments, revenue, deleting things</div></div>
+    <div class="rung support"><div class="bar">Support</div><div class="who">can do everything below, plus front desk &amp; housekeeping work</div></div>
+    <div class="rung customer"><div class="bar">Customer</div><div class="who">booking &amp; their own account only</div></div>
+  </div>
+  <p class="ladder-caption">Figure: the role ladder. Each step includes everything the step below it can do — admin ≥ support ≥ customer.</p>
+</section>
+
+<section id="credentials">
+  <h2><span class="num">4</span>Authentication: the two credentials</h2>
+  <p class="section-intro">
+    There are two kinds of "key card" in this app, depending on who's knocking on the door:
+    a person in a browser, or a program calling over the network.
+  </p>
+  <table>
+    <thead><tr><th></th><th>Browser session cookie</th><th>Agent bearer token</th></tr></thead>
+    <tbody>
+      <tr><td>Used by</td><td>A person using the website</td><td>An external AI agent calling the MCP API</td></tr>
+      <tr><td>Looks like</td><td class="mono">agentbridge_session=…</td><td class="mono">ab1.&lt;payload&gt;.&lt;signature&gt;</td></tr>
+      <tr><td>Lifespan</td><td>7 days</td><td>8 hours</td></tr>
+      <tr><td>Travels as</td><td>An httpOnly cookie, sent automatically</td><td>An <code>Authorization: Bearer …</code> header, pasted in by hand</td></tr>
+    </tbody>
+  </table>
+  <div class="code-ref"><span class="label">code</span><code>lib/auth-tokens.ts:100-134</code> (lifespans &amp; issuing) · <code>lib/auth-tokens.ts:163-173</code> (cookie options)</div>
+
+  <p>Both are built the same way underneath: a payload plus a tamper-proof signature.</p>
+  <div class="token-anatomy" role="img" aria-label="Diagram: a token is a payload (user id, role, and expiry) joined by a dot to an HMAC signature of that payload.">
+    <div class="seg payload">
+      <span class="k">Payload</span>
+      <span class="v">userId.role.expiry</span>
+    </div>
+    <div class="seg dot">.</div>
+    <div class="seg sig">
+      <span class="k">Signature</span>
+      <span class="v">HMAC-SHA256(payload, secret key)</span>
+    </div>
+  </div>
+  <p class="caption">
+    Figure: token/cookie anatomy. Anyone can read the payload — it isn't encrypted, just
+    signed. But nobody without the server's secret key can produce a matching signature,
+    so editing the payload (say, changing <code>role</code> from <code>customer</code> to
+    <code>admin</code>) instantly breaks the signature and the server rejects it.
+  </p>
+  <p>
+    Nothing is stored on the server to check against — no database table of "active
+    sessions." The signature <em>is</em> the proof. That's a deliberate choice for this
+    app: it runs on Vercel, where each request can land on a different server instance
+    with no shared memory, so there's nothing durable to look a session up in anyway.
+  </p>
+  <div class="code-ref"><span class="label">code</span><code>lib/auth-tokens.ts:28-40</code> (why stateless signing)</div>
+</section>
+
+<section id="lifecycle">
+  <h2><span class="num">5</span>Life of a login</h2>
+  <p class="section-intro">What happens to your session from the moment you arrive to the moment it's gone.</p>
+  <div class="timeline">
+    <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Created</h4><p>On first visit, sign-in, or role switch. If you show up with no valid cookie at all, the demo signs you in as alice automatically.</p></div>
+    <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Validated</h4><p>Every request re-checks the signature, the role, and the expiry — there's no "remembered" state to trust instead.</p></div>
+    <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Expires</h4><p>7 days for the cookie, 8 hours for an agent token. After that it's just rejected, like any other invalid signature.</p></div>
+    <div class="tl-step"><div class="dot"></div><h4>Logout</h4><p>Clears the cookie from your browser. There's nothing server-side left to clean up.</p></div>
+  </div>
+  <div class="code-ref"><span class="label">code</span><code>lib/auth-tokens.ts:180-192</code> (auto sign-in) · <code>app/api/logout/route.ts</code> (logout)</div>
+
+  <p>
+    Two conveniences exist purely because this is a public demo, not a real product:
+    an unauthenticated visitor is auto-signed-in as alice/customer, and a "switch role"
+    button lets anyone jump straight to support or admin with no password — so a demo
+    visitor can see every role without needing three sets of credentials. Setting the
+    <code>DEMO_MODE=false</code> environment variable turns both off and makes this behave
+    like an ordinary login-required app.
+  </p>
+  <div class="code-ref"><span class="label">code</span><code>app/api/switch-role/route.ts</code> · <code>DEMO_MODE</code> checks in <code>lib/auth-tokens.ts:187</code></div>
+</section>
+
+<section id="doors">
+  <h2><span class="num">6</span>Three doors into the system</h2>
+  <p class="section-intro">
+    A booking action — say, "cancel this reservation" — can be triggered three different
+    ways. All three end up running the exact same code and the exact same permission
+    check; only the front door is different.
+  </p>
+  <div class="lanes">
+    <div class="lane ui">
+      <div class="lane-head"><span class="dot"></span><h4>A person clicks a button</h4></div>
+      <ol>
+        <li>Browser sends the request with its session cookie</li>
+        <li><strong>POST /api/call</strong> reads the cookie, identifies you</li>
+        <li>Role check → input validation → the action runs</li>
+        <li>Result is written to the audit log</li>
+      </ol>
+    </div>
+    <div class="lane webmcp">
+      <div class="lane-head"><span class="dot"></span><h4>An in-page AI helper</h4></div>
+      <ol>
+        <li>Agent code running in the same browser tab calls a registered tool</li>
+        <li>It re-uses <em>your</em> session cookie — it has no credential of its own</li>
+        <li>Goes through the same <strong>/api/call</strong> as the button above</li>
+        <li>Same role check, same audit log</li>
+      </ol>
+    </div>
+    <div class="lane mcp">
+      <div class="lane-head"><span class="dot"></span><h4>An external AI agent</h4></div>
+      <ol>
+        <li>Calls <strong>POST /api/mcp</strong> with an <code>Authorization: Bearer</code> token</li>
+        <li>The token is verified and turned into a user + role</li>
+        <li>Tool list is filtered to that role; the call is re-checked again</li>
+        <li>Same audit log</li>
+      </ol>
+    </div>
+  </div>
+  <p class="caption">
+    Figure: three entry points, one shared set of rules. The role check happens at least
+    twice on the MCP path — once to decide which tools an agent even sees, once again
+    when it actually calls one — so an agent can't reach a tool it merely knows the name of.
+  </p>
+  <div class="code-ref"><span class="label">code</span><code>app/api/call/route.ts:12-57</code> · <code>lib/agentbridge.ts:92-163</code> · <code>lib/adapters/mcp.ts:47-116</code></div>
+</section>
+
+<section id="authorization">
+  <h2><span class="num">7</span>Authorization: what each role can do</h2>
+  <p class="section-intro">
+    Every action in the app ("cancel a reservation," "issue a refund," "log a
+    housekeeping note"...) declares up front which roles may call it. That's checked on
+    the server every single time — hiding a button in the interface is just a
+    convenience, never the actual security boundary.
+  </p>
+
+  <table>
+    <caption>Grouped by area of the app. "Yes" means that role can call every operation in the group; groups aren't all-or-nothing in the underlying code, but no group here mixes access levels within itself.</caption>
+    <thead>
+      <tr><th>Area</th><th class="center"><span class="chip customer">Customer</span></th><th class="center"><span class="chip support">Support</span></th><th class="center"><span class="chip admin">Admin</span></th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Booking (search, book, view/cancel own reservation)</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Your own account (bill, preferences, loyalty, your tasks)</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Guests (look up, create, edit, search any guest)</td><td class="center status-no">—</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Front desk (check-in/out, occupancy, seating, all reservations)</td><td class="center status-no">—</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Housekeeping (schedules, table status)</td><td class="center status-no">—</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Tasks, communications &amp; shift notes (create/edit for anyone)</td><td class="center status-no">—</td><td class="center status-yes">✓</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Payments &amp; revenue reports</td><td class="center status-no">—</td><td class="center status-no">—</td><td class="center status-yes">✓</td></tr>
+      <tr><td>Cancel <em>anyone's</em> reservation, refunds, no-show fees, deleting tasks, inspections</td><td class="center status-no">—</td><td class="center status-no">—</td><td class="center status-yes">✓</td></tr>
+    </tbody>
+  </table>
+
+  <details>
+    <summary>See the full list of operations (grouped, ~56 total)</summary>
+    <table>
+      <thead><tr><th>Group</th><th>Operations</th><th>Minimum role</th></tr></thead>
+      <tbody>
+        <tr><td>Booking</td><td class="mono">book, createReservation, cancelReservation, getReservation, listReservations, searchAvailability, getWaitTime</td><td><span class="chip customer">customer</span></td></tr>
+        <tr><td>Account</td><td class="mono">getBillSummary, getGuestPreferences, updateGuestPreferences, getLoyaltyStatus, getMyTasks, completeTask</td><td><span class="chip customer">customer</span></td></tr>
+        <tr><td>Navigation / discovery</td><td class="mono">getContext, getCapabilities, explore, search, describe_tool, load_tools, unload_tools, invoke</td><td><span class="chip customer">customer</span></td></tr>
+        <tr><td>Guests</td><td class="mono">getGuest, createGuest, updateGuest, searchGuests, addLoyaltyPoints</td><td><span class="chip support">support</span></td></tr>
+        <tr><td>Front desk</td><td class="mono">checkInGuest, checkOutGuest, getCheckinStatus, getOccupancy, seatGuest, hostVipGuest, listAllReservations, listFrontDeskReservations</td><td><span class="chip support">support</span></td></tr>
+        <tr><td>Housekeeping</td><td class="mono">getTodaySchedule, getTableCleaningStatus, markScheduleItemDone, updateTableStatus</td><td><span class="chip support">support</span></td></tr>
+        <tr><td>Tasks, comms &amp; notes</td><td class="mono">createTask, updateTask, searchTasks, listCommunications, logCommunication, addShiftNote, listShiftNotes</td><td><span class="chip support">support</span></td></tr>
+        <tr><td>Payments &amp; revenue</td><td class="mono">getDailyRevenueSummary, getWeeklyRevenueSummary, getPaymentRecord, listPayments</td><td><span class="chip admin">admin</span></td></tr>
+        <tr><td>Destructive / admin-only actions</td><td class="mono">cancelAnyReservation, applyNoShowFee, deleteTask, issueRefund</td><td><span class="chip admin">admin</span></td></tr>
+        <tr><td>Inspections &amp; adjustments</td><td class="mono">listInspections, logInspection, logManualAdjustment</td><td><span class="chip admin">admin</span></td></tr>
+      </tbody>
+    </table>
+  </details>
+  <div class="code-ref"><span class="label">code</span><code>lib/operations/*.ts</code> — each file's <code>roles: [...]</code> field · enforced identically in <code>app/api/call/route.ts</code>, <code>lib/adapters/mcp.ts</code>, and <code>lib/operations/dispatch.ts</code></div>
+
+  <h3 style="font-size:16px;margin-top:28px;">Two more layers on top of the role check</h3>
+
+  <p><strong>Ownership.</strong> A role check alone would let any customer see any other
+  customer's reservation. So on top of the role gate, several operations also check
+  "does this record actually belong to <em>you</em>?" — a customer can only see, cancel,
+  or pay for their own reservations and complete their own tasks.</p>
+  <div class="code-ref"><span class="label">code</span><code>lib/store.ts:168-236</code> (reservations filtered/checked by <code>userId</code>) · <code>getBillSummary.ts</code> · <code>completeTask.ts</code></div>
+
+  <p><strong>Confirmation.</strong> Six actions are destructive enough that they always
+  require an explicit "yes, I mean it" before running: canceling a reservation
+  (your own or, for admins, anyone's), checking a guest out, deleting a task, issuing a
+  refund, and applying a no-show fee.</p>
+
+  <div class="flow" role="img" aria-label="Diagram: a destructive action is requested; if confirm was not already sent as true, a confirmation dialog is shown; approving lets it proceed, denying stops it.">
+    <div class="step">Destructive action requested<br><span class="badge">⚠ needs confirmation</span></div>
+    <span class="arrow">→</span>
+    <div class="step warn">Dialog: "Are you sure?"</div>
+    <span class="arrow">→</span>
+    <div class="step">Approve → action runs</div>
+    <span class="arrow">→</span>
+    <div class="step">Deny → nothing happens</div>
+  </div>
+  <div class="code-ref"><span class="label">code</span><code>app/providers.tsx:221-228,284-319</code> (the dialog) · each op's <code>requiresConfirmation: true</code> in <code>lib/operations/*.ts</code></div>
+</section>
+
+<section id="planned-access">
+  <h2><span class="num">8</span>Planned: custom roles, per-user permissions &amp; field restrictions</h2>
+  <div class="planned-banner">🚧 Planned — design under review, nothing on this page below is built yet</div>
+  <p class="section-intro">
+    Today the three roles above are fixed in the code, and there's no screen for adding a
+    user or trimming what one specific person can do. This section previews a design for
+    an admin-only <strong>Access page</strong> that would let you manage that yourself — written
+    up here so it can be reviewed before anyone builds it.
+  </p>
+
+  <h3 style="font-size:16px;">The shift in thinking</h3>
+  <p>
+    Right now, "can this person do X?" is answered with one question: <em>is their role
+    ranked high enough?</em> The plan changes that to two questions, checked live on every
+    request instead of decided once at login: <em>does this specific person hold the
+    permission for X, and are they allowed to send these particular fields?</em>
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <span class="icon">🧩</span>
+      <h3>A role becomes a starting kit</h3>
+      <p>Roles still exist and still save time — but they're now a bundle of permissions you assign, not a hard ceiling.</p>
+    </div>
+    <div class="card">
+      <span class="icon">➖</span>
+      <h3>One person can lose one permission</h3>
+      <p>Give a specific support user every support permission except checking guests out — without inventing a whole new role for them.</p>
+    </div>
+    <div class="card">
+      <span class="icon">🔒</span>
+      <h3>Even a single field can be locked</h3>
+      <p>Let someone update a guest's name and phone number, but not their email — on the very same action.</p>
+    </div>
+    <div class="card">
+      <span class="icon">⚡</span>
+      <h3>Changes apply immediately</h3>
+      <p>No re-login needed. A permission change on the Access page takes effect on that person's very next click.</p>
+    </div>
+  </div>
+
+  <h3 style="font-size:16px;">New vocabulary</h3>
+  <dl class="glossary">
+    <div><dt>Permission</dt><dd>The right to call one specific action (e.g. <code>checkOutGuest</code>), or to manage access itself.</dd></div>
+    <div><dt>Role definition</dt><dd>A named, editable bundle of permissions — the three existing roles become the starting set, no longer fixed in code.</dd></div>
+    <div><dt>Grant</dt><dd>A permission added to one person on top of their role.</dd></div>
+    <div><dt>Deny</dt><dd>A permission removed from one person, even though their role would normally include it. Deny always wins over both the role and a grant.</dd></div>
+    <div><dt>Field restriction</dt><dd>A specific input (like <code>email</code> on "update guest") that a role or person isn't allowed to send, even though they can call the action itself.</dd></div>
+  </dl>
+
+  <p>What a person can actually do is worked out fresh on every request:</p>
+  <div class="permission-formula" role="img" aria-label="Diagram: effective permissions equal the role's permissions, plus this person's individual grants, minus this person's individual denies. Deny always wins.">
+    <div class="term">Role's permissions</div>
+    <span class="op">+</span>
+    <div class="term grant">Person's grants</div>
+    <span class="op">−</span>
+    <div class="term deny">Person's denies</div>
+    <span class="op">=</span>
+    <div class="term">What they can actually do</div>
+  </div>
+
+  <h3 style="font-size:16px;">Worked example</h3>
+  <p>
+    Suppose an admin adds a new employee, <strong>dana</strong>, starting from the
+    <span class="chip support">support</span> role — but dana shouldn't be able to check
+    guests out, and shouldn't be able to change a guest's email address even though she
+    can update their name and phone.
+  </p>
+  <table>
+    <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Base role</td><td><span class="chip support">support</span> (everything support normally gets)</td></tr>
+      <tr><td>Deny</td><td class="mono">checkOutGuest</td></tr>
+      <tr><td>Field restriction</td><td class="mono">updateGuest → email</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The result: dana can do everything support normally can, <em>except</em> check-out — that
+    button simply won't appear for her, and the server rejects it if forced. She can still
+    call "update guest," but sending an <code>email</code> value comes back as rejected,
+    whether the call comes from her clicking a button, an AI helper acting on her behalf in
+    the same browser tab, or an external agent calling in with her credentials — because all
+    three would go through the same central check.
+  </p>
+
+  <h3 style="font-size:16px;">The Access page (sketch)</h3>
+  <ul class="checklist">
+    <li><strong>Users tab:</strong> add a person, assign their role, and adjust their individual grants/denies and field restrictions, with a live preview of what they end up able to do.</li>
+    <li><strong>Roles tab:</strong> edit what a role includes by default, or create a new role from scratch or by copying an existing one.</li>
+    <li>Two safety rails built in: the admin role can never lose the ability to manage access, and the very last person who can manage access can't be deleted or locked out — so nobody can accidentally strand the whole system with no admin.</li>
+  </ul>
+
+  <h3 style="font-size:16px;">What stays the same</h3>
+  <p>
+    The demo conveniences described earlier — landing on the page already signed in, and the
+    one-click role switcher — are planned to keep working the same way, still switched off
+    entirely by <code>DEMO_MODE=false</code>. And access management itself is planned to be
+    something only a person can do through the Access page — never something an AI agent can
+    call as a tool, so an agent can never grant itself more access.
+  </p>
+
+  <p class="caption">
+    For the authorization decision itself — a flowchart and code comparison of exactly how
+    the permission check changes, plus a worked request-by-request trace — see
+    <a href="authorization-design.html">authorization-design.html</a>. A full technical
+    design (data storage, exact files, API routes, and tests) exists as a separate
+    implementation plan for whoever builds this, once the design above is approved.
+  </p>
+</section>
+
+<section id="developers">
+  <h2><span class="num">9</span>For developers: adding a new operation safely</h2>
+  <p class="section-intro">Every operation lives in <code>lib/operations/</code> and follows the same shape. When you add one, work through this list:</p>
+  <ul class="checklist">
+    <li>Set <code>roles: [...]</code> to the minimum role that should be allowed to call it.</li>
+    <li>Set <code>requiresConfirmation: true</code> if the action is destructive or hard to undo.</li>
+    <li>Declare <code>outputSchema</code> (the shape of the success data) and add a case to <code>tests/unit/output-contract.test.ts</code>. Input is validated strictly, so build fields from the helpers in <code>lib/operations/schemas.ts</code>.</li>
+    <li>If the data belongs to a specific user, check <code>ctx.userId</code> inside the handler — the role check alone doesn't do this for you.</li>
+    <li>If you're adding a new API route (not a new operation), call <code>getOrProvisionUser()</code> yourself — <code>middleware.ts</code> deliberately does nothing, so each route is responsible for its own auth check.</li>
+    <li>Add a case for the new operation to <code>tests/integration/rbac.test.ts</code> so the role gate is covered by an automated test.</li>
+  </ul>
+
+  <h3 style="font-size:16px;">Key files</h3>
+  <dl class="filemap">
+    <dt>lib/auth.ts</dt><dd>Roles, the demo users, <code>roleSatisfies()</code> — safe to import from browser code.</dd>
+    <dt>lib/auth-tokens.ts</dt><dd>Everything that touches <code>node:crypto</code>: signing, verifying, issuing sessions/tokens, auto sign-in.</dd>
+    <dt>lib/operations/*.ts</dt><dd>One file per action; each declares <code>roles</code>, <code>requiresConfirmation</code>, and its handler.</dd>
+    <dt>app/api/call/route.ts</dt><dd>Where a browser-originated call is authenticated and role-checked.</dd>
+    <dt>lib/adapters/mcp.ts</dt><dd>Where an external MCP agent's call is authenticated and role-checked.</dd>
+    <dt>lib/agentbridge.ts</dt><dd>Where an in-page agent's call is role-checked and routed through the confirmation dialog.</dd>
+  </dl>
+
+  <h3 style="font-size:16px;">Environment variables</h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">AUTH_SECRET</td><td>The signing key for every cookie and token. Set this in any real deployment.</td></tr>
+      <tr><td class="mono">DEMO_MODE</td><td>Set to <code>false</code> to turn off auto sign-in and the role switcher.</td></tr>
+      <tr><td class="mono">MCP_RESOURCE_URL</td><td>The public URL agent tokens are bound to.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="faq" class="faq">
+  <h2><span class="num">10</span>FAQ</h2>
+  <details>
+    <summary>Why was I logged in automatically, without a login screen?</summary>
+    <p>This is a demo, and it's designed so a first-time visitor lands on the URL already
+    signed in as alice (a customer) with zero clicks. A real deployment turns this off
+    with <code>DEMO_MODE=false</code>, which brings back a normal login requirement.</p>
+  </details>
+  <details>
+    <summary>Why can't the AI agent see the admin tools?</summary>
+    <p>Whatever role the agent's token carries, that's what it's limited to — the tool
+    list an agent even sees is filtered down to its role before it can call anything,
+    and the call itself is checked again regardless.</p>
+  </details>
+  <details>
+    <summary>What happens when my token or session expires?</summary>
+    <p>The next request with it simply gets rejected, the same way a request with a
+    tampered or invalid signature would. A browser session gets a fresh 7-day one on
+    next login; an agent token is reissued the next time the page calls <code>/api/me</code>.</p>
+  </details>
+  <details>
+    <summary>Is the custom roles / per-user permissions feature live yet?</summary>
+    <p>No — <a href="#planned-access">section 8</a> is a design preview for review and approval.
+    Nothing on this page describes code that exists today; the rest of this document
+    describes the app as it actually works right now.</p>
+  </details>
+  <details>
+    <summary>Is my password stored anywhere I should worry about?</summary>
+    <p>The three demo accounts use plaintext passwords on purpose — this is in-memory
+    demo data, not a real user database. It's not a pattern to copy into production code.</p>
+  </details>
+</section>
+
+</div>
+
+<script>
+  (function () {
+    var saved = localStorage.getItem("auth-explained-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  })();
+  function toggleTheme() {
+    var el = document.documentElement;
+    var current = el.getAttribute("data-theme");
+    var next = current === "dark" ? "light" : "dark";
+    el.setAttribute("data-theme", next);
+    localStorage.setItem("auth-explained-theme", next);
+  }
+</script>
+</body>
+</html>

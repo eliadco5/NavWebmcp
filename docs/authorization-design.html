@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authorization: today vs. planned — AgentBridge Booking</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --card-bg:        #ffffff;
+    --code-bg:        #f4f3f0;
+
+    --series-1: #2a78d6; /* customer / "today" accent */
+    --series-2: #eb6834; /* support */
+    --series-3: #1baf7a; /* admin */
+    --series-7: #4a3aa7; /* "planned" accent */
+
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-serious:  #ec835a;
+    --status-critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --card-bg:        #232322;
+      --code-bg:        #17171a;
+
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-7: #9085e9;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --card-bg:        #232322;
+    --code-bg:        #17171a;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-7: #9085e9;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+  }
+  body { padding: 0 0 80px; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    padding: 40px 0 32px;
+    margin-bottom: 8px;
+  }
+  header.hero h1 { font-size: 28px; margin: 0 0 8px; }
+  header.hero p.lede { color: var(--text-secondary); font-size: 16px; margin: 0 0 16px; max-width: 720px; }
+
+  #theme-toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 10;
+    background: var(--card-bg); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+  }
+
+  nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+  nav.toc a {
+    font-size: 13px; color: var(--text-secondary); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px;
+  }
+  nav.toc a:hover { color: var(--text-primary); border-color: var(--baseline); }
+
+  .status-banner {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--surface-1); border: 1px solid var(--status-warning);
+    border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 700;
+    color: var(--status-warning); margin: 14px 0 0;
+  }
+
+  section { padding: 36px 0; border-bottom: 1px solid var(--gridline); }
+  section:last-of-type { border-bottom: none; }
+  h2 { font-size: 20px; margin: 0 0 6px; }
+  h2 .num { color: var(--text-muted); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 8px; }
+  .section-intro { color: var(--text-secondary); margin: 0 0 20px; max-width: 720px; }
+
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+
+  /* Today / Planned pill labels */
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 11px; padding: 3px 10px; border-radius: 999px; color: #fff; text-transform: uppercase; letter-spacing: 0.03em; }
+  .pill.today { background: var(--series-1); }
+  .pill.planned { background: var(--series-7); }
+
+  /* Flowchart */
+  .flowchart { display: flex; flex-direction: column; align-items: center; gap: 0; margin: 24px 0; }
+  .fc-node {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 18px; font-size: 13px; text-align: center; max-width: 420px;
+  }
+  .fc-node.start { border-color: var(--baseline); font-weight: 600; }
+  .fc-node.decision { border-radius: 10px; border-color: var(--status-warning); background: var(--surface-1); }
+  .fc-node.allow { border-color: var(--status-good); color: var(--status-good); font-weight: 700; }
+  .fc-node.deny { border-color: var(--status-critical); color: var(--status-critical); font-weight: 700; }
+  .fc-node .sub { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; margin-top: 4px; }
+  .fc-arrow { color: var(--text-muted); font-size: 20px; line-height: 1.2; margin: 2px 0; }
+  .fc-branches { display: flex; gap: 24px; margin: 4px 0; flex-wrap: wrap; justify-content: center; }
+  .fc-branch { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .fc-branch .branch-label {
+    font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 999px;
+    margin-bottom: 6px;
+  }
+  .fc-branch.yes .branch-label { background: rgba(12,163,12,0.15); color: var(--status-good); }
+  .fc-branch.no .branch-label { background: rgba(208,59,59,0.15); color: var(--status-critical); }
+  .fc-caption { font-size: 12px; color: var(--text-muted); margin-top: 10px; max-width: 600px; text-align: center; }
+
+  /* Code blocks */
+  .codeblock { position: relative; margin: 16px 0; }
+  .codeblock .tag {
+    position: absolute; top: -10px; right: 12px; font-size: 10px; font-weight: 700;
+    padding: 2px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; color: #fff;
+  }
+  .codeblock .tag.today { background: var(--series-1); }
+  .codeblock .tag.planned { background: var(--series-7); }
+  .codeblock pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; margin: 0; font-size: 12.5px; line-height: 1.6;
+  }
+  .codeblock figcaption { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .kw { color: var(--series-7); }
+  .str { color: var(--status-good); }
+  .cm { color: var(--text-muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+  td.center, th.center { text-align: center; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; padding: 3px 10px; border-radius: 999px; color: #fff; }
+  .chip.support { background: var(--series-2); }
+  .chip.allow { background: var(--status-good); }
+  .chip.deny { background: var(--status-critical); }
+  .chip.warn { background: var(--status-warning); color: #1a1a19; }
+
+  ul.filelist { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  ul.filelist li { display: flex; gap: 10px; }
+  ul.filelist li::before { content: "→"; color: var(--text-muted); }
+
+  details { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin: 10px 0; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details[open] summary { margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<button id="theme-toggle" onclick="toggleTheme()">🌓 Toggle theme</button>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Authorization: today vs. planned</h1>
+    <p class="lede">
+      A focused look at just the authorization decision — the moment the server decides
+      "can this specific request go through?" — comparing exactly how that works right now
+      with how it's planned to work once custom roles and per-user permissions exist. For
+      the wider picture (authentication, sessions, tokens), see
+      <code>auth-explained.html</code>.
+    </p>
+    <div class="status-banner">🚧 The "Planned" half of this page is a design for review — nothing described there is built yet</div>
+    <nav class="toc">
+      <a href="#today">How it works today</a>
+      <a href="#planned">How it's planned to work</a>
+      <a href="#side-by-side">Side-by-side</a>
+      <a href="#enforcement-points">Where the check lives</a>
+      <a href="#worked-example">Worked example: dana</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="today">
+  <h2><span class="num">1</span>How it works today <span class="pill today">Today</span></h2>
+  <p class="section-intro">
+    Every action ("cancel a reservation," "issue a refund"...) is code that declares a
+    fixed list of roles allowed to call it. The check is one question: is the caller's role
+    ranked high enough?
+  </p>
+
+  <div class="flowchart">
+    <div class="fc-node start">Request arrives<span class="sub">UI click, in-page agent, or external MCP agent</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">Read the caller's role<span class="sub">decoded straight from the signed cookie/token — no lookup</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node decision">Is role's rank ≥ the operation's minimum role?<span class="sub">roleSatisfies(role, op.roles)</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-branches">
+      <div class="fc-branch yes">
+        <span class="branch-label">YES</span>
+        <div class="fc-node allow">Run the handler</div>
+      </div>
+      <div class="fc-branch no">
+        <span class="branch-label">NO</span>
+        <div class="fc-node deny">403 FORBIDDEN</div>
+      </div>
+    </div>
+  </div>
+  <p class="fc-caption">
+    Figure: today's authorization decision. It's a single yes/no gate, and it's the same
+    shape at all three entry points — the UI's <code>/api/call</code>, the in-page agent's
+    bridge, and the external MCP adapter each run this same check independently, using the
+    same shared function.
+  </p>
+
+  <figure class="codeblock">
+    <span class="tag today">today</span>
+    <pre><code><span class="cm">// lib/auth.ts — the whole rule, today</span>
+<span class="kw">const</span> ROLE_RANK: Record&lt;Role, number&gt; = { customer: <span class="str">1</span>, support: <span class="str">2</span>, admin: <span class="str">3</span> };
+
+<span class="kw">export function</span> roleSatisfies(userRole: Role, allowed: Role[]): boolean {
+  <span class="kw">const</span> rank = ROLE_RANK[userRole];
+  <span class="kw">return</span> allowed.some((r) =&gt; rank &gt;= ROLE_RANK[r]);
+}</code></pre>
+    <figcaption>The entire authorization rule today: compare two numbers.</figcaption>
+  </figure>
+
+  <figure class="codeblock">
+    <span class="tag today">today</span>
+    <pre><code><span class="cm">// app/api/call/route.ts — one of three places this runs</span>
+<span class="kw">const</span> op = registry.find((o) =&gt; o.name === name);
+<span class="kw">if</span> (!roleSatisfies(user.role, op.roles)) {
+  <span class="kw">return</span> Response.json({ success: <span class="kw">false</span>, error: { code: <span class="str">"FORBIDDEN"</span>, ... } }, { status: <span class="str">403</span> });
+}
+<span class="kw">const</span> result = <span class="kw">await</span> op.handler(parsed.data, { userId: user.id, role: user.role, token: <span class="str">""</span> });</code></pre>
+    <figcaption>op.roles is a fixed array baked into the operation's source file — the only way to change it today is to edit code.</figcaption>
+  </figure>
+
+  <p>
+    This works, but it means: three fixed roles, no per-user exceptions, and no field-level
+    control — a support user either can or can't call <code>updateGuest</code> at all;
+    there's no way to let them change a name but not an email.
+  </p>
+</section>
+
+<section id="planned">
+  <h2><span class="num">2</span>How it's planned to work <span class="pill planned">Planned</span></h2>
+  <p class="section-intro">
+    The single yes/no gate becomes two questions, both resolved fresh on every request by
+    looking up a stored policy — never decided once at login and carried around in a token.
+  </p>
+
+  <div class="flowchart">
+    <div class="fc-node start">Request arrives<span class="sub">same three entry points as today</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">Look up the caller's current role + any personal overrides<span class="sub">resolvePrincipal(userId) — a live lookup, not decoded from the token</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">Work out what they can actually do<span class="sub">role's permissions + personal grants − personal denies</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node decision">Does that include this operation?<span class="sub">can(principal, op.name)</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-branches">
+      <div class="fc-branch no">
+        <span class="branch-label">NO</span>
+        <div class="fc-node deny">403 FORBIDDEN</div>
+      </div>
+      <div class="fc-branch yes">
+        <span class="branch-label">YES</span>
+        <div class="fc-node decision">Did they send any field they're restricted from?<span class="sub">authorize() checks the raw input keys</span></div>
+      </div>
+    </div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-branches">
+      <div class="fc-branch no">
+        <span class="branch-label">NO restricted field sent</span>
+        <div class="fc-node allow">Run the handler</div>
+      </div>
+      <div class="fc-branch yes">
+        <span class="branch-label">YES, one was sent</span>
+        <div class="fc-node deny">403 FORBIDDEN_FIELD</div>
+      </div>
+    </div>
+  </div>
+  <p class="fc-caption">
+    Figure: the planned authorization decision. Two gates instead of one, but the same
+    single choke point — every entry point still calls the same two functions, so a change
+    made on the Access page is enforced identically everywhere.
+  </p>
+
+  <figure class="codeblock">
+    <span class="tag planned">planned</span>
+    <pre><code><span class="cm">// lib/access/policy.ts — proposed shape, for review</span>
+<span class="kw">interface</span> Principal {
+  userId: string;
+  tier: <span class="str">"customer"</span> | <span class="str">"support"</span> | <span class="str">"admin"</span>;   <span class="cm">// kept for existing ownership checks</span>
+  permissions: Set&lt;string&gt;;                          <span class="cm">// role.permissions ∪ grants − denies</span>
+  restrictedFields: Map&lt;string, Set&lt;string&gt;&gt;;         <span class="cm">// opName -&gt; fields this person can't send</span>
+}
+
+<span class="kw">function</span> can(p: Principal, opName: string): boolean {
+  <span class="kw">return</span> p.permissions.has(opName);
+}
+
+<span class="kw">function</span> authorize(p: Principal, op: Operation, rawInput: Record&lt;string, unknown&gt;): Failure | <span class="kw">null</span> {
+  <span class="kw">if</span> (!can(p, op.name)) <span class="kw">return</span> fail(<span class="str">"FORBIDDEN"</span>, <span class="str">`Not permitted to call '${op.name}'.`</span>);
+
+  <span class="kw">const</span> restricted = p.restrictedFields.get(op.name);
+  <span class="kw">if</span> (restricted) {
+    <span class="kw">for</span> (<span class="kw">const</span> field <span class="kw">of</span> restricted) {
+      <span class="cm">// checked on the RAW input, before Zod parsing strips unknown keys</span>
+      <span class="kw">if</span> (rawInput[field] !== <span class="kw">undefined</span>) {
+        <span class="kw">return</span> fail(<span class="str">"FORBIDDEN_FIELD"</span>, <span class="str">`Not permitted to set '${field}' on '${op.name}'.`</span>);
+      }
+    }
+  }
+  <span class="kw">return null</span>; <span class="cm">// allowed</span>
+}</code></pre>
+    <figcaption>Illustrative — the real implementation plan has the full data model (RoleDef, UserRecord, storage).</figcaption>
+  </figure>
+
+  <figure class="codeblock">
+    <span class="tag planned">planned</span>
+    <pre><code><span class="cm">// app/api/call/route.ts — same call site as today, swapped once</span>
+<span class="kw">const</span> op = registry.find((o) =&gt; o.name === name);
+<span class="kw">const</span> principal = <span class="kw">await</span> resolvePrincipal(user.id);
+<span class="kw">const</span> denied = authorize(principal, op, params ?? {});
+<span class="kw">if</span> (denied) {
+  <span class="kw">return</span> Response.json({ success: <span class="kw">false</span>, error: denied.error }, { status: <span class="str">403</span> });
+}
+<span class="kw">const</span> result = <span class="kw">await</span> op.handler(parsed.data, { userId: user.id, role: principal.tier, principal, token: <span class="str">""</span> });</code></pre>
+    <figcaption>Same shape, same location — <code>roleSatisfies(...)</code> is replaced by <code>authorize(...)</code>, one call site at a time.</figcaption>
+  </figure>
+</section>
+
+<section id="side-by-side">
+  <h2><span class="num">3</span>Side-by-side</h2>
+  <table>
+    <thead><tr><th>Aspect</th><th class="center">Today</th><th class="center">Planned</th></tr></thead>
+    <tbody>
+      <tr><td>Roles</td><td class="center">3 fixed values in code</td><td class="center">Editable, and new ones can be created</td></tr>
+      <tr><td>Granularity</td><td class="center">Whole role only</td><td class="center">Role, plus per-user grant/deny</td></tr>
+      <tr><td>Field-level control</td><td class="center">Not possible</td><td class="center">Yes — per operation, per field</td></tr>
+      <tr><td>Where permissions live</td><td class="center">Baked into <code>op.roles</code> in source code</td><td class="center">Stored data, resolved live per request</td></tr>
+      <tr><td>Where the role comes from</td><td class="center">The signed cookie/token payload</td><td class="center">A live lookup — a role change applies on the next request</td></tr>
+      <tr><td>Change takes effect</td><td class="center">Requires a code change + deploy</td><td class="center">Immediately, from the Access page</td></tr>
+      <tr><td>Enforcement architecture</td><td class="center" colspan="2" style="text-align:center;">Unchanged — same 8 call sites, same 3 entry points, one shared function</td></tr>
+      <tr><td>Demo shortcuts (auto sign-in, role switcher)</td><td class="center" colspan="2" style="text-align:center;">Unchanged — still gated by <code>DEMO_MODE</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="enforcement-points">
+  <h2><span class="num">4</span>Where the check lives (unchanged set of places)</h2>
+  <p class="section-intro">
+    The plan doesn't add new checkpoints or remove any — it swaps what runs
+    <em>inside</em> the same checkpoints that exist today.
+  </p>
+  <ul class="filelist">
+    <li><code>app/api/call/route.ts</code> — the browser / in-page-agent path</li>
+    <li><code>lib/adapters/mcp.ts</code> — the external MCP agent path (twice: filtering the tool list, and re-checking on call)</li>
+    <li><code>lib/operations/dispatch.ts</code> — the <code>invoke</code> / composite-operation path</li>
+    <li><code>lib/operations/loadTools.ts</code>, <code>describeTool.ts</code> — tool discovery</li>
+    <li><code>lib/capabilities.ts</code>, <code>lib/modules.ts</code> — capability &amp; module listings</li>
+    <li><code>lib/agentbridge.ts</code> — in-page tool registration and calls</li>
+  </ul>
+  <p>
+    Every one of these currently imports <code>roleSatisfies</code> from <code>lib/auth.ts</code>.
+    The plan is to swap that single import for <code>can</code> / <code>authorize</code> from the
+    new <code>lib/access/policy.ts</code> — one file, same call sites.
+  </p>
+</section>
+
+<section id="worked-example">
+  <h2><span class="num">5</span>Worked example: three requests from dana</h2>
+  <p class="section-intro">
+    Dana is set up with the <span class="chip support">support</span> role, a deny on
+    <code>checkOutGuest</code>, and a field restriction on <code>updateGuest</code>'s
+    <code>email</code> field. Here's what happens on three different calls she might make.
+  </p>
+
+  <h3>1. Dana calls <code>checkOutGuest</code></h3>
+  <div class="flowchart">
+    <div class="fc-node start">Input: <span class="mono">{ reservationId: "res_42", confirm: true }</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">can(dana, "checkOutGuest")? → support role normally includes it, <strong>but dana has a personal deny</strong></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node deny">403 FORBIDDEN <span class="chip deny">deny wins</span></div>
+  </div>
+
+  <h3>2. Dana calls <code>updateGuest</code> including an email change</h3>
+  <div class="flowchart">
+    <div class="fc-node start">Input: <span class="mono">{ guestId: "g_001", name: "Dana R.", email: "new@x.com" }</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">can(dana, "updateGuest")? → yes, support role includes it <span class="chip allow">pass</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">Is "email" restricted for dana on updateGuest, and present in the input? → yes</div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node deny">403 FORBIDDEN_FIELD <span class="chip warn">field-level</span></div>
+  </div>
+
+  <h3>3. Dana calls <code>updateGuest</code> without touching email</h3>
+  <div class="flowchart">
+    <div class="fc-node start">Input: <span class="mono">{ guestId: "g_001", name: "Dana R." }</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">can(dana, "updateGuest")? → yes <span class="chip allow">pass</span></div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node">"email" not present in input → field check passes</div>
+    <div class="fc-arrow">↓</div>
+    <div class="fc-node allow">Handler runs — name is updated</div>
+  </div>
+
+  <p class="fc-caption">
+    All three traces run identically whether dana clicked a button, an in-page AI helper
+    acted for her, or an external agent called in with her token — the decision is made once,
+    centrally, not re-implemented per entry point.
+  </p>
+
+  <details>
+    <summary>Why check the field on the raw input, not after validation?</summary>
+    <p>
+      Zod (the validation library already used for every operation's input) silently drops
+      keys that aren't part of an operation's declared schema. If the field check ran after
+      validation, a restricted field could theoretically be smuggled in under a different
+      shape and never get flagged. Checking the untouched raw input first avoids that.
+    </p>
+  </details>
+</section>
+
+</div>
+
+<script>
+  (function () {
+    var saved = localStorage.getItem("auth-explained-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  })();
+  function toggleTheme() {
+    var el = document.documentElement;
+    var current = el.getAttribute("data-theme");
+    var next = current === "dark" ? "light" : "dark";
+    el.setAttribute("data-theme", next);
+    localStorage.setItem("auth-explained-theme", next);
+  }
+</script>
+</body>
+</html>
