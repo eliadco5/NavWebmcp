@@ -21,12 +21,14 @@ interface AuthUser {
 
 export async function serverCall(
   name: string,
-  params: Record<string, unknown> = {}
+  params: Record<string, unknown> = {},
+  signal?: AbortSignal
 ): Promise<unknown> {
   const res = await fetch("/api/call", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, params }),
+    signal,
   });
   // No redirect-to-/login on 401 here: /api/call auto-provisions an alice/customer
   // session for any visitor with none (see getOrProvisionUser in lib/auth.ts), so a

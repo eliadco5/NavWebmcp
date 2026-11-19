@@ -22,6 +22,31 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 1.2.0
+
+Closes the remaining in-page gaps against the WebMCP draft of 13 Nov 2026, and fixes the
+composite rollback. All additive.
+
+- **Cancellation.** `execute(input, {signal})` now receives an `AbortSignal`, and the
+  polyfill's `executeTool(name, input, {signal})` supports cancelling, as in the spec.
+  - Aborting rejects with the caller's reason, aborts the tool's own signal, fires
+    `toolcancel`, and ignores any later result.
+  - AgentBridge passes the signal on to the server request.
+  - **New error code `CANCELLED`:** the caller cancelled while a confirmation dialog was
+    open, so the op was never sent to the server.
+- **Events.** `toolactivated` (`ToolActivatedEvent`) and `toolcancel` (`ToolCancelEvent`)
+  are fired at `modelContext` with `toolName`. The `ontoolactivated` / `ontoolcancel`
+  handler attributes work too.
+- **Duplicate names.** Registering a duplicate tool name now rejects with
+  `InvalidStateError`. Before this, it silently replaced the first tool.
+- **`seatGuest` / `hostVipGuest` no longer try to roll back with `checkOutGuest`.** That
+  call was missing `confirm`, so it was always rejected and never ran. And checking out
+  isn't an undo anyway: it bills the visit and frees the table, which would be the wrong
+  result for a guest who really was seated. Both composites now follow `book`:
+  - If the check-in isn't visible afterwards, the result is `VALIDATION_FAILED`.
+  - `seatGuest` reports a stale occupancy re-check as `validated: false` instead of
+    failing.
+
 ## 1.1.0
 
 Adopts the WebMCP `outputSchema` member (webmachinelearning/webmcp#254, in the draft of

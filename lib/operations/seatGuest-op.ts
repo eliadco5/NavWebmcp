@@ -21,7 +21,7 @@ export const seatGuestOp = defineOperation({
   },
   outputSchema: {
     checkin: CheckinSchema,
-    validated: z.boolean(),
+    validated: z.boolean().describe("False when the post-check could not yet see the table as occupied (possibly a stale read); the guest is still checked in"),
   },
   async handler(input, ctx) {
     return seatGuestOrchestration(input, makeDispatch(ctx));

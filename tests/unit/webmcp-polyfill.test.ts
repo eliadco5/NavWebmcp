@@ -176,7 +176,7 @@ describe("executeTool", () => {
     const execute = vi.fn().mockResolvedValue("done");
     await document.modelContext!.registerTool({ name: "myTool", description: "d", execute });
     await document.modelContext!.executeTool!("myTool", { x: 1 });
-    expect(execute).toHaveBeenCalledWith({ x: 1 });
+    expect(execute).toHaveBeenCalledWith({ x: 1 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it("forwards the execute function's return value", async () => {
@@ -195,7 +195,7 @@ describe("executeTool", () => {
     await document.modelContext!.registerTool({ name: "t", description: "d", execute });
     const input = { foo: "bar", nested: { a: 1 } };
     await document.modelContext!.executeTool!("t", input);
-    expect(execute).toHaveBeenCalledWith(input);
+    expect(execute).toHaveBeenCalledWith(input, expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 });
 
@@ -390,6 +390,119 @@ describe("registerTool — schemas and annotations", () => {
     const tool = makeTool("noInput");
     await document.modelContext!.registerTool(tool);
     await document.modelContext!.executeTool!("noInput");
-    expect(tool.execute).toHaveBeenCalledWith({});
+    expect(tool.execute).toHaveBeenCalledWith({}, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+});
+
+// ── spec gaps closed in 1.2.0 ────────────────────────────────────────────────
+
+describe("registerTool — duplicate names", () => {
+  it("a second registration with the same name rejects with InvalidStateError", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const first = makeTool("dup");
+    await document.modelContext!.registerTool(first);
+    await expect(document.modelContext!.registerTool(makeTool("dup"))).rejects.toMatchObject({ name: "InvalidStateError" });
+    await document.modelContext!.executeTool!("dup");
+    expect(first.execute).toHaveBeenCalled(); // the original stays registered
+  });
+
+  it("the name can be reused after the first registration is aborted", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const controller = new AbortController();
+    await document.modelContext!.registerTool(makeTool("reuse"), { signal: controller.signal });
+    controller.abort();
+    await expect(document.modelContext!.registerTool(makeTool("reuse"))).resolves.toBeUndefined();
+  });
+});
+
+describe("executeTool — toolactivated", () => {
+  it("fires toolactivated with toolName after execute is invoked, before it settles", async () => {
+    const { installWebMCPPolyfill, ToolActivatedEvent } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const order: string[] = [];
+    let finish!: (v: unknown) => void;
+    await document.modelContext!.registerTool({
+      name: "slow", description: "d",
+      execute: () => { order.push("execute"); return new Promise((r) => { finish = r; }); },
+    });
+    const events: Event[] = [];
+    document.modelContext!.addEventListener("toolactivated", (e) => { order.push("toolactivated"); events.push(e); });
+    const handlerSpy = vi.fn();
+    document.modelContext!.ontoolactivated = handlerSpy;
+
+    const pending = document.modelContext!.executeTool!("slow");
+    expect(order).toEqual(["execute", "toolactivated"]);
+    expect(events[0]).toBeInstanceOf(ToolActivatedEvent);
+    expect((events[0] as InstanceType<typeof ToolActivatedEvent>).toolName).toBe("slow");
+    expect(handlerSpy).toHaveBeenCalledOnce();
+    finish("done");
+    await expect(pending).resolves.toBe("done");
+  });
+});
+
+describe("executeTool — cancellation", () => {
+  async function registerSlow() {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    let toolSignal!: AbortSignal;
+    let finish!: (v: unknown) => void;
+    await document.modelContext!.registerTool({
+      name: "slow", description: "d",
+      execute: (_input, opts) => { toolSignal = opts!.signal; return new Promise((r) => { finish = r; }); },
+    });
+    return { getToolSignal: () => toolSignal, finish: (v: unknown) => finish(v) };
+  }
+
+  it("passes execute its own AbortSignal, distinct from the caller's", async () => {
+    const { getToolSignal, finish } = await registerSlow();
+    const caller = new AbortController();
+    const pending = document.modelContext!.executeTool!("slow", {}, { signal: caller.signal });
+    expect(getToolSignal()).toBeInstanceOf(AbortSignal);
+    expect(getToolSignal()).not.toBe(caller.signal);
+    finish(1);
+    await pending;
+  });
+
+  it("aborting rejects with the caller's reason, aborts the tool's signal and fires toolcancel", async () => {
+    const { ToolCancelEvent } = await import("@/lib/webmcp-polyfill");
+    const { getToolSignal, finish } = await registerSlow();
+    const cancels: Event[] = [];
+    document.modelContext!.addEventListener("toolcancel", (e) => cancels.push(e));
+    const caller = new AbortController();
+    const pending = document.modelContext!.executeTool!("slow", {}, { signal: caller.signal });
+    const reason = new Error("user stopped");
+    caller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(getToolSignal().aborted).toBe(true);
+    expect(cancels).toHaveLength(1);
+    expect(cancels[0]).toBeInstanceOf(ToolCancelEvent);
+    expect((cancels[0] as InstanceType<typeof ToolCancelEvent>).toolName).toBe("slow");
+    finish("late result"); // ignored: the promise already rejected
+  });
+
+  it("an already-aborted signal rejects without invoking execute", async () => {
+    const { installWebMCPPolyfill } = await import("@/lib/webmcp-polyfill");
+    installWebMCPPolyfill();
+    const tool = makeTool("never");
+    await document.modelContext!.registerTool(tool);
+    const caller = new AbortController();
+    caller.abort("too late");
+    await expect(document.modelContext!.executeTool!("never", {}, { signal: caller.signal })).rejects.toBe("too late");
+    expect(tool.execute).not.toHaveBeenCalled();
+  });
+
+  it("no toolcancel once the execution has completed", async () => {
+    const { getToolSignal, finish } = await registerSlow();
+    const cancels: Event[] = [];
+    document.modelContext!.addEventListener("toolcancel", (e) => cancels.push(e));
+    const caller = new AbortController();
+    const pending = document.modelContext!.executeTool!("slow", {}, { signal: caller.signal });
+    finish("ok");
+    await expect(pending).resolves.toBe("ok");
+    caller.abort();
+    expect(cancels).toHaveLength(0);
+    expect(getToolSignal().aborted).toBe(false);
   });
 });

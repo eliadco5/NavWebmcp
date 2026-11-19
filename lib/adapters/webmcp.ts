@@ -21,7 +21,7 @@ let _bridge: AgentBridge | null = null;
  */
 export function initAgentBridge(
   options: AgentBridgeOptions,
-  dispatch: (name: string, params: Record<string, unknown>) => Promise<unknown>
+  dispatch: (name: string, params: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
 ): AgentBridge {
   if (!_bridge) {
     _bridge = new AgentBridge({ instructions: AGENT_INSTRUCTIONS, ...options });
@@ -48,7 +48,7 @@ export function initAgentBridge(
       untrustedOutput: op.untrustedOutput,
       dispatchesOps: op.dispatchesOps,
       tags: op.tags,
-      handler: (input) => dispatch(op.name, input),
+      handler: (input, _ctx, options) => dispatch(op.name, input, options?.signal),
     });
   }
 

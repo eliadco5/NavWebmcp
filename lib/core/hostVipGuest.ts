@@ -88,9 +88,11 @@ export async function hostVipGuestOrchestration(
     success: boolean;
     data?: { status: string };
   };
+  // Stop before awarding points, but don't "roll back" with checkOutGuest: it bills
+  // and frees the table, and this mismatch is usually a stale cross-instance read of
+  // a check-in that did succeed (see lib/core/seatGuest.ts).
   if (!statusResult.success || statusResult.data?.status !== "checked-in") {
-    await call("checkOutGuest", { reservationId });
-    return fail("VALIDATION_FAILED", "Check-in could not be validated (inconsistent state). Please try again.");
+    return fail("VALIDATION_FAILED", "Check-in could not be confirmed (inconsistent state). Check getCheckinStatus before retrying.");
   }
 
   // 6. LOYALTY (award) — points for the visit

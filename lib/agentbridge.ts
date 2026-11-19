@@ -21,7 +21,8 @@ export interface AgentBridgeRegistration {
   untrustedOutput?: boolean;
   dispatchesOps?: boolean;
   tags?: string[];
-  handler: (input: Record<string, unknown>, ctx: OperationContext) => Promise<unknown>;
+  /** `signal` aborts when the WebMCP caller cancels the execution. */
+  handler: (input: Record<string, unknown>, ctx: OperationContext, options?: { signal?: AbortSignal }) => Promise<unknown>;
 }
 
 export function webmcpAnnotations(
@@ -98,8 +99,8 @@ export class AgentBridge {
       inputSchema: toJsonSchema(inputObject(reg.inputSchema)),
       ...(reg.outputSchema && { outputSchema: toJsonSchema(envelopeSchema(reg.outputSchema)) }),
       annotations: webmcpAnnotations(reg),
-      execute: async (input: Record<string, unknown>) => {
-        return this.call(reg.name, input);
+      execute: async (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+        return this.call(reg.name, input, { signal: options?.signal });
       },
     });
     // A native implementation can reject (e.g. a schema it refuses to serialize);
@@ -111,8 +112,10 @@ export class AgentBridge {
 
   async call(
     name: string,
-    input: Record<string, unknown> = {}
+    input: Record<string, unknown> = {},
+    options: { signal?: AbortSignal } = {}
   ): Promise<unknown> {
+    const { signal } = options;
     const reg = this.registrations.find((r) => r.name === name);
     if (!reg) throw new Error(`Operation "${name}" not registered`);
 
@@ -138,15 +141,13 @@ export class AgentBridge {
     // included it got INVALID_INPUT before the dialog ever had a chance to show.
     //
     // A caller that HAS already self-declared approval (passed confirm: true for
-    // an op whose own schema has that field) skips the dialog entirely and is
-    // trusted immediately — this is exactly how the real MCP-over-HTTP surface
-    // (lib/adapters/mcp.ts) already treats these same two ops for an external
+    // an op whose own schema has that field — all six confirmation ops do) skips
+    // the dialog entirely and is trusted immediately — this is exactly how the real
+    // MCP-over-HTTP surface (lib/adapters/mcp.ts) treats these ops for an external
     // agent: no interactive block, `confirm: true` IS the approval. A genuinely
     // autonomous in-page agent has no way to click a browser dialog, so requiring
     // one on top of an already-self-declared confirm would just hang forever with
-    // no signal. The other 4 confirmation-requiring ops (checkOutGuest, deleteTask,
-    // issueRefund, applyNoShowFee) have no schema field to self-declare through, so
-    // they always show the dialog — it's the only approval channel they have.
+    // no signal. An op without its own confirm field always shows the dialog.
     let confirmedInput = input;
     if (reg.requiresConfirmation) {
       const hasOwnConfirmField = "confirm" in reg.inputSchema;
@@ -175,8 +176,14 @@ export class AgentBridge {
       };
     }
 
+    // The caller may have cancelled while the confirmation dialog was open; a
+    // cancelled execution must not reach the server afterwards.
+    if (signal?.aborted) {
+      return { success: false, error: { code: "CANCELLED", message: "The caller cancelled this call." } };
+    }
+
     const ctx: OperationContext = { userId, role, token: "" };
-    const result = await reg.handler(parsed.data as Record<string, unknown>, ctx);
+    const result = await reg.handler(parsed.data as Record<string, unknown>, ctx, { signal });
     const success = (result as { success?: boolean }).success !== false;
     const output = success ? (result as { data?: unknown }).data : (result as { error?: unknown }).error;
     auditLog.record(name, input, success, "ui", output);

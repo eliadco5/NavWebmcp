@@ -116,7 +116,7 @@ describe('hostVipGuestOrchestration', () => {
     expect(call).not.toHaveBeenCalledWith('checkOutGuest', expect.anything())
   })
 
-  it('VALIDATION_FAILED: getCheckinStatus reports non-checked-in status → rollback + error', async () => {
+  it('VALIDATION_FAILED: getCheckinStatus reports non-checked-in status → error', async () => {
     const call = makeMockCall({
       getGuestPreferences: [{ success: true, data: { preferences: PREFERENCES } }],
       getLoyaltyStatus: [{ success: true, data: { loyalty: LOYALTY_BEFORE } }],
@@ -129,7 +129,8 @@ describe('hostVipGuestOrchestration', () => {
     if (!result.success) expect(result.error.code).toBe('VALIDATION_FAILED')
   })
 
-  it('rollback calls checkOutGuest with { reservationId } on validation failure', async () => {
+  // checkOutGuest bills and frees the table; it must never be used as an "undo".
+  it('never calls checkOutGuest when validation fails', async () => {
     const call = makeMockCall({
       getGuestPreferences: [{ success: true, data: { preferences: PREFERENCES } }],
       getLoyaltyStatus: [{ success: true, data: { loyalty: LOYALTY_BEFORE } }],
@@ -137,8 +138,9 @@ describe('hostVipGuestOrchestration', () => {
       checkInGuest: [{ success: true, data: { tableId: 't_01' } }],
       getCheckinStatus: [{ success: false, data: undefined }],
     })
-    await hostVipGuestOrchestration(INPUT, call)
-    expect(call).toHaveBeenCalledWith('checkOutGuest', { reservationId: INPUT.reservationId })
+    const result = await hostVipGuestOrchestration(INPUT, call)
+    expect(result.success).toBe(false)
+    expect(call).not.toHaveBeenCalledWith('checkOutGuest', expect.anything())
   })
 
   it('no addLoyaltyPoints or logCommunication when validation fails', async () => {
