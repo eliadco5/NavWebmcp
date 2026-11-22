@@ -400,22 +400,22 @@
   <h2><span class="num">5</span>Life of a login</h2>
   <p class="section-intro">What happens to your session from the moment you arrive to the moment it's gone.</p>
   <div class="timeline">
-    <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Created</h4><p>On first visit, sign-in, or role switch. If you show up with no valid cookie at all, the demo signs you in as alice automatically.</p></div>
+    <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Created</h4><p>On sign-in or role switch. If you show up with no valid cookie, you're sent to the login page (or, with <code>DEMO_MODE=true</code>, signed in as alice automatically).</p></div>
     <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Validated</h4><p>Every request re-checks the signature, the role, and the expiry — there's no "remembered" state to trust instead.</p></div>
     <div class="tl-step"><div class="dot"></div><div class="line"></div><h4>Expires</h4><p>7 days for the cookie, 8 hours for an agent token. After that it's just rejected, like any other invalid signature.</p></div>
     <div class="tl-step"><div class="dot"></div><h4>Logout</h4><p>Clears the cookie from your browser. There's nothing server-side left to clean up.</p></div>
   </div>
-  <div class="code-ref"><span class="label">code</span><code>lib/auth-tokens.ts:180-192</code> (auto sign-in) · <code>app/api/logout/route.ts</code> (logout)</div>
+  <div class="code-ref"><span class="label">code</span><code>app/page.tsx</code> (login gate) · <code>getOrProvisionUser</code> in <code>lib/auth-tokens.ts</code> · <code>app/api/logout/route.ts</code> (logout)</div>
 
   <p>
-    Two conveniences exist purely because this is a public demo, not a real product:
-    an unauthenticated visitor is auto-signed-in as alice/customer, and a "switch role"
-    button lets anyone jump straight to support or admin with no password — so a demo
-    visitor can see every role without needing three sets of credentials. Setting the
-    <code>DEMO_MODE=false</code> environment variable turns both off and makes this behave
-    like an ordinary login-required app.
+    Signing in is required by default. Two conveniences exist because this is a demo:
+    a "switch role" button lets a signed-in user jump straight to support or admin with
+    no password, so one login can see every role; and with <code>DEMO_MODE=true</code> an
+    unauthenticated visitor is auto-signed-in as alice/customer instead of seeing the
+    login page. <code>DEMO_MODE=false</code> keeps login required and also turns the role
+    switcher off.
   </p>
-  <div class="code-ref"><span class="label">code</span><code>app/api/switch-role/route.ts</code> · <code>DEMO_MODE</code> checks in <code>lib/auth-tokens.ts:187</code></div>
+  <div class="code-ref"><span class="label">code</span><code>app/api/switch-role/route.ts</code> · <code>isDemoMode()</code> in <code>lib/auth-tokens.ts</code></div>
 </section>
 
 <section id="doors">
@@ -627,9 +627,9 @@
 
   <h3 style="font-size:16px;">What stays the same</h3>
   <p>
-    The demo conveniences described earlier — landing on the page already signed in, and the
-    one-click role switcher — are planned to keep working the same way, still switched off
-    entirely by <code>DEMO_MODE=false</code>. And access management itself is planned to be
+    The demo conveniences described earlier — optional auto sign-in (<code>DEMO_MODE=true</code>)
+    and the one-click role switcher — are planned to keep working the same way, still
+    switched off by <code>DEMO_MODE=false</code>. And access management itself is planned to be
     something only a person can do through the Access page — never something an AI agent can
     call as a tool, so an agent can never grant itself more access.
   </p>
@@ -651,7 +651,7 @@
     <li>Set <code>requiresConfirmation: true</code> if the action is destructive or hard to undo.</li>
     <li>Declare <code>outputSchema</code> (the shape of the success data) and add a case to <code>tests/unit/output-contract.test.ts</code>. Input is validated strictly, so build fields from the helpers in <code>lib/operations/schemas.ts</code>.</li>
     <li>If the data belongs to a specific user, check <code>ctx.userId</code> inside the handler — the role check alone doesn't do this for you.</li>
-    <li>If you're adding a new API route (not a new operation), call <code>getOrProvisionUser()</code> yourself — <code>middleware.ts</code> deliberately does nothing, so each route is responsible for its own auth check.</li>
+    <li>If you're adding a new API route (not a new operation), call <code>getOrProvisionUser()</code> yourself and return 401 when it gives no user — <code>middleware.ts</code> deliberately does nothing (Edge can't verify signatures), so each route is responsible for its own auth check.</li>
     <li>Add a case for the new operation to <code>tests/integration/rbac.test.ts</code> so the role gate is covered by an automated test.</li>
   </ul>
 
@@ -670,7 +670,7 @@
     <thead><tr><th>Variable</th><th>Purpose</th></tr></thead>
     <tbody>
       <tr><td class="mono">AUTH_SECRET</td><td>The signing key for every cookie and token. Set this in any real deployment.</td></tr>
-      <tr><td class="mono">DEMO_MODE</td><td>Set to <code>false</code> to turn off auto sign-in and the role switcher.</td></tr>
+      <tr><td class="mono">DEMO_MODE</td><td>Unset: login required. <code>true</code>: auto sign-in as alice, no login page. <code>false</code>: login required and the role switcher / "Reset demo data" are disabled.</td></tr>
       <tr><td class="mono">MCP_RESOURCE_URL</td><td>The public URL agent tokens are bound to.</td></tr>
     </tbody>
   </table>
@@ -680,9 +680,9 @@
   <h2><span class="num">10</span>FAQ</h2>
   <details>
     <summary>Why was I logged in automatically, without a login screen?</summary>
-    <p>This is a demo, and it's designed so a first-time visitor lands on the URL already
-    signed in as alice (a customer) with zero clicks. A real deployment turns this off
-    with <code>DEMO_MODE=false</code>, which brings back a normal login requirement.</p>
+    <p>That only happens when the deployment sets <code>DEMO_MODE=true</code>, which lands a
+    first-time visitor on the URL already signed in as alice (a customer). By default the
+    app sends you to the login page first.</p>
   </details>
   <details>
     <summary>Why can't the AI agent see the admin tools?</summary>

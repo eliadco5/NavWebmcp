@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // setup.ts already calls vi.resetModules() in beforeEach.
 // We use dynamic imports inside each test so each test gets a fresh module instance.
@@ -318,8 +318,8 @@ describe("getUserById / listUsers", () => {
   });
 });
 
-// getOrProvisionUser is the fix for the login loop: it trusts an existing
-// valid cookie, or mints a fresh alice/customer session on the spot.
+// getOrProvisionUser trusts an existing valid cookie. With no cookie it returns
+// no user (login required) unless DEMO_MODE=true, where it mints alice/customer.
 describe("getOrProvisionUser", () => {
   function fakeCookieStore(initial?: string) {
     let value = initial;
@@ -329,7 +329,22 @@ describe("getOrProvisionUser", () => {
     };
   }
 
-  it("provisions a fresh alice/customer session when no cookie exists", async () => {
+  afterEach(() => {
+    delete process.env.DEMO_MODE;
+  });
+
+  it("requires login by default: no cookie means no user and nothing written", async () => {
+    delete process.env.DEMO_MODE;
+    const { getOrProvisionUser } = await import("@/lib/auth-tokens");
+    const store = fakeCookieStore();
+    const { user, provisioned } = getOrProvisionUser(store);
+    expect(user).toBeNull();
+    expect(provisioned).toBe(false);
+    expect(store.get("agentbridge_session")).toBeUndefined();
+  });
+
+  it("DEMO_MODE=true provisions a fresh alice/customer session when no cookie exists", async () => {
+    process.env.DEMO_MODE = "true";
     const { getOrProvisionUser } = await import("@/lib/auth-tokens");
     const store = fakeCookieStore();
     const { user, provisioned } = getOrProvisionUser(store);
@@ -338,6 +353,12 @@ describe("getOrProvisionUser", () => {
     expect(user?.role).toBe("customer");
     // The provisioned session must actually have been written back to the store.
     expect(store.get("agentbridge_session")).not.toBeUndefined();
+  });
+
+  it("does not provision for a tampered cookie outside demo mode", async () => {
+    const { getOrProvisionUser } = await import("@/lib/auth-tokens");
+    const { user } = getOrProvisionUser(fakeCookieStore("forged.value"));
+    expect(user).toBeNull();
   });
 
   it("trusts an existing valid cookie instead of re-provisioning", async () => {
@@ -353,13 +374,11 @@ describe("getOrProvisionUser", () => {
   });
 
   it("DEMO_MODE=false disables auto-provisioning", async () => {
-    vi.resetModules();
     process.env.DEMO_MODE = "false";
     const { getOrProvisionUser } = await import("@/lib/auth-tokens");
     const store = fakeCookieStore();
     const { user, provisioned } = getOrProvisionUser(store);
     expect(user).toBeNull();
     expect(provisioned).toBe(false);
-    delete process.env.DEMO_MODE;
   });
 });
