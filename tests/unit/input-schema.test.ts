@@ -4,15 +4,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { adminCtx } from '@/tests/helpers'
 
-vi.mock('next/headers', () => {
-  const jar = new Map<string, string>()
-  return {
-    cookies: async () => ({
-      get: (name: string) => (jar.has(name) ? { value: jar.get(name)! } : undefined),
-      set: (name: string, value: string) => { jar.set(name, value) },
-    }),
-  }
-})
+// The jar is hoisted so the /api/call test can put a signed-in session in it —
+// login is required, so a cookie-less call would stop at 401 before validation.
+const { jar } = vi.hoisted(() => ({ jar: new Map<string, string>() }))
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) => (jar.has(name) ? { value: jar.get(name)! } : undefined),
+    set: (name: string, value: string) => { jar.set(name, value) },
+  }),
+}))
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let registry: any[]
@@ -107,6 +107,9 @@ describe('unknown input keys are rejected, not silently dropped', () => {
   })
 
   it('POST /api/call (UI and in-page agent)', async () => {
+    const { createSession } = await import('@/lib/auth-tokens')
+    const { getUserById, SESSION_COOKIE } = await import('@/lib/auth')
+    jar.set(SESSION_COOKIE, createSession(getUserById('u_bob')!))
     const { POST } = await import('@/app/api/call/route')
     const req = new Request('http://localhost/api/call', {
       method: 'POST',

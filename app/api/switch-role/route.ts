@@ -26,8 +26,15 @@ export async function POST(req: NextRequest) {
   const cookieStore = await cookies();
   const { user } = getOrProvisionUser(cookieStore);
 
+  if (!user) {
+    return Response.json(
+      { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },
+      { status: 401 }
+    );
+  }
+
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!user || !parsed.success) {
+  if (!parsed.success) {
     return Response.json(
       { success: false, error: { code: "INVALID_INPUT", message: "role must be customer, support, or admin." } },
       { status: 400 }

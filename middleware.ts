@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 
-// Auth is stateless (HMAC-signed cookie, verified in lib/auth.ts — see
-// getOrProvisionUser). Middleware runs on the Edge runtime, which cannot import
-// node:crypto, so it never validates the cookie's signature — only route handlers
-// do. It used to redirect to /login when no cookie was present; that's gone now
-// because every route auto-provisions a fresh session for a first-time visitor
-// (see lib/auth.ts's getOrProvisionUser), so there is nothing left to gate.
-// This file is kept, rather than deleted, as the seam a real deployment would use
-// to add a real check.
+// Auth is stateless (HMAC-signed cookie, verified in lib/auth-tokens.ts).
+// Middleware runs on the Edge runtime, which cannot import node:crypto, so it
+// can't validate the cookie's signature. The login gate therefore lives in
+// app/page.tsx (a server component on the Node runtime), and each API route
+// checks the session itself via getOrProvisionUser. This file is kept as a
+// pass-through seam rather than deleted.
 export function middleware() {
   return NextResponse.next();
 }

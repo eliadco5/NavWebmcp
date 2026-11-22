@@ -35,12 +35,17 @@ export async function serverCall(
     body: JSON.stringify({ name, params }),
     signal,
   });
-  // No redirect-to-/login on 401 here: /api/call auto-provisions an alice/customer
-  // session for any visitor with none (see getOrProvisionUser in lib/auth.ts), so a
-  // 401 now only means DEMO_MODE=false with a genuinely absent/expired session —
-  // in which case bouncing every failed call to /login would be the wrong UX for
-  // what's meant to be a one-off escape hatch, not the default flow.
+  // A 401 means the session is gone (expired, or signed out in another tab):
+  // send the user to sign in again. Never happens in demo mode, where /api/call
+  // provisions a session instead (see getOrProvisionUser).
+  if (res.status === 401) goToLogin();
   return res.json();
+}
+
+function goToLogin() {
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
 }
 
 interface BridgeContextValue {
@@ -101,14 +106,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Auth check on mount. /api/me auto-provisions an alice/customer session for a
-  // first-time visitor (see getOrProvisionUser), so this normally never 401s — a
-  // judge landing on the URL is signed in with zero clicks. A 401 only happens
-  // with DEMO_MODE=false and no session; that's left as a silent no-op rather than
-  // a redirect loop, since /login remains reachable directly.
+  // Auth check on mount. app/page.tsx already redirected a visitor with no valid
+  // session to /login, so a 401 here means the session lapsed in between; in demo
+  // mode /api/me provisions an alice/customer session instead and never 401s.
   useEffect(() => {
     fetch("/api/me")
       .then(async (r) => {
+        if (r.status === 401) return goToLogin();
         const data = await r.json();
         if (data.success) {
           setUser(data.user);

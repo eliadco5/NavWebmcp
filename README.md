@@ -477,6 +477,14 @@ Pass `Authorization: Bearer <token>` (your agent token is shown in the UI after 
 | carol | password | support |
 | bob | password | admin |
 
+Sign-in is required: opening the app without a session takes you to `/login`.
+
+| `DEMO_MODE` | Behaviour |
+|---|---|
+| unset (default) | Login required. Once signed in, the role switcher in the header works. |
+| `true` | No login: a first-time visitor lands signed in as alice (customer). Role switcher works. |
+| `false` | Login required, and the demo shortcuts (role switcher, "Reset demo data") are disabled. |
+
 ### In-page WebMCP (browser console)
 
 After signing in, open the browser console:

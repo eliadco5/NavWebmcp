@@ -172,13 +172,23 @@ export function userForToken(token: string): User | null {
   return { ...base, role };
 }
 
-// ── Auto-provisioning ─────────────────────────────────────────────────────────
+// ── Auto-provisioning (demo mode only) ────────────────────────────────────────
 //
-// The judge-facing requirement is "land on the URL already signed in." Doing that
-// in middleware is impossible (Edge runtime, no node:crypto); doing it client-side
-// means a visible /login flash before the redirect. So every route that needs a
-// user calls this first: it trusts an existing valid cookie, or mints a fresh
-// alice/customer session on the spot.
+// Login is required by default: a visitor with no valid session is sent to
+// /login (app/page.tsx) and every API route answers 401.
+//
+// DEMO_MODE=true brings back the old judge-facing "land on the URL already signed
+// in" behaviour: every route that needs a user calls getOrProvisionUser first, and
+// it mints a fresh alice/customer session on the spot for a visitor with none.
+// (Doing that in middleware is impossible — Edge runtime, no node:crypto.)
+//
+// DEMO_MODE=false additionally switches off the demo shortcuts (the role switcher
+// and "Reset demo data"); see app/api/switch-role and app/api/bench/reset.
+
+/** True only when DEMO_MODE is explicitly "true". */
+export function isDemoMode(): boolean {
+  return process.env.DEMO_MODE === "true";
+}
 
 export const COOKIE_OPTS = {
   httpOnly: true,
@@ -202,9 +212,9 @@ export function getOrProvisionUser(cookieStore: CookieStore): { user: User | nul
   const existing = raw ? userForSession(raw) : null;
   if (existing) return { user: existing, provisioned: false };
 
-  // DEMO_MODE=false turns this back into a normal login-required app (and disables
-  // /api/switch-role) — the escape hatch for anyone reusing this repo for real.
-  if (process.env.DEMO_MODE === "false") return { user: null, provisioned: false };
+  // Not in demo mode: no session means not signed in. The caller answers 401
+  // (API routes) or redirects to /login (app/page.tsx).
+  if (!isDemoMode()) return { user: null, provisioned: false };
 
   const alice = getUserById("u_alice")!;
   cookieStore.set(SESSION_COOKIE, createSession(alice), COOKIE_OPTS);

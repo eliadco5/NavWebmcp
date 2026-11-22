@@ -1,10 +1,10 @@
 import { cookies } from "next/headers";
 import { getOrProvisionUser, issueToken } from "@/lib/auth-tokens";
 
-// No auth failure path here anymore: getOrProvisionUser mints an alice/customer
-// session on the spot if the caller has none. That's the fix for the login loop —
-// this route used to 401 whenever the session cookie wasn't recognised by *this*
-// serverless instance, which sent the client back to /login in an endless cycle.
+// 401 when there's no valid session (the client then goes to /login). In demo
+// mode getOrProvisionUser mints an alice/customer session instead. Sessions are
+// stateless HMAC-signed cookies, so a cookie minted on one serverless instance
+// verifies on every other — the old cross-instance /login loop can't recur.
 export const dynamic = "force-dynamic";
 
 export async function GET() {
