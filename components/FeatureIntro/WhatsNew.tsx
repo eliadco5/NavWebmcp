@@ -37,12 +37,12 @@ export function WhatsNew({ intros, onOpenTab }: { intros: FeatureIntro[]; onOpen
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((o) => !o)}
-        style={{ fontSize: 12, color: "#4f46e5", background: "none", padding: 0 }}
+        className="whats-new-button"
       >
         What&apos;s new{unseen > 0 && <span className="intro-dot" aria-label={`${unseen} unseen`} />}
       </button>
       {open && (
-        <div className="card" role="menu" style={{ position: "absolute", top: 22, left: 0, width: 260, padding: 12, zIndex: 50 }}>
+        <div className="card" role="menu" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 260, padding: 12, zIndex: 50 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Feature guides</div>
           {intros.map((intro) => {
             const isSeen = seen?.has(introKey(intro)) ?? false;

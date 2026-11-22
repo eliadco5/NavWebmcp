@@ -13,7 +13,7 @@ export function TourButton({ intros }: { intros: FeatureIntro[] }) {
   if (intros.length === 0) return null;
 
   return (
-    <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
+    <div style={{ display: "flex", gap: 6 }}>
       {intros.map((intro) => (
         <button
           key={intro.id}

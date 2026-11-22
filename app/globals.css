@@ -71,11 +71,17 @@ input:focus, select:focus { outline: 2px solid #4f46e5; outline-offset: 1px; }
 }
 .col { display: flex; flex-direction: column; gap: 24px; }
 
+/* Tab bar: the scrolling tab strip plus the guide controls on its right. */
+.tab-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 8px; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb;
+}
+.tab-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
 /* Tab strip: scrolls sideways on a phone instead of wrapping and reflowing. */
 .tabs {
   display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; padding-bottom: 8px; margin-bottom: 20px;
-  border-bottom: 1px solid #e5e7eb;
+  scrollbar-width: none; flex: 1 1 auto; min-width: 0;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
@@ -127,4 +133,8 @@ input:focus, select:focus { outline: 2px solid #4f46e5; outline-offset: 1px; }
 .tour-button {
   font-size: 12px; padding: 4px 12px; border-radius: 99px; white-space: nowrap;
   background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe;
+}
+.whats-new-button {
+  font-size: 12px; padding: 4px 12px; border-radius: 99px; white-space: nowrap;
+  background: #fff; color: #374151; border: 1px solid #e5e7eb;
 }

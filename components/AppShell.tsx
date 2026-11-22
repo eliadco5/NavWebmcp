@@ -108,7 +108,6 @@ export function AppShell() {
             <a href="/docs/navcmcp-comparison.html" target="_blank" rel="noopener" style={{ fontSize: 12, color: "#4f46e5" }}>
               Comparison
             </a>
-            <WhatsNew intros={intros} onOpenTab={setActiveTab} />
           </div>
         </div>
         {user && (
@@ -154,20 +153,27 @@ export function AppShell() {
         )}
       </div>
 
-      <div className="tabs" role="tablist">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={t.id === active?.id}
-            className="tab"
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-        <TourButton intros={intros.filter((i) => i.tab === active?.id)} />
+      {/* Guide controls sit beside the tab strip, not inside it: the strip
+          scrolls sideways (overflow-x), which would clip the What's new menu. */}
+      <div className="tab-bar">
+        <div className="tabs" role="tablist">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={t.id === active?.id}
+              className="tab"
+              onClick={() => setActiveTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="tab-actions">
+          <TourButton intros={intros.filter((i) => i.tab === active?.id)} />
+          <WhatsNew intros={intros} onOpenTab={setActiveTab} />
+        </div>
       </div>
 
       <div className="col">
