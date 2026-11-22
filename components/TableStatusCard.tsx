@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useCallback, useEffect, useState } from "react";
 import { useBridge } from "@/app/providers";
 
@@ -48,25 +49,26 @@ export function TableStatusCard() {
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("TableStatusCard.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Table Cleaning Status
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>getTableCleaningStatus / updateTableStatus</span>
       </h2>
 
       {summary && (
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          <span className="badge badge-ok">{summary.clean} clean</span>
-          <span className="badge badge-err">{summary.dirty} dirty</span>
-          <span className="badge badge-write">{summary.inProgress} in progress</span>
+          <span {...bugSource("getTableCleaningStatus", "summary.clean")} className="badge badge-ok">{summary.clean} clean</span>
+          <span {...bugSource("getTableCleaningStatus", "summary.dirty")} className="badge badge-err">{summary.dirty} dirty</span>
+          <span {...bugSource("getTableCleaningStatus", "summary.inProgress")} className="badge badge-write">{summary.inProgress} in progress</span>
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div {...bugSource("getTableCleaningStatus", "tables")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {tables.map((t) => (
-          <div key={t.tableId} className="row">
+          <div key={t.tableId} className="row" {...bugSource("getTableCleaningStatus", "tables[]", t.tableId)}>
             <span style={{ fontSize: 13 }}>
               <strong>{t.tableId}</strong>
               <span
+                {...bugSource("getTableCleaningStatus", "tables[].status", t.tableId)}
                 className="badge"
                 style={{ marginLeft: 8, background: STATUS_COLORS[t.status].bg, color: STATUS_COLORS[t.status].text }}
               >

@@ -61,6 +61,10 @@ import { listPayments } from "./listPayments";
 import { issueRefund } from "./issueRefund";
 import { applyNoShowFee } from "./applyNoShowFee";
 import { logManualAdjustment } from "./logManualAdjustment";
+// Support
+import { listBugReports } from "./listBugReports";
+import { getBugReport } from "./getBugReport";
+import { updateBugReportStatus } from "./updateBugReportStatus";
 
 registry.push(
   // Always-on navigation & meta
@@ -85,6 +89,8 @@ registry.push(
   getDailyRevenueSummary, getWeeklyRevenueSummary,
   getPaymentRecord, listPayments,
   issueRefund, applyNoShowFee, logManualAdjustment,
+  // Support
+  listBugReports, getBugReport, updateBugReportStatus,
 );
 
 // registry is filled in-place above; rebuild the name index once so dispatchers

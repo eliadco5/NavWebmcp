@@ -13,6 +13,7 @@ let schema: any
 let today: string
 let yesterday: string
 let tomorrow: string
+let bugId: string
 
 beforeEach(async () => {
   await import('@/lib/operations/index')
@@ -24,6 +25,13 @@ beforeEach(async () => {
   const d = new Date(`${today}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + 1)
   tomorrow = d.toISOString().slice(0, 10)
+  // Bug reports only enter the store through POST /api/bug-report, not an op —
+  // seed one through the same submit path so the support.bugs ops have data.
+  const { submitBugReport } = await import('@/lib/bugreport/submit')
+  const { BUG_REPORT_FIXTURE } = await import('@/tests/fixtures/bugReport')
+  const r = await submitBugReport({ id: 'u_alice', role: 'customer', displayName: 'Alice' }, JSON.stringify(BUG_REPORT_FIXTURE))
+  if (!r.ok) throw new Error(r.message)
+  bugId = r.report.id
 })
 
 type Args = Record<string, unknown>
@@ -114,6 +122,10 @@ const CASES: Record<string, Case[]> = {
   issueRefund: [{ args: () => ({ paymentId: 'pay_001', reason: 'Cold food', amount: 10, confirm: true }) }],
   applyNoShowFee: [{ args: () => ({ reservationId: 'res_002', feeAmount: 25, reason: 'Did not show up', confirm: true }) }],
   logManualAdjustment: [{ args: () => ({ amount: -15, reason: 'Comp dessert', reasonCode: 'COMP' }) }],
+  // support
+  listBugReports: [{ args: () => ({}) }, { args: () => ({ status: 'open' }) }],
+  getBugReport: [{ args: () => ({ id: bugId }) }],
+  updateBugReportStatus: [{ args: () => ({ id: bugId, status: 'triaged' }) }],
 }
 
 /** Resolve "$last.a.b" placeholders against the previous step's data. */

@@ -53,6 +53,26 @@ function signPayload(domain: string, payload: string): string {
   return `${Buffer.from(payload, "utf8").toString("base64url")}.${sign(domain, payload)}`;
 }
 
+const DOMAIN_UPLOAD = "u:";
+const UPLOAD_TTL_MS = 10 * 60 * 1000;
+
+/** Short-lived capability to upload attachments for one bug report — lets the
+ *  reporter (any role) add files to the report they just created, and nothing else. */
+export function signUploadToken(reportId: string, now = Date.now()): string {
+  return signPayload(DOMAIN_UPLOAD, JSON.stringify({ r: reportId, e: now + UPLOAD_TTL_MS }));
+}
+
+export function verifyUploadToken(token: string, reportId: string, now = Date.now()): boolean {
+  const payload = verifySigned(DOMAIN_UPLOAD, token);
+  if (!payload) return false;
+  try {
+    const { r, e } = JSON.parse(payload) as { r?: string; e?: number };
+    return r === reportId && typeof e === "number" && e > now;
+  } catch {
+    return false;
+  }
+}
+
 /** Verify + decode. Returns the original payload string, or null if malformed/tampered. */
 function verifySigned(domain: string, value: string): string | null {
   const dot = value.indexOf(".");

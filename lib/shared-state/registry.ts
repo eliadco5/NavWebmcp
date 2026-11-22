@@ -17,6 +17,7 @@ import { shiftNotes } from "@/lib/seed/frontoffice";
 import { store as bookingStore } from "@/lib/store";
 import { auditLog } from "@/lib/auditlog";
 import { snapshotLoaded, restoreLoaded } from "@/lib/loadedTools";
+import { bugReports } from "@/lib/bugreports";
 
 export interface StoreDescriptor {
   /** Redis key suffix — see lib/shared-state/index.ts for the full key. */
@@ -114,5 +115,7 @@ export const ALL_DESCRIPTORS: StoreDescriptor[] = [
   bookingDescriptor,
   auditDescriptor,
   loadedToolsDescriptor,
+  // User-submitted, not seed data — kept out of SEED_DESCRIPTORS on purpose.
+  arrayDescriptor("bugReports", bugReports),
   ...SEED_DESCRIPTORS,
 ];

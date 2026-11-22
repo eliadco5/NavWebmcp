@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource } from "@/lib/bugreport/annotate";
 import type { Reservation } from "@/lib/store";
 
 interface Props {
@@ -14,10 +15,11 @@ export function ReservationList({ reservations, onCancel, cancelling }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div {...bugSource("listReservations", "reservations")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {reservations.map((r) => (
         <div
           key={r.id}
+          {...bugSource("listReservations", "reservations[]", r.id)}
           style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             background: "#f9fafb", border: "1px solid #e5e7eb",
@@ -25,9 +27,11 @@ export function ReservationList({ reservations, onCancel, cancelling }: Props) {
           }}
         >
           <div>
-            <span style={{ fontWeight: 600 }}>{r.name}</span>
+            <span {...bugSource("listReservations", "reservations[].name", r.id)} style={{ fontWeight: 600 }}>{r.name}</span>
             <span style={{ color: "#6b7280", marginLeft: 10, fontSize: 13 }}>
-              {r.date} {r.time} · {r.partySize} guests
+              <span {...bugSource("listReservations", "reservations[].date", r.id)}>{r.date}</span>{" "}
+              <span {...bugSource("listReservations", "reservations[].time", r.id)}>{r.time}</span> ·{" "}
+              <span {...bugSource("listReservations", "reservations[].partySize", r.id)}>{r.partySize} guests</span>
             </span>
             <span style={{ color: "#9ca3af", marginLeft: 10, fontSize: 11 }}>
               #{r.id}

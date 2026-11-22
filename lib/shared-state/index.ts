@@ -9,14 +9,16 @@ import { auditLog, type AuditEntry } from "@/lib/auditlog";
 // gaining tables/bills) — this changes every key's prefix, so old data is
 // simply never read instead of crashing restore() on a shape it doesn't
 // recognise. Cheap: it's all disposable, TTL'd demo data.
-const SCHEMA_VERSION = "2";
+const SCHEMA_VERSION = "3"; // 3: bug reports gained attachments/finalized
 
 // Vercel injects VERCEL_ENV ("production" | "preview" | "development") with zero
 // setup. Namespacing by it means a preview deployment and production never share
 // a key, even if they're ever pointed at the same Redis instance.
 const NAMESPACE = process.env.VERCEL_ENV ?? "dev";
 
-function keyFor(suffix: string): string {
+/** Exported for stores that live beside shared-state rather than in it
+ *  (lib/bugreport/attachments.ts), so they share the version/env namespace. */
+export function keyFor(suffix: string): string {
   return `webmcp:${SCHEMA_VERSION}:${NAMESPACE}:${suffix}`;
 }
 

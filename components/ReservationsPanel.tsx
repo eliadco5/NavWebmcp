@@ -1,5 +1,6 @@
 "use client";
 
+import { bugComponent } from "@/lib/bugreport/annotate";
 import { useState, useEffect, useCallback } from "react";
 import { useBridge } from "@/app/providers";
 import { AvailabilityList } from "./AvailabilityList";
@@ -258,7 +259,7 @@ export function ReservationsPanel() {
       {/* Right column */}
       <div className="col">
         <div className="card">
-          <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16 }}>My Reservations</h2>
+          <h2 {...bugComponent("ReservationsPanel.myReservationsTitle")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 16 }}>My Reservations</h2>
           <ReservationList
             reservations={reservations}
             onCancel={handleCancel}

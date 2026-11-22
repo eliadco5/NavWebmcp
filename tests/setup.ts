@@ -16,6 +16,8 @@ const SINGLETON_KEYS = [
   "__housekeepingTableStatus",
   "__housekeepingScheduleItems",
   "__housekeepingInspections",
+  "__bugReports",
+  "__bugAttachments",
   "__featureIntroSeen",
 ] as const;
 

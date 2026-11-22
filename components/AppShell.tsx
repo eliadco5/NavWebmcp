@@ -12,6 +12,8 @@ import { HousekeepingPanel } from "./HousekeepingPanel";
 import { FinancePanel } from "./FinancePanel";
 import { UsersPanel } from "./UsersPanel";
 import { AgentPanel } from "./AgentPanel";
+import { BugReportsPanel } from "./BugReportsPanel";
+import { BugReporter } from "./bugreport/BugReporter";
 import { useFeatureIntro } from "./FeatureIntro/IntroProvider";
 import { WhatsNew } from "./FeatureIntro/WhatsNew";
 import { TourButton } from "./FeatureIntro/TourButton";
@@ -48,6 +50,7 @@ const TABS: Tab[] = [
   { id: "housekeeping", label: "Housekeeping", visible: (r) => r !== "customer", render: () => <HousekeepingPanel /> },
   { id: "finance", label: "Finance", visible: (r) => r === "admin", render: () => <FinancePanel /> },
   { id: "agent", label: "Agent", visible: () => true, render: () => <AgentPanel /> },
+  { id: "bugs", label: "Bug reports", visible: (r) => r === "admin", render: () => <BugReportsPanel /> },
 ];
 
 function useHashTab(defaultId: string): [string, (id: string) => void] {
@@ -185,6 +188,8 @@ export function AppShell() {
           <ActivityLog entries={auditEntries} />
         </div>
       </div>
+
+      <BugReporter />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useCallback, useEffect, useState } from "react";
 import { useBridge } from "@/app/providers";
 
@@ -49,7 +50,7 @@ export function MyTasksCard() {
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("MyTasksCard.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         My Tasks
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>assigned to you</span>
       </h2>
@@ -60,13 +61,14 @@ export function MyTasksCard() {
       {tasks.length === 0 ? (
         <p style={{ color: "#9ca3af", fontSize: 13 }}>No tasks assigned to you.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div {...bugSource("getMyTasks", "tasks")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {tasks.map((t) => (
-            <div key={t.taskId} className="row">
+            <div key={t.taskId} className="row" {...bugSource("getMyTasks", "tasks[]", t.taskId)}>
               <span style={{ fontSize: 13 }}>
-                <strong>{t.title}</strong>
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>{t.department}</span>
+                <strong {...bugSource("getMyTasks", "tasks[].title", t.taskId)}>{t.title}</strong>
+                <span {...bugSource("getMyTasks", "tasks[].department", t.taskId)} style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>{t.department}</span>
                 <span
+                  {...bugSource("getMyTasks", "tasks[].priority", t.taskId)}
                   className="badge"
                   style={{ marginLeft: 8, background: PRIORITY_COLORS[t.priority].bg, color: PRIORITY_COLORS[t.priority].text }}
                 >

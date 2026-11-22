@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useState } from "react";
 import { useBridge } from "@/app/providers";
 
@@ -66,7 +67,7 @@ export function GuestSearchCard({
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("GuestSearchCard.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Guests
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>searchGuests / createGuest</span>
       </h2>
@@ -80,10 +81,11 @@ export function GuestSearchCard({
       {guests.length === 0 ? (
         <p style={{ color: "#9ca3af", fontSize: 13, marginBottom: 12 }}>No results yet — try a search.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        <div {...bugSource("searchGuests", "guests")} style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
           {guests.map((g) => (
             <button
               key={g.guestId}
+              {...bugSource("searchGuests", "guests[]", g.guestId)}
               type="button"
               onClick={() => onSelect(g.guestId)}
               className="row"
@@ -93,8 +95,8 @@ export function GuestSearchCard({
               }}
             >
               <span style={{ fontSize: 13 }}>
-                <strong>{g.name}</strong>
-                <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>{g.email}</span>
+                <strong {...bugSource("searchGuests", "guests[].name", g.guestId)}>{g.name}</strong>
+                <span {...bugSource("searchGuests", "guests[].email", g.guestId)} style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>{g.email}</span>
               </span>
             </button>
           ))}
