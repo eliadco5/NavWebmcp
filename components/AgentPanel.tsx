@@ -46,7 +46,7 @@ function ResetDemoDataCard() {
   }
 
   return (
-    <div className="card">
+    <div className="card" data-intro="agent-reset">
       <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Reset Demo Data</h2>
       <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
         Restores CRM, tasks, housekeeping, and front-office seed data to their
@@ -75,7 +75,7 @@ export function AgentPanel() {
   return (
     <div className="grid-2">
       <div className="col">
-      <div className="card" style={{ background: "#1e1b4b", color: "#e0e7ff" }}>
+      <div className="card" data-intro="agent-connect" style={{ background: "#1e1b4b", color: "#e0e7ff" }}>
         <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Connect an AI Agent</h2>
 
         {agentToken && (

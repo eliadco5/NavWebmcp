@@ -14,11 +14,16 @@ import { UsersPanel } from "./UsersPanel";
 import { AgentPanel } from "./AgentPanel";
 import { BugReportsPanel } from "./BugReportsPanel";
 import { BugReporter } from "./bugreport/BugReporter";
+import { useFeatureIntro } from "./FeatureIntro/IntroProvider";
+import { WhatsNew } from "./FeatureIntro/WhatsNew";
+import { TourButton } from "./FeatureIntro/TourButton";
+import { introsForRole } from "@/lib/feature-intros/registry";
+import type { TabId } from "@/lib/feature-intros/tabs";
 
 type Role = "customer" | "support" | "admin";
 
 interface Tab {
-  id: string;
+  id: TabId;
   label: string;
   visible: (role: Role) => boolean;
   render: () => React.ReactNode;
@@ -83,6 +88,11 @@ export function AppShell() {
 
   const active = visibleTabs.find((t) => t.id === activeTab) ?? visibleTabs[0];
 
+  // First load of a tab plays its feature intro, once per user (server-side).
+  // Wait for the user so a not-yet-known role can't pick the wrong intros.
+  useFeatureIntro(user ? active?.id : undefined, role);
+  const intros = introsForRole(role).filter((i) => visibleTabs.some((t) => t.id === i.tab));
+
   return (
     <div className="container">
       <div className="app-header">
@@ -101,6 +111,7 @@ export function AppShell() {
             <a href="/docs/navcmcp-comparison.html" target="_blank" rel="noopener" style={{ fontSize: 12, color: "#4f46e5" }}>
               Comparison
             </a>
+            <WhatsNew intros={intros} onOpenTab={setActiveTab} />
           </div>
         </div>
         {user && (
@@ -159,6 +170,7 @@ export function AppShell() {
             {t.label}
           </button>
         ))}
+        <TourButton intros={intros.filter((i) => i.tab === active?.id)} />
       </div>
 
       <div className="col">

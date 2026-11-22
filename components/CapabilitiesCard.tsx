@@ -33,7 +33,7 @@ export function CapabilitiesCard() {
   useEffect(() => { refresh(); }, [refresh, user?.role]);
 
   return (
-    <div className="card">
+    <div className="card" data-intro="agent-capabilities">
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Capabilities
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>getCapabilities</span>
