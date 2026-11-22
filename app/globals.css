@@ -103,3 +103,28 @@ input:focus, select:focus { outline: 2px solid #4f46e5; outline-offset: 1px; }
   input, select, textarea { font-size: 16px; }
   button { min-height: 40px; }
 }
+
+/* Feature intros (components/FeatureIntro). Below ConfirmationDialog's z-index
+   (1000) so an agent confirmation can still interrupt a running tour. */
+.intro-overlay { position: fixed; inset: 0; z-index: 900; }
+.intro-spotlight {
+  position: fixed; z-index: 901; pointer-events: none; border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(17,24,39,.55), 0 0 0 3px #4f46e5;
+  transition: top .2s, left .2s, width .2s, height .2s;
+}
+.intro-popover {
+  position: fixed; z-index: 902; padding: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  transition: top .2s, left .2s;
+}
+.intro-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 99px;
+  background: #ef4444; margin-left: 4px; vertical-align: top;
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-spotlight, .intro-popover { transition: none; }
+}
+.tour-button {
+  font-size: 12px; padding: 4px 12px; border-radius: 99px; white-space: nowrap;
+  background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe;
+}
