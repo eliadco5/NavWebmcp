@@ -1,5 +1,6 @@
 import type { BugReport } from "@/lib/bugreport/types";
 import { CATEGORY_LABELS } from "@/lib/bugreport/types";
+import { getAttachment } from "@/lib/bugreport/attachments";
 import type { BugReportSink } from "./index";
 
 // Jira Cloud REST v3. Enabled only when all four env vars are set:
@@ -56,6 +57,13 @@ export function jiraDescription(report: BugReport) {
       para(`API returned: ${prov.apiValueFound ? JSON.stringify(prov.apiValue) : "(no matching value in last response)"}`),
     );
   }
+  if (report.scenario) {
+    content.push(heading(`Scenario (${report.scenario.steps.length} steps, ${Math.round(report.scenario.durationMs / 1000)}s)`));
+    for (const st of report.scenario.steps.slice(0, 30)) {
+      const ops = st.calls.map((c) => `${c.name}${c.success === false ? " ✗" : ""}`).join(", ");
+      content.push(para(`${st.index + 1}. ${st.kind}${st.target?.text ? ` "${st.target.text.slice(0, 60)}"` : ""}${st.value ? ` = ${st.value.slice(0, 60)}` : ""}${ops ? ` → ${ops}` : ""}`));
+    }
+  }
   const errors = report.console.filter((c) => c.level === "error");
   const failedCalls = report.calls.filter((c) => c.success === false);
   if (errors.length || failedCalls.length) {
@@ -66,18 +74,18 @@ export function jiraDescription(report: BugReport) {
   if (report.calls.length) {
     content.push(heading("Business calls (replayable)"), code(JSON.stringify(report.calls.slice(-15), null, 2).slice(0, 8000)));
   }
-  content.push(para("Full bundle (console, network, DOM, screenshot) attached."));
+  content.push(para("Full bundle attached: report JSON (console, network, DOM, steps), screenshots, replay, video and a Playwright repro draft when recorded."));
   return { type: "doc", version: 1, content };
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [meta, b64] = dataUrl.split(",", 2);
-  const mime = /data:([^;]+)/.exec(meta)?.[1] ?? "application/octet-stream";
-  return new Blob([Buffer.from(b64, "base64")], { type: mime });
-}
+const EXT: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "video/webm": "webm",
+  "application/gzip": "json.gz", "application/json": "json",
+};
 
 export const jiraSink: BugReportSink = {
   name: "jira",
+  phase: "finalize",
   enabled: () => config() !== null,
   async send(report) {
     const cfg = config()!;
@@ -98,9 +106,14 @@ export const jiraSink: BugReportSink = {
     const { key } = (await res.json()) as { key: string };
 
     const form = new FormData();
-    const { screenshot, ...rest } = report;
-    form.append("file", new Blob([JSON.stringify(rest, null, 2)], { type: "application/json" }), `bug-report-${report.id}.json`);
-    if (screenshot) form.append("file", dataUrlToBlob(screenshot), `screenshot-${report.id}.${screenshot.startsWith("data:image/png") ? "png" : "jpg"}`);
+    form.append("file", new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), `bug-report-${report.id}.json`);
+    if (report.repro) {
+      form.append("file", new Blob([report.repro.playwright], { type: "text/plain" }), `repro-${report.id}.spec.ts`);
+    }
+    for (const meta of report.attachments) {
+      const att = await getAttachment(report.id, meta.kind);
+      if (att) form.append("file", new Blob([new Uint8Array(att.data)], { type: att.mime }), `${meta.kind}-${report.id}.${EXT[att.mime] ?? "bin"}`);
+    }
     const att = await fetch(`${cfg.baseUrl}/rest/api/3/issue/${key}/attachments`, {
       method: "POST",
       headers: { Authorization: cfg.auth, "X-Atlassian-Token": "no-check" },

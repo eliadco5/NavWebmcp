@@ -8,6 +8,7 @@ import type { BugReportSink } from "./index";
  */
 export const chatSink: BugReportSink = {
   name: "chat",
+  phase: "finalize",
   enabled: () => false,
   async send() {
     throw new Error("In-app chat sink is not implemented yet.");

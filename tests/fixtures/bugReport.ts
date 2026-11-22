@@ -39,5 +39,27 @@ export const BUG_REPORT_FIXTURE = {
     { method: "GET", url: "/api/me", status: 200, durationMs: 5, ts: "2026-11-22T09:59:59.000Z", responseBody: "{}" },
   ],
   recentAudit: [{ timestamp: "2026-11-22T10:00:00.000Z", operation: "listReservations", success: true, source: "ui", input: {} }],
+  scenario: {
+    startedAt: "2026-11-22T09:59:50.000Z",
+    durationMs: 12_000,
+    startUrl: "http://localhost:3000/#reservations",
+    truncated: false,
+    steps: [
+      {
+        index: 0, ts: "2026-11-22T09:59:52.000Z", tOffsetMs: 2_000, kind: "input", value: "4",
+        target: { selector: "#party", tag: "input", text: "", label: "Party Size", inputType: "number" },
+        calls: [],
+      },
+      {
+        index: 1, ts: "2026-11-22T09:59:54.000Z", tOffsetMs: 4_000, kind: "click",
+        target: { selector: "form > button", tag: "button", text: "Search" },
+        calls: [{ name: "searchAvailability", params: { date: "2026-11-23", partySize: 4 }, success: true, resultPreview: '{"slots":[]}' }],
+      },
+      {
+        index: 2, ts: "2026-11-22T09:59:58.000Z", tOffsetMs: 8_000, kind: "navigate", value: "#frontdesk",
+        calls: [{ name: "issueRefund", params: { paymentId: "pay_001" }, success: false, errorCode: "FORBIDDEN" }],
+      },
+    ],
+  },
   screenshot: "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
 };

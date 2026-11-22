@@ -17,6 +17,7 @@ const SINGLETON_KEYS = [
   "__housekeepingScheduleItems",
   "__housekeepingInspections",
   "__bugReports",
+  "__bugAttachments",
 ] as const;
 
 beforeEach(() => {

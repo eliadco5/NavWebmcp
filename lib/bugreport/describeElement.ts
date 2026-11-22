@@ -8,7 +8,7 @@ const STYLE_PROPS = [
   "text-align", "visibility", "opacity", "overflow", "white-space", "text-overflow", "z-index",
 ];
 
-function cssEscape(s: string): string {
+export function cssEscape(s: string): string {
   return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
 }
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 // single report can't blow up the shared-state snapshot in Redis.
 
 export const BUG_CATEGORIES = [
-  "wrong-label", "wrong-value", "missing-data", "layout", "error", "other",
+  "wrong-label", "wrong-value", "missing-data", "scenario", "layout", "error", "other",
 ] as const;
 export const BugCategory = z.enum(BUG_CATEGORIES);
 export type BugCategory = z.infer<typeof BugCategory>;
@@ -14,6 +14,7 @@ export const CATEGORY_LABELS: Record<BugCategory, string> = {
   "wrong-label": "Wrong label / title",
   "wrong-value": "Wrong value",
   "missing-data": "Missing data",
+  scenario: "Wrong result after steps",
   layout: "Layout / visual",
   error: "Error / crash",
   other: "Other",
@@ -93,6 +94,64 @@ export const AuditSummarySchema = z.object({
   input: z.unknown().optional(),
 });
 
+export const StepCallSchema = z.object({
+  name: Text(100),
+  params: z.unknown(),
+  success: z.boolean().nullable(),
+  errorCode: Text(100).optional(),
+  /** Clipped JSON of the op's `data` (or error) — the data "after" this step. */
+  resultPreview: Text(2_500).optional(),
+});
+export type StepCall = z.infer<typeof StepCallSchema>;
+
+export const STEP_KINDS = ["click", "input", "select", "submit", "navigate"] as const;
+
+export const ScenarioStepSchema = z.object({
+  index: z.number().int(),
+  ts: Text(50),
+  /** Milliseconds since recording started — seeks the replay to this step. */
+  tOffsetMs: z.number(),
+  kind: z.enum(STEP_KINDS),
+  target: z.object({
+    selector: Text(2_000),
+    tag: Text(50),
+    text: Text(300),
+    label: Text(300).optional(),
+    role: Text(50).optional(),
+    inputType: Text(50).optional(),
+    component: Text(200).optional(),
+    provenance: ProvenanceSchema.optional(),
+    /** Position among same-label / same-role-and-name elements, when ambiguous. */
+    nth: z.number().int().min(0).optional(),
+  }).optional(),
+  /** Typed/selected value (passwords redacted), or the new hash for navigate. */
+  value: Text(1_000).optional(),
+  calls: z.array(StepCallSchema).max(30),
+});
+export type ScenarioStep = z.infer<typeof ScenarioStepSchema>;
+
+export const ScenarioSchema = z.object({
+  startedAt: Text(50),
+  durationMs: z.number(),
+  startUrl: Text(2_000),
+  steps: z.array(ScenarioStepSchema).max(100),
+  truncated: z.boolean(),
+  /** Why there's no real video, when the user asked for one. */
+  videoNote: Text(300).optional(),
+});
+export type Scenario = z.infer<typeof ScenarioSchema>;
+
+export const ATTACHMENT_KINDS = ["screenshot", "before", "after", "replay", "video"] as const;
+export const AttachmentKind = z.enum(ATTACHMENT_KINDS);
+export type AttachmentKind = z.infer<typeof AttachmentKind>;
+
+export const AttachmentMetaSchema = z.object({
+  kind: AttachmentKind,
+  mime: z.string(),
+  bytes: z.number().int(),
+});
+export type AttachmentMeta = z.infer<typeof AttachmentMetaSchema>;
+
 /** What the browser sends. The server adds id/createdAt/reporter/status. */
 export const BugReportInputSchema = z.object({
   category: BugCategory,
@@ -110,7 +169,9 @@ export const BugReportInputSchema = z.object({
   console: z.array(ConsoleEntrySchema).max(250).default([]),
   network: z.array(NetworkEntrySchema).max(120).default([]),
   recentAudit: z.array(AuditSummarySchema).max(50).default([]),
-  /** JPEG/PNG data URL, ~1 MB cap. */
+  scenario: ScenarioSchema.optional(),
+  /** Legacy inline JPEG/PNG data URL, ~1 MB cap. Moved into attachments on
+   *  submit; new clients upload it as the "screenshot" attachment instead. */
   screenshot: z.string().max(1_000_000).regex(/^data:image\/(jpeg|png);base64,/).optional(),
 });
 export type BugReportInput = z.infer<typeof BugReportInputSchema>;
@@ -130,6 +191,15 @@ export const ReplayCallSchema = z.object({
   success: z.boolean().nullable(),
 });
 
+export const ReproSchema = z.object({
+  /** Ordered business calls in invoke()'s batch shape — pass as invoke({ calls })
+   *  to reproduce the data end state. */
+  invoke: z.array(z.object({ name: z.string(), args: z.record(z.unknown()) })),
+  /** Draft Playwright test that repeats the user's UI steps. */
+  playwright: z.string(),
+});
+export type Repro = z.infer<typeof ReproSchema>;
+
 /** Server-assigned fields, added on submit. */
 export const BugReportMetaShape = {
   id: z.string(),
@@ -139,6 +209,10 @@ export const BugReportMetaShape = {
   /** Replayable business calls derived from `network` — feed to invoke(). */
   calls: z.array(ReplayCallSchema),
   sinks: z.array(SinkResultSchema),
+  attachments: z.array(AttachmentMetaSchema),
+  repro: ReproSchema.optional(),
+  /** Set once the client finished uploading attachments and deferred sinks ran. */
+  finalized: z.boolean(),
 };
 
 export const BugReportSchema = BugReportInputSchema.extend(BugReportMetaShape);

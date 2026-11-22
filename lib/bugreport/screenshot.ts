@@ -6,7 +6,17 @@ const MAX_CHARS = 900_000; // stays under BugReportInputSchema's 1 MB data-URL c
 /** Viewport screenshot as a JPEG data URL, with `highlight` (viewport coords)
  *  outlined. Elements marked data-bug-reporter-ui are left out. Returns
  *  undefined instead of throwing — a report without a screenshot is still a report. */
-export async function captureViewport(highlight?: DOMRect): Promise<string | undefined> {
+export async function captureViewport(highlight?: DOMRect, timeoutMs = 6_000): Promise<string | undefined> {
+  // html-to-image waits on image decoding, which a backgrounded/throttled tab
+  // can stall indefinitely — never let a screenshot block the report flow.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((r) => {
+    timer = setTimeout(() => { console.warn("Bug report screenshot timed out"); r(undefined); }, timeoutMs);
+  });
+  return Promise.race([render(highlight), timeout]).finally(() => clearTimeout(timer));
+}
+
+async function render(highlight?: DOMRect): Promise<string | undefined> {
   try {
     const vw = window.innerWidth;
     const vh = window.innerHeight;

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { shortLabel } from "@/lib/bugreport/describeElement";
 
 interface Props {
+  /** Banner text; defaults to "Click the element with the problem". */
+  title?: string;
   onPick: (el: Element) => void;
   onNoElement: () => void;
   onCancel: () => void;
@@ -45,7 +47,7 @@ const rectStyle = (r: DOMRect, bg: string): React.CSSProperties => ({
  * ↑ walks to the parent (for "the whole table is wrong"), ↓ walks back down,
  * Enter or click picks, Esc cancels.
  */
-export function InspectorOverlay({ onPick, onNoElement, onCancel }: Props) {
+export function InspectorOverlay({ title, onPick, onNoElement, onCancel }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [target, setTarget] = useState<Element | null>(null);
   const [boxes, setBoxes] = useState<Boxes | null>(null);
@@ -142,7 +144,7 @@ export function InspectorOverlay({ onPick, onNoElement, onCancel }: Props) {
           boxShadow: "0 4px 16px rgba(0,0,0,.25)", cursor: "default", maxWidth: "calc(100vw - 24px)",
         }}
       >
-        <span>🐞 Click the element with the problem</span>
+        <span>🐞 {title ?? "Click the element with the problem"}</span>
         <span style={{ color: "#9ca3af", fontSize: 12 }}>↑ parent · ↓ child · Enter pick · Esc cancel</span>
         <button type="button" onClick={onNoElement} style={{ fontSize: 12, padding: "4px 10px", background: "#374151", color: "#f9fafb" }}>
           Not a specific element

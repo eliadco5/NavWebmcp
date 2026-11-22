@@ -23,17 +23,25 @@ interface CaptureState {
   /** Full, unclipped, parsed `data` of the latest response per op name — used
    *  for provenance lookups only, never sent in the bundle as-is. */
   lastData: Map<string, unknown>;
+  /** Total network entries ever pushed — a cursor that survives ring-buffer trimming. */
+  networkTotal: number;
   installed: boolean;
 }
 
 function state(): CaptureState {
   const g = globalThis as unknown as { __bugCapture?: CaptureState };
-  return (g.__bugCapture ??= { console: [], network: [], lastData: new Map(), installed: false });
+  return (g.__bugCapture ??= { console: [], network: [], lastData: new Map(), networkTotal: 0, installed: false });
 }
 
 function push<T>(arr: T[], item: T, max: number) {
   arr.push(item);
   if (arr.length > max) arr.splice(0, arr.length - max);
+}
+
+function pushNetwork(entry: NetworkEntry) {
+  const s = state();
+  push(s.network, entry, MAX_NETWORK);
+  s.networkTotal++;
 }
 
 export function clip(s: string, max: number): string {
@@ -155,21 +163,21 @@ export function installCapture(): void {
         if (op?.success) {
           try { s.lastData.set(op.name, (JSON.parse(text) as { data?: unknown }).data); } catch { /* non-JSON */ }
         }
-        push(s.network, {
+        pushNetwork({
           method, url, status: res.status, durationMs: Math.round(performance.now() - started), ts,
           ...(reqBody !== undefined ? { requestBody: reqBody } : {}),
           responseBody: clip(redactJson(text), MAX_BODY_CHARS),
           ...(op ? { op } : {}),
-        }, MAX_NETWORK);
+        });
       }).catch(() => {});
       return res;
     } catch (err) {
-      push(s.network, {
+      pushNetwork({
         method, url, status: null, durationMs: Math.round(performance.now() - started), ts,
         ...(reqBody !== undefined ? { requestBody: reqBody } : {}),
         error: err instanceof Error ? err.message : String(err),
         ...(() => { const op = parseOp(url, method, init?.body as string | undefined, undefined); return op ? { op } : {}; })(),
-      }, MAX_NETWORK);
+      });
       throw err;
     }
   };
@@ -190,6 +198,18 @@ export function findLastCall(opName: string): NetworkEntry | undefined {
   return undefined;
 }
 
+/** Opaque position in the network log; pass to networkSince() later. */
+export function networkCursor(): number {
+  return state().networkTotal;
+}
+
+/** Entries recorded after `cursor` (as many as the ring buffer still holds). */
+export function networkSince(cursor: number): NetworkEntry[] {
+  const s = state();
+  const n = Math.min(s.networkTotal - cursor, s.network.length);
+  return n > 0 ? s.network.slice(-n) : [];
+}
+
 /** Full `data` of the latest successful response of `opName`, if seen. */
 export function lastDataFor(opName: string): { found: boolean; data?: unknown } {
   const m = state().lastData;
@@ -207,5 +227,6 @@ export function resetCapture(): void {
   const s = state();
   s.console.length = 0;
   s.network.length = 0;
+  s.networkTotal = 0;
   s.lastData.clear();
 }
