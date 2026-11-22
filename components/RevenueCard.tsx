@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useEffect, useState } from "react";
 import { useBridge } from "@/app/providers";
 
@@ -88,7 +89,7 @@ export function RevenueCard() {
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("RevenueCard.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Revenue
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>getDailyRevenueSummary / getWeeklyRevenueSummary</span>
       </h2>
@@ -103,10 +104,10 @@ export function RevenueCard() {
       {daily && (
         <>
           <div className="field-grid">
-            <KpiTile label="Total revenue" value={`$${daily.totalRevenue.toFixed(2)}`} />
-            <KpiTile label="Net revenue" value={`$${daily.netRevenue.toFixed(2)}`} />
-            <KpiTile label="Covers" value={String(daily.totalCovers)} />
-            <KpiTile label="Transactions" value={String(daily.transactionCount)} />
+            <div {...bugSource("getDailyRevenueSummary", "totalRevenue")}><KpiTile label="Total revenue" value={`$${daily.totalRevenue.toFixed(2)}`} /></div>
+            <div {...bugSource("getDailyRevenueSummary", "netRevenue")}><KpiTile label="Net revenue" value={`$${daily.netRevenue.toFixed(2)}`} /></div>
+            <div {...bugSource("getDailyRevenueSummary", "totalCovers")}><KpiTile label="Covers" value={String(daily.totalCovers)} /></div>
+            <div {...bugSource("getDailyRevenueSummary", "transactionCount")}><KpiTile label="Transactions" value={String(daily.transactionCount)} /></div>
           </div>
           {daily.byCategory && <BreakdownBars title="By category" data={daily.byCategory} />}
           {daily.byMethod && <BreakdownBars title="By method" data={daily.byMethod} />}
@@ -127,9 +128,12 @@ export function RevenueCard() {
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {weekly.days.map((d) => (
-              <div key={d.date} className="row">
+              <div key={d.date} className="row" {...bugSource("getWeeklyRevenueSummary", "days[]", d.date)}>
                 <span style={{ fontSize: 12 }}>{d.date}</span>
-                <span style={{ fontSize: 12, color: "#6b7280" }}>${d.totalRevenue.toFixed(2)} · {d.transactionCount} tx</span>
+                <span style={{ fontSize: 12, color: "#6b7280" }}>
+                  <span {...bugSource("getWeeklyRevenueSummary", "days[].totalRevenue", d.date)}>${d.totalRevenue.toFixed(2)}</span> ·{" "}
+                  <span {...bugSource("getWeeklyRevenueSummary", "days[].transactionCount", d.date)}>{d.transactionCount} tx</span>
+                </span>
               </div>
             ))}
           </div>

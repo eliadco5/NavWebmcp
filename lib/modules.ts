@@ -62,6 +62,9 @@ export const MODULE_DEFS: ModuleNode[] = [
   { path: "finance.revenue", title: "Revenue", description: "Daily and weekly revenue summaries by cover, category, and payment method." },
   { path: "finance.payments", title: "Payments", description: "Look up individual payment records and generate receipts." },
   { path: "finance.adjustments", title: "Adjustments", description: "Issue refunds, apply no-show fees, and log manual adjustments." },
+  // Support
+  { path: "support", title: "Support", description: "Product support — bug reports users filed from the in-app 'Report a bug' inspector. Admin only." },
+  { path: "support.bugs", title: "Bug Reports", description: "List, read, and triage user bug reports, including captured console/network logs and the business calls needed to reproduce." },
 ];
 
 const moduleByPath = new Map<string, ModuleNode>(MODULE_DEFS.map((m) => [m.path, m]));

@@ -11,6 +11,11 @@ import { hostVipGuest } from "@/lib/ui-tools/hostVipGuest";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { registry } from "@/lib/operations";
 import type { Role } from "@/lib/auth";
+import { installCapture } from "@/lib/bugreport/capture";
+
+// Start recording console + network for "Report a bug" as early as client code
+// runs — before any panel's first fetch — so a report has the full history.
+installCapture();
 
 interface AuthUser {
   id: string;

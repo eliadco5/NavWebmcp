@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useCallback, useEffect, useState } from "react";
 import { useBridge } from "@/app/providers";
 
@@ -106,7 +107,7 @@ export function PaymentsCard() {
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("PaymentsCard.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Payments
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>listPayments / getPaymentRecord / issueRefund</span>
       </h2>
@@ -122,23 +123,26 @@ export function PaymentsCard() {
 
       {summary && (
         <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
-          {summary.count} payment(s) · ${summary.total.toFixed(2)} total
+          <span {...bugSource("listPayments", "count")}>{summary.count} payment(s)</span> ·{" "}
+          <span {...bugSource("listPayments", "total")}>${summary.total.toFixed(2)} total</span>
         </p>
       )}
 
       {error && <p style={{ color: "#ef4444", fontSize: 13, marginBottom: 10 }}>{error}</p>}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div {...bugSource("listPayments", "payments")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {payments.map((p) => (
-          <div key={p.paymentId} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div key={p.paymentId} {...bugSource("listPayments", "payments[]", p.paymentId)} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div className="row">
               <button type="button" onClick={() => viewDetail(p.paymentId)} style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer" }}>
                 <span style={{ fontSize: 13 }}>
-                  <strong>{p.paymentId}</strong> · ${p.amount.toFixed(2)} · {p.method}
+                  <strong>{p.paymentId}</strong> ·{" "}
+                  <span {...bugSource("listPayments", "payments[].amount", p.paymentId)}>${p.amount.toFixed(2)}</span> ·{" "}
+                  <span {...bugSource("listPayments", "payments[].method", p.paymentId)}>{p.method}</span>
                 </span>
               </button>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span className={`badge ${p.status === "completed" ? "badge-ok" : "badge-write"}`}>{p.status}</span>
+                <span {...bugSource("listPayments", "payments[].status", p.paymentId)} className={`badge ${p.status === "completed" ? "badge-ok" : "badge-write"}`}>{p.status}</span>
                 {p.status === "completed" && (
                   <button
                     type="button"

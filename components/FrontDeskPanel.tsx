@@ -1,5 +1,6 @@
 "use client";
 
+import { bugSource, bugComponent } from "@/lib/bugreport/annotate";
 import { useState, useCallback, useEffect } from "react";
 import { useBridge } from "@/app/providers";
 import { DEMO_GUEST_IDS } from "@/lib/seed/crm";
@@ -203,7 +204,7 @@ export function FrontDeskPanel() {
 
   return (
     <div className="card">
-      <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+      <h2 {...bugComponent("FrontDeskPanel.title")} style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Front Desk
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>
           check-in · bill · check-out
@@ -217,10 +218,11 @@ export function FrontDeskPanel() {
 
       <div style={{ marginBottom: 16 }}>
         <h3 style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Occupancy</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div {...bugSource("getOccupancy", "tables")} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {tables.map((t) => (
             <div
               key={t.tableId}
+              {...bugSource("getOccupancy", "tables[]", t.tableId)}
               aria-label={`Table ${t.tableId}`}
               style={{
                 fontSize: 12, padding: "6px 10px", borderRadius: 6,
@@ -235,10 +237,11 @@ export function FrontDeskPanel() {
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div {...bugSource("listFrontDeskReservations", "reservations")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {reservations.filter((r) => r.status !== "cancelled").map((r) => (
           <div
             key={r.reservationId}
+            {...bugSource("listFrontDeskReservations", "reservations[]", r.reservationId)}
             style={{
               background: "#f9fafb", border: "1px solid #e5e7eb",
               borderRadius: 8, padding: "10px 14px",
@@ -246,9 +249,10 @@ export function FrontDeskPanel() {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
               <div>
-                <span style={{ fontWeight: 600 }}>{r.guestName}</span>
+                <span {...bugSource("listFrontDeskReservations", "reservations[].guestName", r.reservationId)} style={{ fontWeight: 600 }}>{r.guestName}</span>
                 <span style={{ color: "#6b7280", marginLeft: 10, fontSize: 13 }}>
-                  party of {r.partySize} · {r.status}
+                  <span {...bugSource("listFrontDeskReservations", "reservations[].partySize", r.reservationId)}>party of {r.partySize}</span> ·{" "}
+                  <span {...bugSource("listFrontDeskReservations", "reservations[].status", r.reservationId)}>{r.status}</span>
                   {r.tableId && ` · ${r.tableId}`}
                 </span>
               </div>
