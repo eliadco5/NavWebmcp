@@ -771,6 +771,32 @@ export const yourToolOp = defineOperation({
 
 **4.** Register it in `lib/operations/index.ts` and add a case to `tests/unit/output-contract.test.ts`. The tool is then registered in-page automatically by `initAgentBridge`, with no hand-written `registerTool` call. The browser wrapper from step 2 is only needed if the UI calls the composite itself.
 
+### Shipping a new UI feature — feature intros
+
+Every user-facing feature ships with a short interactive guide. It plays the first time a user opens the tab the feature lives on, and never again once they finish or skip it. Users can replay guides from **What's new** in the header.
+
+**1.** Put `data-intro="<name>"` on the elements the guide should spotlight. Use this attribute rather than a class name, so restyling doesn't break the guide.
+
+**2.** Add `lib/feature-intros/intros/<feature>.ts` and list it in `FEATURE_INTROS` (`lib/feature-intros/registry.ts`):
+
+```ts
+export const myFeatureIntro: FeatureIntro = {
+  id: "my-feature",        // stable, kebab-case
+  version: 1,              // bump to show it again after a meaningful change
+  tab: "tasks",            // tab id from lib/feature-intros/tabs.ts
+  roles: ["support", "admin"], // optional; omit for every role
+  title: "Task templates",
+  steps: [
+    { title: "What it is", body: "…" },                           // no target = centred
+    { target: "task-templates", placement: "right", title: "…", body: "…" },
+  ],
+};
+```
+
+**3.** Run `npm test`. `tests/unit/feature-intros.test.ts` fails if an intro points at a tab that doesn't exist or a `data-intro` target that isn't in `components/`.
+
+Which guides a user has seen is stored per user on the server (`/api/intros`, `lib/feature-intros/seen-store.ts`): a long-lived Redis set when `REDIS_URL` is set, in memory otherwise. This is UI state, not an operation, so it doesn't change `capabilityHash` or `PROTOCOL_VERSION`. A new tab needs its id added to `lib/feature-intros/tabs.ts`.
+
 ### Project structure
 
 ```

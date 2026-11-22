@@ -36,7 +36,7 @@ export function ExploreCard() {
   const crumbs = path ? path.split(".") : [];
 
   return (
-    <div className="card">
+    <div className="card" data-intro="agent-explore">
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
         Explore
         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>explore / describe_tool</span>
