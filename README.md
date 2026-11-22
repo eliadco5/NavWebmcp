@@ -773,7 +773,7 @@ export const yourToolOp = defineOperation({
 
 ### Shipping a new UI feature — feature intros
 
-Every user-facing feature ships with a short interactive guide. It plays the first time a user opens the tab the feature lives on, and never again once they finish or skip it. Users can replay guides from **What's new** in the header.
+Every user-facing feature ships with a short interactive guide. It plays the first time a user opens the tab the feature lives on, and never again once they finish or skip it. Users can replay a guide any time with **▶ Take the tour** at the end of the tab strip (shown on tabs that have one), or from **What's new** in the header.
 
 **1.** Put `data-intro="<name>"` on the elements the guide should spotlight. Use this attribute rather than a class name, so restyling doesn't break the guide.
 

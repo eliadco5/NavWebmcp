@@ -14,6 +14,7 @@ import { UsersPanel } from "./UsersPanel";
 import { AgentPanel } from "./AgentPanel";
 import { useFeatureIntro } from "./FeatureIntro/IntroProvider";
 import { WhatsNew } from "./FeatureIntro/WhatsNew";
+import { TourButton } from "./FeatureIntro/TourButton";
 import { introsForRole } from "@/lib/feature-intros/registry";
 import type { TabId } from "@/lib/feature-intros/tabs";
 
@@ -166,6 +167,7 @@ export function AppShell() {
             {t.label}
           </button>
         ))}
+        <TourButton intros={intros.filter((i) => i.tab === active?.id)} />
       </div>
 
       <div className="col">
