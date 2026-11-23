@@ -12,7 +12,7 @@ import { CrmPanel } from "./CrmPanel";
 import { TasksPanel } from "./TasksPanel";
 import { HousekeepingPanel } from "./HousekeepingPanel";
 import { FinancePanel } from "./FinancePanel";
-import { UsersPanel } from "./UsersPanel";
+import { ManagementPanel } from "./management/ManagementPanel";
 import { AgentPanel } from "./AgentPanel";
 import { BugReportsPanel } from "./BugReportsPanel";
 import { BugReporter } from "./bugreport/BugReporter";
@@ -53,6 +53,7 @@ const TABS: Tab[] = [
   { id: "finance", label: "Finance", visible: (r) => r === "admin", render: () => <FinancePanel /> },
   { id: "agent", label: "Agent", visible: () => true, render: () => <AgentPanel /> },
   { id: "bugs", label: "Bug reports", visible: (r) => r === "admin", render: () => <BugReportsPanel /> },
+  { id: "management", label: "Management", visible: (r) => r === "admin", render: () => <ManagementPanel /> },
 ];
 
 function useHashTab(defaultId: string): [string, (id: string) => void] {
@@ -201,8 +202,6 @@ export function AppShell() {
 
       <div className="col">
         {active?.render()}
-
-        {isAdmin && <UsersPanel />}
 
         <div className="card">
           <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16 }}>

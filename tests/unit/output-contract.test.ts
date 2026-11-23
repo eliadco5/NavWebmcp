@@ -32,6 +32,20 @@ beforeEach(async () => {
   const r = await submitBugReport({ id: 'u_alice', role: 'customer', displayName: 'Alice' }, JSON.stringify(BUG_REPORT_FIXTURE))
   if (!r.ok) throw new Error(r.message)
   bugId = r.report.id
+
+  // admin.* ops: install the management service (server entry points do this)
+  // and give it an audit event, a session, an agent client and some metrics.
+  await import('@/lib/management/service')
+  const { auditOperation } = await import('@/lib/audit')
+  const { recordSession, recordClient, touch } = await import('@/lib/management/sessions')
+  const { recordCallMetrics } = await import('@/lib/telemetry/metrics')
+  const agent = { type: 'agent' as const, userId: 'u_alice', role: 'customer' as const, assurance: 'verified' as const, agent: { clientId: 'c_contract', name: 'Claude' } }
+  const meta = { requestId: 'req_c', callId: 'call_c', channel: 'mcp' as const }
+  await auditOperation({ operation: 'createReservation', input: { slotId: 'x' }, success: true, output: { reservation: { id: 'res_contract' } }, actor: agent, meta, durationMs: 3 })
+  await recordSession({ sid: 's_contract', userId: 'u_alice', role: 'customer', startedAt: new Date().toISOString() })
+  await touch('s_contract')
+  await recordClient({ clientId: 'c_contract', userId: 'u_alice', role: 'customer', kind: 'connected', createdAt: new Date().toISOString() })
+  await recordCallMetrics({ operation: 'createReservation', permission: 'write', success: true, actor: agent, meta, durationMs: 3, startedAt: Date.now() })
 })
 
 afterEach(() => {
@@ -165,6 +179,15 @@ const CASES: Record<string, Case[]> = {
   listBugReports: [{ args: () => ({}) }, { args: () => ({ status: 'open' }) }],
   getBugReport: [{ args: () => ({ id: bugId }) }],
   updateBugReportStatus: [{ args: () => ({ id: bugId, status: 'triaged' }) }],
+  // admin / management (data seeded in beforeEach)
+  queryAudit: [{ args: () => ({}) }, { args: () => ({ actorType: 'agent', limit: 5 }) }],
+  getEntityHistory: [{ args: () => ({ type: 'reservation', id: 'res_contract' }) }, { args: () => ({ type: 'guest', id: 'g_none' }) }],
+  verifyAuditChain: [{ args: () => ({}) }],
+  getUsageMetrics: [{ args: () => ({}) }],
+  listUserSessions: [{ args: () => ({}) }, { args: () => ({ connectedOnly: true }) }],
+  listAgentClients: [{ args: () => ({}) }],
+  revokeAgentClient: [{ args: () => ({ clientId: 'c_contract', confirm: true }) }],
+  revokeSession: [{ args: () => ({ sessionId: 's_contract', confirm: true }) }],
 }
 
 /** Resolve "$last.a.b" placeholders against the previous step's data. */

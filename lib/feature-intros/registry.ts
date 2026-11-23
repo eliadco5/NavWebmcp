@@ -4,10 +4,11 @@
 import type { Role } from "@/lib/auth";
 import type { FeatureIntro } from "./types";
 import { agentTabIntro } from "./intros/agentTab";
+import { managementTabIntro } from "./intros/managementTab";
 
 export type { FeatureIntro, IntroStep } from "./types";
 
-export const FEATURE_INTROS: FeatureIntro[] = [agentTabIntro];
+export const FEATURE_INTROS: FeatureIntro[] = [agentTabIntro, managementTabIntro];
 
 /** What gets stored as "seen". Including the version means a bump re-shows it. */
 export function introKey(intro: Pick<FeatureIntro, "id" | "version">): string {

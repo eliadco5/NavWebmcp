@@ -22,6 +22,8 @@ import { noteAgentSoftware } from "@/lib/management/sessions";
 import { auditOperation } from "@/lib/audit";
 // ...and usage metrics / OpenTelemetry export.
 import { observeCall } from "@/lib/telemetry";
+// ...and the management service behind the admin.* operations.
+import "@/lib/management/service";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;

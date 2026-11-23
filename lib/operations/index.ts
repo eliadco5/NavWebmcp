@@ -66,6 +66,11 @@ import { logManualAdjustment } from "./logManualAdjustment";
 import { listBugReports } from "./listBugReports";
 import { getBugReport } from "./getBugReport";
 import { updateBugReportStatus } from "./updateBugReportStatus";
+// Admin / management
+import {
+  queryAuditOp, getEntityHistory, verifyAuditChain, getUsageMetrics,
+  listUserSessions, listAgentClients, revokeAgentClient, revokeSession,
+} from "./management";
 
 registry.push(
   // Always-on navigation & meta
@@ -94,6 +99,9 @@ registry.push(
   issueRefund, applyNoShowFee, logManualAdjustment,
   // Support
   listBugReports, getBugReport, updateBugReportStatus,
+  // Admin / management
+  queryAuditOp, getEntityHistory, verifyAuditChain, getUsageMetrics,
+  listUserSessions, listAgentClients, revokeAgentClient, revokeSession,
 );
 
 // registry is filled in-place above; rebuild the name index once so dispatchers

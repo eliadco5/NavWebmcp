@@ -448,9 +448,10 @@ describe("call — confirmation", () => {
   // Audits every requiresConfirmation op in the REAL registry (not a synthetic
   // fixture), so this fails loudly — rather than silently testing nothing — if
   // a future op adds/removes requiresConfirmation or a confirm schema field.
-  // All 6 confirmation-requiring ops now enforce their own confirm field
+  // All 8 confirmation-requiring ops now enforce their own confirm field
   // server-side (lib/operations/{cancelReservation,cancelAnyReservation,
-  // checkOutGuest,deleteTask,issueRefund,applyNoShowFee}.ts) — the "no confirm
+  // checkOutGuest,deleteTask,issueRefund,applyNoShowFee}.ts and
+  // the two revoke ops in management.ts) — the "no confirm
   // field of its own" category is pinned to empty on purpose, as proof the
   // migration is complete; lib/agentbridge.test.ts's synthetic writeOp fixture
   // above still covers that code path generically in case it's ever needed again.
@@ -462,6 +463,8 @@ describe("call — confirmation", () => {
       deleteTask: { taskId: "test" },
       issueRefund: { paymentId: "test", reason: "test reason" },
       applyNoShowFee: { reservationId: "test", feeAmount: 10, reason: "test reason" },
+      revokeAgentClient: { clientId: "c_test" },
+      revokeSession: { sessionId: "s_test" },
     };
 
     it("ops with their own confirm field: skip the dialog when confirm:true is passed", async () => {
@@ -481,6 +484,8 @@ describe("call — confirmation", () => {
         "checkOutGuest",
         "deleteTask",
         "issueRefund",
+        "revokeAgentClient",
+        "revokeSession",
       ]);
 
       for (const op of opsWithOwnConfirmField) {

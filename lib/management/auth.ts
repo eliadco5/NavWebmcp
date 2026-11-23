@@ -10,7 +10,7 @@ import {
   getOrProvisionUser, claimsForToken, COOKIE_OPTS, type TokenClaims,
 } from "@/lib/auth-tokens";
 import type { User } from "@/lib/auth";
-import { endRecord, getEnd, recordClient, recordSession, touch } from "./sessions";
+import { endRecord, getEnd, recordClient, recordSession, revokeRecord, touch } from "./sessions";
 import { auditAuth, humanActor } from "@/lib/audit";
 
 type CookieStore = Parameters<typeof getOrProvisionUser>[0] & {
@@ -81,11 +81,11 @@ export async function startSession(sid: string, user: User, info: RequestInfo = 
 }
 
 export async function endSession(sid: string, reason: "logout" | "revoked", by?: string): Promise<boolean> {
-  return endRecord(sid, reason, by);
+  return reason === "revoked" ? revokeRecord(sid, by) : endRecord(sid, reason, by);
 }
 
 export async function revokeClient(clientId: string, by?: string): Promise<boolean> {
-  return endRecord(clientId, "revoked", by);
+  return revokeRecord(clientId, by);
 }
 
 /**
