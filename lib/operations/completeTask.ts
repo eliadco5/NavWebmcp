@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -29,7 +30,8 @@ export const completeTask = defineOperation({
     if (task.status === "completed") return fail("CONFLICT", "Task is already completed");
     if (task.status === "cancelled") return fail("CONFLICT", "Cannot complete a cancelled task");
 
-    const updated: Task = { ...task, status: "completed", updatedAt: new Date().toISOString() };
+    const updatedAt = new Date().toISOString();
+    const updated: Task = { ...task, status: "completed", updatedAt, lastModifiedBy: stamp(ctx, updatedAt) };
     tasks.set(taskId, updated);
     return ok({ task: updated });
   },

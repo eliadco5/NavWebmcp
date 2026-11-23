@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -20,18 +21,20 @@ export const logInspection = defineOperation({
     notes: LongText().describe("Inspector notes describing findings or confirmation of cleanliness."),
   },
   outputSchema: { inspection: InspectionSchema },
-  async handler({ tableId, inspector, result, notes }, _ctx) {
+  async handler({ tableId, inspector, result, notes }, ctx) {
     if (!tableId.trim()) {
       return fail("INVALID_INPUT", "tableId must not be empty.");
     }
     const id = `insp_${String(inspections.length + 1).padStart(3, "0")}`;
+    const timestamp = new Date().toISOString();
     const record: InspectionRecord = {
       id,
       tableId,
       inspector,
       result,
       notes,
-      timestamp: new Date().toISOString(),
+      timestamp,
+      createdBy: stamp(ctx, timestamp),
     };
     inspections.push(record);
     return ok({ inspection: record });

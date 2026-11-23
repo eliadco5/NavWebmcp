@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -67,12 +68,14 @@ export const issueRefund = defineOperation({
       reasonCode: "REFUND",
       adminId: ctx.userId,
       timestamp,
+      createdBy: stamp(ctx, timestamp),
     };
 
     adjustments.set(adjustmentId, adjustment);
     payments.set(paymentId, {
       ...payment,
       status: isPartial ? "partial_refund" : "refunded",
+      lastModifiedBy: stamp(ctx, timestamp),
     });
 
     return ok({ adjustmentId, paymentId, refundAmount, isPartial, timestamp });

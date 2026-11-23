@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
@@ -27,7 +28,7 @@ export const createTask = defineOperation({
     reservationId: Id().optional().describe("Front-desk reservation this task relates to, if any"),
   },
   outputSchema: { task: TaskSchema },
-  async handler({ title, department, priority, assigneeId, reservationId }, _ctx) {
+  async handler({ title, department, priority, assigneeId, reservationId }, ctx) {
     globalThis.__tasksSeq = (globalThis.__tasksSeq ?? tasks.size) + 1;
     const taskId = `task_${String(globalThis.__tasksSeq).padStart(3, "0")}`;
     const now = new Date().toISOString();
@@ -41,6 +42,7 @@ export const createTask = defineOperation({
       reservationId,
       createdAt: now,
       updatedAt: now,
+      createdBy: stamp(ctx, now),
     };
     tasks.set(taskId, task);
     return ok({ task });

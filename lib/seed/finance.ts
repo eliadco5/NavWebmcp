@@ -1,10 +1,11 @@
+import type { Provenanced } from "@/lib/provenance";
 import { singletonMap, resetMap, today, daysAgo, isoAt } from "./store";
 
 export type PaymentMethod = "cash" | "credit_card" | "debit_card" | "digital_wallet";
 export type Category = "food" | "beverage" | "room_service" | "event" | "other";
 export type PaymentStatus = "completed" | "refunded" | "partial_refund";
 
-export interface Payment {
+export interface Payment extends Provenanced {
   paymentId: string;
   date: string;
   amount: number;
@@ -17,7 +18,7 @@ export interface Payment {
   timestamp: string;
 }
 
-export interface Adjustment {
+export interface Adjustment extends Provenanced {
   adjustmentId: string;
   type: "refund" | "no_show_fee" | "manual";
   paymentId: string | null;

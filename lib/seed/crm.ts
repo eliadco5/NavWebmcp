@@ -1,10 +1,11 @@
+import type { Provenanced } from "@/lib/provenance";
 import { singleton, singletonMap, resetMap, resetArray } from "./store";
 
 // The 5 demo guest profiles. Exported so UI panels for roles that can't call
 // searchGuests (customers) still have a way to pick a guestId — see CrmPanel.
 export const DEMO_GUEST_IDS = ["g_001", "g_002", "g_003", "g_004", "g_005"] as const;
 
-export interface Guest {
+export interface Guest extends Provenanced {
   guestId: string;
   name: string;
   email: string;
@@ -25,7 +26,7 @@ function buildCrmGuests(): [string, Guest][] {
 export function crmGuests(): Map<string, Guest> { return singletonMap(CRM_GUESTS_KEY, buildCrmGuests); }
 export function resetCrmGuests(): void { resetMap(CRM_GUESTS_KEY, buildCrmGuests); }
 
-export interface GuestPreferences {
+export interface GuestPreferences extends Provenanced {
   guestId: string;
   dietaryRestrictions: string[];
   seatingPreference: string;
@@ -50,7 +51,7 @@ export interface LoyaltyRedemption {
   description: string;
 }
 
-export interface LoyaltyAccount {
+export interface LoyaltyAccount extends Provenanced {
   guestId: string;
   tier: "bronze" | "silver" | "gold" | "platinum";
   pointBalance: number;
@@ -78,7 +79,7 @@ export function computeLoyaltyTier(lifetimePoints: number): LoyaltyAccount["tier
   return "bronze";
 }
 
-export interface CommunicationEntry {
+export interface CommunicationEntry extends Provenanced {
   commId: string;
   guestId: string;
   type: "call" | "email" | "note";

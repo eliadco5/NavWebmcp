@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -56,6 +57,7 @@ export const applyNoShowFee = defineOperation({
       reasonCode: "NO_SHOW",
       adminId: ctx.userId,
       timestamp,
+      createdBy: stamp(ctx, timestamp),
     };
 
     adjustments.set(adjustmentId, adjustment);

@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -32,7 +33,9 @@ export const addLoyaltyPoints = defineOperation({
     const newLifetime = account.lifetimePoints + points;
     const previousTier = account.tier;
     const currentTier = computeLoyaltyTier(newLifetime);
-    const updated: LoyaltyAccount = { ...account, pointBalance: newBalance, lifetimePoints: newLifetime, tier: currentTier };
+    const updated: LoyaltyAccount = {
+      ...account, pointBalance: newBalance, lifetimePoints: newLifetime, tier: currentTier, lastModifiedBy: stamp(ctx),
+    };
     loyaltyMap.set(guestId, updated);
     return ok({ loyalty: updated, pointsAdded: points, previousTier, currentTier, tierUpgrade: previousTier !== currentTier });
   },

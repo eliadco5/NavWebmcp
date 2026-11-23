@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -32,6 +33,7 @@ export const updateGuest = defineOperation({
       ...(name !== undefined && { name }),
       ...(email !== undefined && { email }),
       ...(phone !== undefined && { phone }),
+      lastModifiedBy: stamp(ctx),
     };
     guestsMap.set(guestId, updated);
     return ok({ guest: updated });

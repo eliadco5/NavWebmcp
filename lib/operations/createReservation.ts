@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { store } from "@/lib/store";
@@ -34,7 +35,7 @@ export const createReservation = defineOperation({
         `Slot capacity is ${slot.capacity}, requested ${partySize}`
       );
 
-    const reservation = store.createReservation(slotId, name, partySize, ctx.userId);
+    const reservation = store.createReservation(slotId, name, partySize, ctx.userId, stamp(ctx));
     if (!reservation) return fail("CREATE_FAILED", "Failed to create reservation");
 
     return ok({ reservation });

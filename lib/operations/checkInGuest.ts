@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -16,7 +17,7 @@ export const checkInGuest = defineOperation({
     tableId: Id().optional().describe("Table to assign; if omitted an available table with sufficient capacity is auto-assigned"),
   },
   outputSchema: CheckinSchema.shape,
-  async handler({ reservationId, tableId }, _ctx) {
+  async handler({ reservationId, tableId }, ctx) {
     const reservation = store.getReservationById(reservationId);
     if (!reservation) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
     if (reservation.status === "checked-in") return fail("ALREADY_CHECKED_IN", "Guest is already checked in");
@@ -49,7 +50,7 @@ export const checkInGuest = defineOperation({
       seatedAt,
       guestId: reservation.guestId,
     });
-    store.updateReservation(reservationId, { tableId: targetTableId, status: "checked-in" });
+    store.updateReservation(reservationId, { tableId: targetTableId, status: "checked-in", lastModifiedBy: stamp(ctx, seatedAt) });
 
     return ok({ reservationId, tableId: targetTableId, guestName: reservation.name, partySize: reservation.partySize, seatedAt });
   },

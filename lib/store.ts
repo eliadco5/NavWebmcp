@@ -1,3 +1,5 @@
+import type { Provenance, Provenanced } from "@/lib/provenance";
+
 export interface Slot {
   id: string;
   date: string;       // ISO date "YYYY-MM-DD"
@@ -6,7 +8,7 @@ export interface Slot {
   available: boolean;
 }
 
-export interface Reservation {
+export interface Reservation extends Provenanced {
   id: string;
   /** Display name — the same field whether the reservation came from a
    *  customer's own booking or was seeded/created at the front desk. */
@@ -192,7 +194,8 @@ class BookingStore {
     slotId: string,
     name: string,
     partySize: number,
-    userId: string
+    userId: string,
+    createdBy?: Provenance
   ): Reservation | null {
     const slot = this.getSlot(slotId);
     if (!slot || !slot.available || slot.capacity < partySize) return null;
@@ -207,6 +210,7 @@ class BookingStore {
       createdAt: new Date().toISOString(),
       userId,
       status: "pending",
+      ...(createdBy && { createdBy }),
     };
 
     slot.available = false;

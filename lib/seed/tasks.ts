@@ -1,6 +1,7 @@
+import type { Provenanced } from "@/lib/provenance";
 import { singletonMap, resetMap, isoAt } from "./store";
 
-export interface Task {
+export interface Task extends Provenanced {
   taskId: string;
   title: string;
   department: string;

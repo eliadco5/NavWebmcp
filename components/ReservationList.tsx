@@ -2,6 +2,7 @@
 
 import { bugSource } from "@/lib/bugreport/annotate";
 import type { Reservation } from "@/lib/store";
+import { ProvenanceBadge } from "./ProvenanceBadge";
 
 interface Props {
   reservations: Reservation[];
@@ -36,6 +37,7 @@ export function ReservationList({ reservations, onCancel, cancelling }: Props) {
             <span style={{ color: "#9ca3af", marginLeft: 10, fontSize: 11 }}>
               #{r.id}
             </span>
+            <ProvenanceBadge p={r.createdBy} />
           </div>
           <button
             onClick={() => onCancel(r.id)}
