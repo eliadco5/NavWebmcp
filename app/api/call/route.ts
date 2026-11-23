@@ -11,6 +11,8 @@ import "@/lib/ui-relay/store";
 import "@/lib/audit";
 // ...and usage metrics / OpenTelemetry export (lib/telemetry/port.ts).
 import "@/lib/telemetry";
+// ...and the management service behind the admin.* operations (lib/management/port.ts).
+import "@/lib/management/service";
 import type { Actor } from "@/lib/operations/types";
 import { AGENT_HEADER, CHANNEL_HEADER } from "@/lib/constants";
 

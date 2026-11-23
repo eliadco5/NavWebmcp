@@ -87,6 +87,23 @@ export async function endRecord(id: string, reason: EndRecord["reason"], by?: st
 }
 
 /**
+ * Revoke, upgrading an earlier logout if there was one. A logout leaves the
+ * session's agents connected; a revocation cuts them off too — so an admin
+ * revoking an already-logged-out session must still take effect. Never the
+ * other way round (endRecord's first-end-wins prevents downgrades).
+ * Returns false only if it was already revoked.
+ */
+export async function revokeRecord(id: string, by?: string): Promise<boolean> {
+  const current = await getRecord<EndRecord>("ended", id);
+  if (current?.reason === "revoked") return false;
+  touched().delete(id);
+  const end: EndRecord = { at: new Date().toISOString(), reason: "revoked", by };
+  if (!current) return putRecordIfAbsent("ended", id, end);
+  await putRecord("ended", id, end);
+  return true;
+}
+
+/**
  * Heartbeat. Returns true when it actually wrote (at most once a minute per id
  * per instance) — callers use that as the cue to also make sure the
  * session/client record exists, so the per-request cost stays one read.

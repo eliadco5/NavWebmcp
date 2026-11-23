@@ -65,6 +65,11 @@ export const MODULE_DEFS: ModuleNode[] = [
   // Support
   { path: "support", title: "Support", description: "Product support — bug reports users filed from the in-app 'Report a bug' inspector. Admin only." },
   { path: "support.bugs", title: "Bug Reports", description: "List, read, and triage user bug reports, including captured console/network logs and the business calls needed to reproduce." },
+
+  { path: "admin", title: "Admin", description: "Management and compliance — the audit trail, usage metrics, and who is connected (people and agents). Admin only." },
+  { path: "admin.audit", title: "Audit", description: "Search the tamper-evident audit trail, get the full history of a record (who created or changed it: a person or an agent), and verify the trail's integrity." },
+  { path: "admin.monitoring", title: "Monitoring", description: "Usage metrics: human vs agent activity, adoption, top operations, error rates and latency against the SLO." },
+  { path: "admin.access", title: "Access", description: "Sign-in sessions and connected agent clients, and revoking them." },
 ];
 
 const moduleByPath = new Map<string, ModuleNode>(MODULE_DEFS.map((m) => [m.path, m]));
