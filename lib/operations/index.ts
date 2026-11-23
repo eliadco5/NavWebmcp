@@ -18,6 +18,7 @@ import { describeTool } from "./describeTool";
 import { invoke } from "./invoke";
 import { loadTools } from "./loadTools";
 import { unloadTools } from "./unloadTools";
+import { uiList, uiGetState, uiSetState, uiAction } from "./ui";
 // CRM
 import { searchGuests } from "./searchGuests";
 import { getGuest } from "./getGuest";
@@ -69,6 +70,8 @@ import { updateBugReportStatus } from "./updateBugReportStatus";
 registry.push(
   // Always-on navigation & meta
   explore, search, describeTool, invoke, loadTools, unloadTools, getContext, getCapabilities,
+  // Always-on UI components (NavWebMcp 1.3.0)
+  uiList, uiGetState, uiSetState, uiAction,
   // Reservation
   searchAvailability, createReservation, cancelReservation,
   listReservations, getReservation, listAllReservations, cancelAnyReservation, bookOp,

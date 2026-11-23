@@ -13,6 +13,10 @@ const AGENT_INSTRUCTIONS_ALWAYS_ON_NAMES = [
   "unload_tools",
   "getContext",
   "getCapabilities",
+  "ui_list",
+  "ui_get_state",
+  "ui_set_state",
+  "ui_action",
 ];
 
 function readSkill(): string {

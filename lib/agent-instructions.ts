@@ -39,13 +39,22 @@ This prevents chatty back-and-forth: gather first, act once.
 - load_tools([names]) / unload_tools([names]) → promote a function to the native tool list only if you will call it 3+ more times this session; otherwise prefer invoke. Re-fetch tools/list after either call.
 - Prefer a composite tool over hand-orchestrating a multi-step CRUD sequence — search() for one before sequencing calls yourself.
 
+## Operating the UI (what the user sees)
+Business operations return data to YOU; the screen does not change. When the user should SEE the result ("show me…", "filter the list to…", "sort by…", "open the Tasks tab"), operate the UI instead:
+- ui_list() → mounted components (tables, the app.nav tab bar) with their state, stateSchema and actions.
+- ui_set_state({ componentId, patch }) → change filters/sort/active tab as if the user used the controls. Objects merge, arrays replace, null clears a key. Pass expectedVersion to avoid overwriting the user's own change.
+- ui_get_state({ componentId }) → current state and row counts. ui_action({ componentId, action }) → e.g. reset, refresh.
+- A component on another tab isn't mounted: ui_set_state app.nav { activeTab } first, then ui_list again.
+- ui_* ops change only the view, never business data: no user confirmation needed.
+
 ## Reading results
 - invoke wraps the inner result: a dispatched-but-failed call is { success: true, data: { success: false, error: {...} } }. Always check the inner success, not just the outer one.
 - A function's outputSchema (from describe_tool or tools/list) describes its success data. On MCP, read structuredContent when present; it is the same data as the text block.
 - Unknown parameters are rejected (INVALID_INPUT), not ignored: use the exact names from the input schema.
-- Write operations (permission: "write") require all parameters confirmed by the user before executing.
+- Write operations (permission: "write") require all parameters confirmed by the user before executing — except the view-only ui_* ops.
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 
 ## Error codes
 UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once).
+UI: UI_COMPONENT_NOT_FOUND (switch tabs via app.nav, ui_list) · UI_INVALID_PATCH (fix against stateSchema, retry once) · UI_STALE_STATE (ui_get_state, decide again) · UI_UNKNOWN_ACTION (use a listed action) · UI_NO_ACTIVE_PAGE (ask the user to open the app) · UI_TIMEOUT (ui_get_state to check).
 `.trim();

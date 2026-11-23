@@ -19,6 +19,9 @@ const SINGLETON_KEYS = [
   "__bugReports",
   "__bugAttachments",
   "__featureIntroSeen",
+  "__uiRelay",
+  "__uiRelayPort",
+  "__uiComponentRegistry",
 ] as const;
 
 beforeEach(() => {

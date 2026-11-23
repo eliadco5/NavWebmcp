@@ -12,6 +12,7 @@ import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { registry } from "@/lib/operations";
 import type { Role } from "@/lib/auth";
 import { installCapture } from "@/lib/bugreport/capture";
+import { startUiRelay } from "@/lib/ui-relay/client";
 
 // Start recording console + network for "Report a bug" as early as client code
 // runs — before any panel's first fetch — so a report has the full history.
@@ -202,9 +203,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
               if (entry.id === previousId) break;
               newEntries.push(entry);
             }
+            // ui_* writes change only what a page shows, never stored data,
+            // so they must not make every panel refetch.
             const hasWrite = newEntries.some((e) => {
               const op = registry.find((o) => o.name === e.operation);
-              return op?.permission === "write";
+              return op?.permission === "write" && !op.runsInPage;
             });
             if (hasWrite) setStoreVersion((v) => v + 1);
           }
@@ -221,6 +224,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearInterval(interval);
     };
+  }, [user]);
+
+  // UI relay: publishes this tab's agent-operable components and applies
+  // ui_set_state / ui_action calls that external MCP clients send to this user
+  // (lib/ui-relay/client.ts, docs/ui-components.md). Signed-in only, like the
+  // audit poll above.
+  useEffect(() => {
+    if (!user) return;
+    return startUiRelay();
   }, [user]);
 
   function resolveConfirm(approved: boolean) {

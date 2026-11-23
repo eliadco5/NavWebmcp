@@ -12,6 +12,8 @@ import { roleSatisfies } from "@/lib/auth";
 import { getLoaded } from "@/lib/loadedTools";
 import { flushCurrentSharedState } from "@/lib/shared-state";
 import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
+// Installs the UI relay the ui_* ops reach through lib/ui-relay/port.ts.
+import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Operation } from "@/lib/operations/types";
 

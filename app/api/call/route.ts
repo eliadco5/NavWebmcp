@@ -6,6 +6,8 @@ import { auditLog } from "@/lib/auditlog";
 import { roleSatisfies } from "@/lib/auth";
 import { getOrProvisionUser } from "@/lib/auth-tokens";
 import { withSharedState } from "@/lib/shared-state";
+// Installs the UI relay for ui_* ops reached through invoke (lib/ui-relay/port.ts).
+import "@/lib/ui-relay/store";
 
 export const dynamic = "force-dynamic";
 

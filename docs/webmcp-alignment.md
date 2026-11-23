@@ -78,6 +78,7 @@ data schema inside `data`.
 | Confirmation flow (`requiresConfirmation`, `confirm: true`) | AgentBridge, ops | A human-in-the-loop step for destructive actions. The spec offers `consequentialHint`, which we also set |
 | Progressive disclosure (`explore`, `search`, `describe_tool`, `invoke`, `load_tools`) | Meta ops | Keeps the tool list small. `describe_tool` returns `inputSchema` and `outputSchema` |
 | Role-based visibility | AgentBridge, MCP adapter | Each user's role decides which tools are registered |
+| Agent-operable UI components (`ui_list`, `ui_get_state`, `ui_set_state`, `ui_action`) | `lib/ui-components/`, `lib/ui-relay/`, `docs/ui-components.md` | Lets agents change what the user sees (filters, sort, tabs) through typed component state instead of the DOM. In the page, the four tools run against the live component registry (`runsInPage`) and never call `/api/call`. MCP clients reach the user's open tab through a server relay (1.3.0) |
 
 ## MCP side (for comparison, spec 2025-11-25)
 
