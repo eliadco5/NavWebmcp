@@ -22,6 +22,13 @@ const SINGLETON_KEYS = [
   "__uiRelay",
   "__uiRelayPort",
   "__uiComponentRegistry",
+  "__mgmtRecords",
+  "__mgmtTouched",
+  "__mgmtSoftware",
+  "__auditStore",
+  "__auditRecorder",
+  "__metrics",
+  "__telemetryObserver",
 ] as const;
 
 beforeEach(() => {

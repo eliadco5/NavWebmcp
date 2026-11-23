@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -20,7 +21,7 @@ export const updateTask = defineOperation({
     assigneeId: Id().optional().describe("User ID to reassign the task to"),
   },
   outputSchema: { task: TaskSchema },
-  async handler({ taskId, status, priority, assigneeId }, _ctx) {
+  async handler({ taskId, status, priority, assigneeId }, ctx) {
     const task = tasks.get(taskId);
     if (!task) return fail("NOT_FOUND", `Task ${taskId} not found`);
 
@@ -31,6 +32,7 @@ export const updateTask = defineOperation({
       ...(assigneeId !== undefined && { assigneeId }),
       updatedAt: new Date().toISOString(),
     };
+    updated.lastModifiedBy = stamp(ctx, updated.updatedAt);
     tasks.set(taskId, updated);
     return ok({ task: updated });
   },

@@ -10,6 +10,13 @@ export const SESSION_COOKIE = "agentbridge_session";
 // any HMAC work happens, and so a token can never be confused with a session cookie.
 export const AGENT_TOKEN_PREFIX = "ab1";
 
+// Headers the browser sets on POST /api/call to say which in-page caller made
+// the request. The session cookie proves WHO; these only say whether a person
+// or the in-page WebMCP agent pressed the button, so the server records the
+// actor as "asserted" rather than "verified".
+export const CHANNEL_HEADER = "x-navwebmcp-channel";
+export const AGENT_HEADER = "x-navwebmcp-agent";
+
 // The three seeded demo users, by id. Used to auto-provision a session when none exists.
 export const DEMO_USER_IDS = ["u_alice", "u_carol", "u_bob"] as const;
 

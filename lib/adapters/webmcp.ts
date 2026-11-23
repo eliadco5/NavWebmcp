@@ -2,8 +2,29 @@ import { AgentBridge, type AgentBridgeOptions } from "@/lib/agentbridge";
 import { registry } from "@/lib/operations";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { runUiOpLocally } from "@/lib/ui-components/local";
+import type { Result } from "@/lib/result";
 
 let _bridge: AgentBridge | null = null;
+
+/** Fire-and-forget: an audit report must never slow down or fail the agent's call. */
+function reportInPageCall(name: string, input: Record<string, unknown>, result: Result<unknown>) {
+  if (typeof window === "undefined") return;
+  try {
+    void fetch("/api/audit/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        operation: name,
+        input,
+        success: result.success,
+        errorCode: result.success ? undefined : result.error.code,
+      }),
+    }).catch(() => undefined);
+  } catch {
+    /* never let reporting break the call */
+  }
+}
 
 /**
  * Initialise the in-page AgentBridge, registering every operation from the
@@ -51,7 +72,13 @@ export function initAgentBridge(
       tags: op.tags,
       // ui_* ops act on this page's own components, so they never go to the server.
       handler: op.runsInPage
-        ? (input) => runUiOpLocally(op.name, input)
+        ? async (input) => {
+            const result = await runUiOpLocally(op.name, input);
+            // The server never sees these, so it can't observe them: report
+            // writes for the audit trail (recorded as client-asserted).
+            if (op.permission === "write") reportInPageCall(op.name, input, result);
+            return result;
+          }
         : (input, _ctx, options) => dispatch(op.name, input, options?.signal),
     });
   }

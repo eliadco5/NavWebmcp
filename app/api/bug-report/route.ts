@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
 import { submitBugReport } from "@/lib/bugreport/submit";
 import { attachmentResponse } from "@/lib/bugreport/http";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 /** Submit a report — any signed-in role. */
 export const POST = withSharedState(async function POST(req: NextRequest) {
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user } = await authenticateSession(cookieStore);
   if (!user) {
     return Response.json({ success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } }, { status: 401 });
   }
@@ -32,7 +32,7 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
 /** Legacy alias for GET /api/bug-report/<id>/attachments/screenshot — admin only. */
 export const GET = withSharedState(async function GET(req: NextRequest) {
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user } = await authenticateSession(cookieStore);
   if (!user || user.role !== "admin") {
     return Response.json({ success: false, error: { code: "FORBIDDEN", message: "Admin only." } }, { status: 403 });
   }

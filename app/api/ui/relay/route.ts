@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 import { TabRef } from "@/lib/ui-components/contract";
 import { claimCommands, putResult } from "@/lib/ui-relay/store";
 
@@ -22,7 +22,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const { user } = getOrProvisionUser(await cookies());
+  const { user } = await authenticateSession(await cookies());
   if (!user) {
     return Response.json({ success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } }, { status: 401 });
   }

@@ -1,22 +1,10 @@
-import { ok, fail } from "@/lib/result";
-import { inputObject, checkOutput } from "@/lib/schema";
+import { ok } from "@/lib/result";
 import type { Result } from "@/lib/result";
-import { roleSatisfies } from "@/lib/auth";
-import { auditLog } from "@/lib/auditlog";
 import { registry } from "./registry";
+import { execute, getOpByName, invalidateOpCache } from "./execute";
 import type { OperationContext } from "./types";
 
-let _opByName: Map<string, (typeof registry)[number]> | undefined;
-function getOpByName() {
-  if (!_opByName) _opByName = new Map(registry.map((op) => [op.name, op]));
-  return _opByName;
-}
-
-export function invalidateOpCache() {
-  _opByName = undefined;
-}
-
-export { getOpByName };
+export { getOpByName, invalidateOpCache };
 
 export function effectiveParallelSafe(
   op: (typeof registry)[number],
@@ -27,41 +15,14 @@ export function effectiveParallelSafe(
   return op.permission === "read";
 }
 
-export async function runOne(
+/** In-process call by name. Nested calls (invoke, composites) inherit the
+ *  caller's actor and are linked to it via parentCallId — see execute(). */
+export function runOne(
   name: string,
   args: Record<string, unknown>,
   ctx: OperationContext
 ): Promise<Result<unknown>> {
-  const op = getOpByName().get(name);
-  if (!op) {
-    const result = fail("UNKNOWN_TOOL", `No operation named '${name}'.`);
-    auditLog.record(name, args, false, "agent", result.error);
-    return result;
-  }
-  if (!roleSatisfies(ctx.role, op.roles)) {
-    const result = fail("FORBIDDEN", `Role '${ctx.role}' is not permitted to call '${name}'.`);
-    auditLog.record(name, args, false, "agent", result.error);
-    return result;
-  }
-  const parsed = inputObject(op.inputSchema).safeParse(args);
-  if (!parsed.success) {
-    const result = fail(
-      "INVALID_ARGS",
-      parsed.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ")
-    );
-    auditLog.record(name, args, false, "agent", result.error);
-    return result;
-  }
-  try {
-    const result = await op.handler(parsed.data, ctx);
-    if (result.success) checkOutput(op.name, op.outputSchema, result.data);
-    auditLog.record(name, args, result.success, "agent", result.success ? result.data : result.error);
-    return result as Result<unknown>;
-  } catch (err) {
-    const result = fail("HANDLER_ERROR", String(err));
-    auditLog.record(name, args, false, "agent", result.error);
-    return result;
-  }
+  return execute(name, args, ctx);
 }
 
 export function makeDispatch(ctx: OperationContext) {

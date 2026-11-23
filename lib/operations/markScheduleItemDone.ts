@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -17,7 +18,7 @@ export const markScheduleItemDone = defineOperation({
     scheduleId: Id().describe("The ID of the schedule item to mark as done (e.g. sched_002)."),
   },
   outputSchema: { scheduleItem: ScheduleItemSchema },
-  async handler({ scheduleId }, _ctx) {
+  async handler({ scheduleId }, ctx) {
     const item = scheduleItems.find((s) => s.id === scheduleId);
     if (!item) {
       return fail("NOT_FOUND", `Schedule item ${scheduleId} does not exist.`);
@@ -27,6 +28,7 @@ export const markScheduleItemDone = defineOperation({
     }
     item.done = true;
     item.completedAt = new Date().toISOString();
+    item.lastModifiedBy = stamp(ctx, item.completedAt);
     return ok({ scheduleItem: item });
   },
 });

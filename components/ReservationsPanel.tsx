@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useBridge } from "@/app/providers";
 import { AvailabilityList } from "./AvailabilityList";
 import { ReservationList } from "./ReservationList";
+import { ProvenanceBadge } from "./ProvenanceBadge";
 import { WaitTimeCard } from "./WaitTimeCard";
 import type { Slot, Reservation } from "@/lib/store";
 
@@ -287,6 +288,7 @@ export function ReservationsPanel() {
                     <span style={{ fontSize: 13 }}>
                       <strong>{r.name}</strong> · {r.date} {r.time} · party of {r.partySize}
                       <span style={{ marginLeft: 8, fontSize: 11, color: "#6b7280" }}>({r.userId})</span>
+                      <ProvenanceBadge p={r.createdBy} />
                     </span>
                     {isAdmin && (
                       <button

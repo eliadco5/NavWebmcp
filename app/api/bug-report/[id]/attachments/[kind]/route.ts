@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
 import { addAttachment } from "@/lib/bugreport/submit";
 import { attachmentResponse, errorResponse } from "@/lib/bugreport/http";
@@ -24,7 +24,7 @@ export const PUT = withSharedState(async function PUT(req: NextRequest, ctx: Ctx
 /** Download one attachment — admin only. */
 export async function GET(_req: NextRequest, ctx: Ctx) {
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user } = await authenticateSession(cookieStore);
   if (!user || user.role !== "admin") return errorResponse(403, "FORBIDDEN", "Admin only.");
   const { id, kind } = await ctx.params;
   return attachmentResponse(id, kind);

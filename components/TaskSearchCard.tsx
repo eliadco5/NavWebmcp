@@ -6,6 +6,8 @@ import { useBridge } from "@/app/providers";
 import { DEMO_USERS, DEMO_USER_IDS } from "@/lib/constants";
 import { useAgentComponent } from "@/lib/ui-components/useAgentComponent";
 import { tableStateSchema } from "@/lib/ui-components/kinds";
+import type { Provenance } from "@/lib/provenance";
+import { ProvenanceBadge } from "./ProvenanceBadge";
 
 interface Task {
   taskId: string;
@@ -17,6 +19,8 @@ interface Task {
   reservationId?: string;
   createdAt: string;
   updatedAt: string;
+  createdBy?: Provenance;
+  lastModifiedBy?: Provenance;
 }
 
 const STATUSES = ["open", "in_progress", "completed", "cancelled"] as const;
@@ -176,6 +180,9 @@ export function TaskSearchCard({ isAdmin }: { isAdmin: boolean }) {
                     {t.reservationId}
                   </span>
                 )}
+                {t.lastModifiedBy
+                  ? <ProvenanceBadge p={t.lastModifiedBy} verb="Updated by" />
+                  : <ProvenanceBadge p={t.createdBy} />}
               </span>
               <select
                 value={t.status}

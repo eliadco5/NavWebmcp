@@ -1,3 +1,4 @@
+import type { Provenanced } from "@/lib/provenance";
 import { singleton, resetArray } from "./store";
 
 // Table/reservation/bill state moved to lib/store.ts when the customer-booking
@@ -6,7 +7,7 @@ import { singleton, resetArray } from "./store";
 // notes have no guestId/reservationId at all — they're generic handover notes,
 // not tied to any single reservation — so they stayed here, unaffected.
 
-export type ShiftNote = { id: string; note: string; author: string; createdAt: string; date: string };
+export type ShiftNote = Provenanced & { id: string; note: string; author: string; createdAt: string; date: string };
 
 const SHIFT_NOTES_KEY = "__frontofficeStore";
 function buildShiftNotes(): ShiftNote[] {

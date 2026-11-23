@@ -11,6 +11,7 @@
     "start": "next start",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run tests/unit tests/integration",
+    "test:redis": "node scripts/test-redis.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage tests/unit tests/integration",
     "bench": "node scripts/bench.mjs",

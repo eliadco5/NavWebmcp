@@ -3,7 +3,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
 import { scopesForRole } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
-import { userForToken } from "@/lib/auth-tokens";
+import { authenticateAgentToken, requestInfo } from "@/lib/management/auth";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { withSharedState } from "@/lib/shared-state";
@@ -37,15 +37,18 @@ const mcpHandler = createMcpHandler(
   }
 );
 
-async function verifyToken(_req: Request, bearer?: string): Promise<AuthInfo | undefined> {
+// Rejects expired/forged tokens AND revoked agent clients (or tokens whose
+// authorising session an admin revoked) — see lib/management/auth.ts.
+async function verifyToken(req: Request, bearer?: string): Promise<AuthInfo | undefined> {
   if (!bearer) return undefined;
-  const user = userForToken(bearer);
-  if (!user) return undefined;
+  const claims = await authenticateAgentToken(bearer, requestInfo(req.headers));
+  if (!claims) return undefined;
+  const { user } = claims;
   return {
     token: bearer,
-    clientId: user.id,
+    clientId: claims.clientId,
     scopes: scopesForRole(user.role),
-    extra: { userId: user.id, role: user.role },
+    extra: { userId: user.id, role: user.role, sid: claims.sid },
   };
 }
 

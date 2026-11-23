@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
@@ -22,14 +23,16 @@ export const logCommunication = defineOperation({
   outputSchema: { communication: CommunicationSchema },
   async handler({ guestId, type, subject, body }, ctx) {
     const commId = `comm_${String(communications.length + 1).padStart(3, "0")}`;
+    const createdAt = new Date().toISOString();
     const entry: CommunicationEntry = {
+      createdBy: stamp(ctx, createdAt),
       commId,
       guestId,
       type,
       subject,
       body,
       agentId: ctx.userId,
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
     communications.push(entry);
     return ok({ communication: entry });

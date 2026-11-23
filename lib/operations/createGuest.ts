@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -23,7 +24,8 @@ export const createGuest = defineOperation({
     const existing = Array.from(guestsMap.values()).find((g) => g.email === email);
     if (existing) return fail("CONFLICT", `A guest with email ${email} already exists`);
     const guestId = `g_${String(guestsMap.size + 1).padStart(3, "0")}`;
-    const guest: Guest = { guestId, name, email, phone, createdAt: new Date().toISOString() };
+    const createdAt = new Date().toISOString();
+    const guest: Guest = { guestId, name, email, phone, createdAt, createdBy: stamp(ctx, createdAt) };
     guestsMap.set(guestId, guest);
     return ok({ guest });
   },

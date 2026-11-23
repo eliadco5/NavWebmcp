@@ -15,7 +15,13 @@ import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
 // Installs the UI relay the ui_* ops reach through lib/ui-relay/port.ts.
 import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
-import type { Operation } from "@/lib/operations/types";
+import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
+import { execute, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
+import { noteAgentSoftware } from "@/lib/management/sessions";
+// Also turns on the SOC2 audit trail for every call execute() runs.
+import { auditOperation } from "@/lib/audit";
+// ...and usage metrics / OpenTelemetry export.
+import { observeCall } from "@/lib/telemetry";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -64,6 +70,18 @@ export function withMcpAuthRole(
   };
 }
 
+/** Request-level meta from the SDK's per-call `extra` (headers when the
+ *  transport supplies them; absent in unit tests). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mcpRequestMeta(extra: any): CallMeta {
+  const raw: Record<string, string | string[] | undefined> | undefined = extra?.requestInfo?.headers;
+  const headers = new Headers();
+  for (const [k, v] of Object.entries(raw ?? {})) {
+    if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(", ") : v);
+  }
+  return requestMeta("mcp", headers);
+}
+
 export function registerMcpTools(server: McpServer) {
   const ctx = mcpContext.getStore();
   const callerRole: Role = ctx?.role ?? "customer";
@@ -103,36 +121,61 @@ export function registerMcpTools(server: McpServer) {
         try {
           const userId: string | undefined = extra?.authInfo?.extra?.userId;
           const role: Role | undefined = extra?.authInfo?.extra?.role;
+          const meta = mcpRequestMeta(extra);
 
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
-            auditLog.record(op.name, input, false, "agent", err.error);
-            return errorResult(err.error);
-          }
-
-          // Defense-in-depth: re-check role on every call
-          if (!roleSatisfies(role, op.roles)) {
-            const err = fail("FORBIDDEN", `Role '${role}' is not permitted to call '${op.name}'.`);
-            auditLog.record(op.name, input, false, "agent", err.error);
-            return errorResult(err.error);
-          }
-
-          try {
-            const bearerToken: string = extra?.authInfo?.token ?? "";
-            const result = await op.handler(input, { userId, role, token: bearerToken });
-            auditLog.record(op.name, input, result.success, "agent", result.success ? result.data : result.error);
-            if (!result.success) return errorResult(result.error);
-            // The text block is kept for clients that predate structuredContent
-            // (and for scripts/bench.mjs, which parses content[0].text).
-            return {
-              content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }],
-              structuredContent: result.data as Record<string, unknown>,
+            const denied = {
+              operation: op.name,
+              input,
+              success: false,
+              output: err.error,
+              errorCode: err.error.code,
+              actor: { type: "agent", userId: "anonymous", role: "customer", assurance: "asserted" } satisfies Actor,
+              meta: { ...meta, callId: crypto.randomUUID() },
             };
-          } catch (err) {
-            const error = { code: "HANDLER_ERROR", message: String(err) };
-            auditLog.record(op.name, input, false, "agent", error);
-            return errorResult(error);
+            auditLog.recordCall(denied);
+            await Promise.all([
+              auditOperation({ ...denied, op }),
+              observeCall({ ...denied, permission: op.permission, durationMs: 0, startedAt: Date.now() }),
+            ]);
+            return errorResult(err.error);
           }
+
+          // clientInfo from `initialize`, when this server instance saw it
+          // (stateless transports may not: then it's just unknown).
+          const client = server.server?.getClientVersion?.();
+          const clientId: string = extra?.authInfo?.clientId ?? userId;
+          await noteAgentSoftware(clientId, client?.name, client?.version);
+          const actor: Actor = {
+            type: "agent",
+            userId,
+            role,
+            assurance: "verified",
+            sessionId: extra?.authInfo?.extra?.sid,
+            agent: {
+              clientId,
+              name: client?.name,
+              version: client?.version,
+              sessionId: extra?.sessionId,
+            },
+          };
+          const bearerToken: string = extra?.authInfo?.token ?? "";
+          // execute() re-checks the role on every call (defense-in-depth on
+          // top of the registration-time gate above) and audits the outcome.
+          const result = await execute(
+            op.name,
+            input,
+            { userId, role, token: bearerToken, actor, meta },
+            { codes: SURFACE_CODES }
+          );
+          if (!result.success) return errorResult(result.error);
+          // The text block is kept for clients that predate structuredContent
+          // (and for scripts/bench.mjs, which parses content[0].text).
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }],
+            structuredContent: result.data as Record<string, unknown>,
+          };
         } finally {
           await flushCurrentSharedState();
         }

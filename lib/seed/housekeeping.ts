@@ -1,6 +1,7 @@
+import type { Provenanced } from "@/lib/provenance";
 import { singleton, singletonMap, resetMap, resetArray, isoAt } from "./store";
 
-export type TableStatusRecord = {
+export type TableStatusRecord = Provenanced & {
   tableId: string;
   status: "clean" | "dirty" | "in-progress";
   lastUpdated: string;
@@ -24,7 +25,7 @@ export function resetHousekeepingTableStatus(): void {
   resetMap(HOUSEKEEPING_TABLE_STATUS_KEY, buildHousekeepingTableStatus);
 }
 
-export type ScheduleItem = {
+export type ScheduleItem = Provenanced & {
   id: string;
   tableId: string;
   scheduledTime: string;
@@ -51,7 +52,7 @@ export function resetHousekeepingSchedule(): void {
   resetArray(HOUSEKEEPING_SCHEDULE_KEY, buildHousekeepingSchedule);
 }
 
-export type InspectionRecord = {
+export type InspectionRecord = Provenanced & {
   id: string;
   tableId: string;
   inspector: string;

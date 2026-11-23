@@ -2,7 +2,9 @@ import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { SESSION_COOKIE } from "@/lib/auth";
-import { getOrProvisionUser, createSession, issueToken, COOKIE_OPTS } from "@/lib/auth-tokens";
+import { createSession, issueToken, COOKIE_OPTS } from "@/lib/auth-tokens";
+import { authenticateSession, requestInfo } from "@/lib/management/auth";
+import { auditAuth, humanActor } from "@/lib/audit";
 
 // Deliberately unauthenticated privilege escalation. This exists solely so a judge
 // evaluating the demo can reach every role in one tap with no credentials to type
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
   }
 
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user, sid } = await authenticateSession(cookieStore, requestInfo(req.headers));
 
   if (!user) {
     return Response.json(
@@ -42,11 +44,21 @@ export async function POST(req: NextRequest) {
   }
 
   const switched = { ...user, role: parsed.data.role };
-  cookieStore.set(SESSION_COOKIE, createSession(switched), COOKIE_OPTS);
+  // Same session id: a role switch is not a new sign-in.
+  cookieStore.set(SESSION_COOKIE, createSession(switched, sid), COOKIE_OPTS);
+  // A privilege change: always on the record, with both roles.
+  await auditAuth({
+    action: "auth.role_switch",
+    outcome: "success",
+    actor: humanActor(switched, sid),
+    ...requestInfo(req.headers),
+    target: { type: "session", id: sid },
+    detail: { fromRole: user.role, toRole: switched.role },
+  });
 
   return Response.json({
     success: true,
     user: { id: switched.id, username: switched.username, displayName: switched.displayName, role: switched.role },
-    agentToken: issueToken(switched),
+    agentToken: issueToken(switched, { sid }),
   });
 }

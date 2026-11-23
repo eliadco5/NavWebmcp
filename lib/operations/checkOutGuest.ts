@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
@@ -47,7 +48,7 @@ export const checkOutGuest = defineOperation({
     total: z.number(),
     generatedAt: z.string(),
   },
-  async handler({ reservationId, confirm }, _ctx) {
+  async handler({ reservationId, confirm }, ctx) {
     if (!confirm) {
       return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to confirm checking out this reservation.");
     }
@@ -74,7 +75,7 @@ export const checkOutGuest = defineOperation({
       status: "available",
       capacity: table.capacity,
     });
-    store.updateReservation(reservationId, { status: "checked-out" });
+    store.updateReservation(reservationId, { status: "checked-out", lastModifiedBy: stamp(ctx, generatedAt) });
 
     return ok(bill);
   },

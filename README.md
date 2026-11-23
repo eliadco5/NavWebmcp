@@ -1068,6 +1068,19 @@ By default every store (reservations, CRM, tasks, housekeeping, finance, the aud
 
 To fix this on a real deployment, add a Redis database via the Vercel Marketplace (Project → Storage → Marketplace Database Providers) and connect it to Production/Preview/Development. That injects a `REDIS_URL` connection string, which `lib/shared-state/` (built on `node-redis`) picks up automatically — no code changes needed. Without it, the app transparently falls back to today's in-memory behavior; this is why `npm test` and local dev need zero setup. `vercel env pull .env.development.local` will only pick this up if the integration is also connected to the Development environment, not just Production.
 
+If Redis is configured but unreachable, the app degrades to the same in-memory behaviour instead of hanging: the first connection attempt gives up after `REDIS_CONNECT_TIMEOUT_MS` (default 1500), after which requests skip Redis for `REDIS_RETRY_COOLDOWN_MS` (default 30000) while the client reconnects in the background. Commands on a dropped connection fail immediately rather than queueing (`lib/shared-state/redis.ts`).
+
+#### Testing against a real Redis locally
+
+`npm test` never needs Redis. The Redis-backed paths — the audit hash chain's concurrent appends, metrics buckets, session/agent revocation — have their own live tests (`tests/integration/redis-live.test.ts`), skipped unless a Redis is available. With Docker Desktop running:
+
+```bash
+npm run test:redis            # starts Redis (docker-compose.yml, port 6390), runs the live tests, stops it
+npm run test:redis -- --keep  # leave the Redis running afterwards
+```
+
+Already running a Redis? `REDIS_LIVE_URL=redis://localhost:6379 npm run test:redis -- --no-docker`. The live tests write under their own namespace and delete their keys when done. To run the app itself against the local Redis: `docker compose up -d redis`, then `REDIS_URL=redis://localhost:6390 npm run dev`.
+
 ### Gather-first, ask-once — context, capabilities, and instructions
 
 Three protocol features work together to give the agent everything it needs before it says a word to the user:

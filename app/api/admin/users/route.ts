@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { listUsers } from "@/lib/auth";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 
 // Read-only roster. Role changes now happen via /api/switch-role (client-side,
 // cookie-scoped) rather than a PATCH here — updateUserRole used to mutate a
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const cookieStore = await cookies();
-  const { user: caller } = getOrProvisionUser(cookieStore);
+  const { user: caller } = await authenticateSession(cookieStore);
   if (!caller) return Response.json({ success: false, error: { code: "UNAUTHENTICATED" } }, { status: 401 });
   if (caller.role !== "admin") return Response.json({ success: false, error: { code: "FORBIDDEN" } }, { status: 403 });
 

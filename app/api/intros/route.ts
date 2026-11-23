@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 import { isKnownIntroKey } from "@/lib/feature-intros/registry";
 import { getSeen, markSeen, resetSeen } from "@/lib/feature-intros/seen-store";
 
@@ -17,7 +17,7 @@ const unauthenticated = () =>
   );
 
 async function currentUser() {
-  return getOrProvisionUser(await cookies()).user;
+  return (await authenticateSession(await cookies())).user;
 }
 
 export async function GET() {

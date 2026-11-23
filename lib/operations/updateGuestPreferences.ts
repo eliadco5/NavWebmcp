@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
@@ -35,6 +36,7 @@ export const updateGuestPreferences = defineOperation({
       ...(specialNotes !== undefined && { specialNotes }),
       updatedAt: new Date().toISOString(),
     };
+    updated.lastModifiedBy = stamp(ctx, updated.updatedAt!);
     preferencesMap.set(guestId, updated);
     return ok({ preferences: updated });
   },

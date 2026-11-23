@@ -1,3 +1,4 @@
+import { stamp } from "@/lib/provenance";
 import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
@@ -16,12 +17,13 @@ export const addShiftNote = defineOperation({
     author: ShortText(100).min(1).describe("Name or ID of the staff member adding the note"),
   },
   outputSchema: ShiftNoteSchema.shape,
-  async handler({ note, author }, _ctx) {
+  async handler({ note, author }, ctx) {
     const notes = shiftNotes();
     const id = `sn_${String(notes.length + 1).padStart(3, "0")}`;
     const createdAt = new Date().toISOString();
     const date = createdAt.slice(0, 10);
-    const entry = { id, note, author, createdAt, date };
+    // `author` is whatever the caller typed; createdBy is who actually did it.
+    const entry = { id, note, author, createdAt, date, createdBy: stamp(ctx, createdAt) };
     notes.push(entry);
     return ok(entry);
   },
