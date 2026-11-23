@@ -7,8 +7,11 @@ interface Props {
   entries: AuditEntry[];
 }
 
-export function ActivityLog({ entries }: Props) {
+export function ActivityLog({ entries: all }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Other users' activity arrives stripped (lib/auditlog.ts scopeFeed) and is
+  // only there so the app knows to refresh; it isn't the viewer's to see.
+  const entries = all.filter((e) => !e.redacted);
 
   if (entries.length === 0) {
     return <p style={{ color: "#888", fontSize: 13 }}>No activity yet.</p>;

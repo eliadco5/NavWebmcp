@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth-tokens";
 import type { User } from "@/lib/auth";
 import { endRecord, getEnd, recordClient, recordSession, touch } from "./sessions";
+import { auditAuth, humanActor } from "@/lib/audit";
 
 type CookieStore = Parameters<typeof getOrProvisionUser>[0] & {
   delete?(name: string): void;
@@ -42,8 +43,21 @@ export async function authenticateSession(cookieStore: CookieStore, info: Reques
   const { user, provisioned, sid } = getOrProvisionUser(cookieStore);
   if (!user || !sid) return { user: null, provisioned: false, reason: "NO_SESSION" };
 
-  if (!provisioned && (await getEnd(sid))) {
+  const end = provisioned ? null : await getEnd(sid);
+  if (end) {
     cookieStore.delete?.(SESSION_COOKIE);
+    // Use of a revoked session is a security signal; a logged-out tab still
+    // polling once before its cookie is cleared is routine, so only the former.
+    if (end.reason === "revoked") {
+      await auditAuth({
+        action: "auth.session_rejected",
+        outcome: "denied",
+        errorCode: "SESSION_ENDED",
+        actor: humanActor(user, sid),
+        ...info,
+        target: { type: "session", id: sid },
+      });
+    }
     return { user: null, provisioned: false, reason: "SESSION_ENDED" };
   }
 
@@ -90,8 +104,26 @@ export async function authenticateAgentToken(
     getEnd(claims.clientId),
     claims.sid ? getEnd(claims.sid) : Promise.resolve(null),
   ]);
-  if (clientEnd) return null;
-  if (sessionEnd?.reason === "revoked") return null;
+  if (clientEnd || sessionEnd?.reason === "revoked") {
+    // A revoked agent still trying to connect: worth seeing.
+    await auditAuth({
+      action: "auth.agent_token_rejected",
+      outcome: "denied",
+      errorCode: "UNAUTHENTICATED",
+      actor: {
+        type: "agent",
+        userId: claims.user.id,
+        role: claims.user.role,
+        assurance: "verified",
+        sessionId: claims.sid,
+        agent: { clientId: claims.clientId },
+      },
+      channel: "mcp",
+      ...seen,
+      target: clientEnd ? { type: "agentClient", id: claims.clientId } : { type: "session", id: claims.sid! },
+    });
+    return null;
+  }
 
   if (await touch(claims.clientId, seen)) {
     await recordClient({

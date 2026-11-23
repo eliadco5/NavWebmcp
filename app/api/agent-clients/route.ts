@@ -4,6 +4,7 @@ import { z } from "zod";
 import { issueToken, newClientId } from "@/lib/auth-tokens";
 import { authenticateSession, requestInfo, revokeClient } from "@/lib/management/auth";
 import { getClient, listClients, recordClient } from "@/lib/management/sessions";
+import { auditAuth, humanActor } from "@/lib/audit";
 
 // Self-service agent connections for the signed-in user:
 //   GET    → the caller's own agent clients, with last-seen / revoked state
@@ -48,13 +49,21 @@ export async function POST(req: NextRequest) {
     sid,
     createdAt: new Date().toISOString(),
   });
+  await auditAuth({
+    action: "auth.agent_client_created",
+    outcome: "success",
+    actor: humanActor(user, sid),
+    ...requestInfo(req.headers),
+    target: { type: "agentClient", id: clientId },
+    detail: { label: parsed.data.label },
+  });
   return Response.json({ success: true, clientId, agentToken: issueToken(user, { clientId, sid }) });
 }
 
 const RevokeBody = z.object({ clientId: z.string().min(1).max(100) });
 
 export async function DELETE(req: NextRequest) {
-  const { user } = await authenticateSession(await cookies(), requestInfo(req.headers));
+  const { user, sid } = await authenticateSession(await cookies(), requestInfo(req.headers));
   if (!user) return unauthenticated();
   const parsed = RevokeBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -72,5 +81,12 @@ export async function DELETE(req: NextRequest) {
     );
   }
   await revokeClient(client.clientId, user.id);
+  await auditAuth({
+    action: "auth.agent_client_revoked",
+    outcome: "success",
+    actor: humanActor(user, sid),
+    ...requestInfo(req.headers),
+    target: { type: "agentClient", id: client.clientId },
+  });
   return Response.json({ success: true });
 }

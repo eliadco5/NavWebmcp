@@ -18,6 +18,8 @@ import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { execute, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
 import { noteAgentSoftware } from "@/lib/management/sessions";
+// Also turns on the SOC2 audit trail for every call execute() runs.
+import { auditOperation } from "@/lib/audit";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -121,15 +123,17 @@ export function registerMcpTools(server: McpServer) {
 
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
-            auditLog.recordCall({
+            const denied = {
               operation: op.name,
               input,
               success: false,
               output: err.error,
               errorCode: err.error.code,
-              actor: { type: "agent", userId: "anonymous", role: "customer", assurance: "asserted" },
+              actor: { type: "agent", userId: "anonymous", role: "customer", assurance: "asserted" } satisfies Actor,
               meta: { ...meta, callId: crypto.randomUUID() },
-            });
+            };
+            auditLog.recordCall(denied);
+            await auditOperation({ ...denied, op });
             return errorResult(err.error);
           }
 

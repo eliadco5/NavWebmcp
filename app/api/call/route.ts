@@ -7,6 +7,8 @@ import { authenticateSession, requestInfo } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
 // Installs the UI relay for ui_* ops reached through invoke (lib/ui-relay/port.ts).
 import "@/lib/ui-relay/store";
+// Turns on the SOC2 audit trail for every call execute() runs (lib/audit/port.ts).
+import "@/lib/audit";
 import type { Actor } from "@/lib/operations/types";
 import { AGENT_HEADER, CHANNEL_HEADER } from "@/lib/constants";
 

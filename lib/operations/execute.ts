@@ -3,6 +3,7 @@ import { inputObject, checkOutput } from "@/lib/schema";
 import type { Result } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { auditLog } from "@/lib/auditlog";
+import { auditRecorder } from "@/lib/audit/port";
 import { registry } from "./registry";
 import type { Actor, CallMeta, Channel, OperationContext } from "./types";
 
@@ -92,8 +93,10 @@ export async function executeDetailed(
   };
   const callCtx: OperationContext = { ...ctx, actor, meta };
 
-  const finish = (stage: ExecuteStage, result: Result<unknown>) => {
-    auditLog.recordCall({
+  const op = getOpByName().get(name);
+
+  const finish = async (stage: ExecuteStage, result: Result<unknown>) => {
+    const call = {
       operation: name,
       input: args,
       success: result.success,
@@ -102,11 +105,15 @@ export async function executeDetailed(
       meta,
       errorCode: result.success ? undefined : result.error.code,
       durationMs: Math.round((performance.now() - started) * 100) / 100,
-    });
+    };
+    // Activity feed (UI) — in-memory, last 100.
+    auditLog.recordCall(call);
+    // SOC2 trail — durable, hash-chained. Awaited so the event is stored
+    // before the caller sees the result; never throws (lib/audit/store.ts).
+    await auditRecorder()?.({ ...call, op });
     return { result, stage };
   };
 
-  const op = getOpByName().get(name);
   if (!op) return finish("lookup", fail(codes.unknown, `No operation named '${name}'.`));
   if (!roleSatisfies(actor.role, op.roles)) {
     return finish("rbac", fail("FORBIDDEN", `Role '${actor.role}' is not permitted to call '${name}'.`));

@@ -28,6 +28,24 @@ export interface AuditEntry {
   parentCallId?: string;
   errorCode?: string;
   durationMs?: number;
+  /** Set by scopeFeed() on another user's entry: only enough is left to tell
+   *  the page that data changed (operation, outcome, time). */
+  redacted?: true;
+}
+
+/**
+ * What one viewer may see of the activity feed (GET /api/audit). Admins see
+ * everything. Everyone else sees their own calls in full, and only the bare
+ * fact of other users' calls — enough for app/providers.tsx to refresh panels
+ * after someone else's write, without exposing anyone else's inputs/outputs.
+ */
+export function scopeFeed(entries: AuditEntry[], viewer: { id: string; role: Role }): AuditEntry[] {
+  if (viewer.role === "admin") return entries;
+  return entries.map((e) =>
+    e.userId === viewer.id
+      ? e
+      : { id: e.id, timestamp: e.timestamp, operation: e.operation, success: e.success, source: e.source, input: {}, redacted: true }
+  );
 }
 
 export interface CallRecord {

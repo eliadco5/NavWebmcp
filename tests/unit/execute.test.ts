@@ -13,7 +13,7 @@ vi.mock('next/headers', () => ({
   }),
 }))
 
-const BOOK = { date: '2026-07-07', time: '19:00', partySize: 2, name: 'Dana' }
+const BOOK = { date: '2026-07-07', time: '18:00', partySize: 2, name: 'Dana' }
 
 async function entries() {
   return (await import('@/lib/auditlog')).auditLog.getEntries()

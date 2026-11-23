@@ -86,6 +86,14 @@ export interface Operation<
    *  (lib/ui-components/local.ts) instead of POST /api/call. `handler` is the
    *  server implementation, used by MCP clients through the UI relay. */
   runsInPage?: boolean;
+  /** SOC2 audit tuning (lib/audit). Both optional: defaults redact known
+   *  PII/secret keys and infer the target record from ids in input/output. */
+  audit?: {
+    /** Extra input/output keys whose values must not be stored. */
+    redact?: string[];
+    /** The record this call acts on. Return null for "none". */
+    target?: (input: Record<string, unknown>, output: unknown) => { type: string; id: string } | null | undefined;
+  };
   handler: (
     input: z.infer<z.ZodObject<TShape>>,
     ctx: OperationContext

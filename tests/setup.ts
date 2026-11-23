@@ -25,6 +25,8 @@ const SINGLETON_KEYS = [
   "__mgmtRecords",
   "__mgmtTouched",
   "__mgmtSoftware",
+  "__auditStore",
+  "__auditRecorder",
 ] as const;
 
 beforeEach(() => {
