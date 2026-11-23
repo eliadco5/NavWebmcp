@@ -1,6 +1,7 @@
 import { AgentBridge, type AgentBridgeOptions } from "@/lib/agentbridge";
 import { registry } from "@/lib/operations";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
+import { runUiOpLocally } from "@/lib/ui-components/local";
 
 let _bridge: AgentBridge | null = null;
 
@@ -48,7 +49,10 @@ export function initAgentBridge(
       untrustedOutput: op.untrustedOutput,
       dispatchesOps: op.dispatchesOps,
       tags: op.tags,
-      handler: (input, _ctx, options) => dispatch(op.name, input, options?.signal),
+      // ui_* ops act on this page's own components, so they never go to the server.
+      handler: op.runsInPage
+        ? (input) => runUiOpLocally(op.name, input)
+        : (input, _ctx, options) => dispatch(op.name, input, options?.signal),
     });
   }
 

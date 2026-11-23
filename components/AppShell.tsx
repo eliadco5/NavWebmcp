@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useBridge } from "@/app/providers";
+import { useAgentComponent } from "@/lib/ui-components/useAgentComponent";
+import { tabsStateSchema } from "@/lib/ui-components/kinds";
 import { ActivityLog } from "./ActivityLog";
 import { ReservationsPanel } from "./ReservationsPanel";
 import { FrontDeskPanel } from "./FrontDeskPanel";
@@ -87,6 +89,24 @@ export function AppShell() {
   }, [visibleTabs, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const active = visibleTabs.find((t) => t.id === activeTab) ?? visibleTabs[0];
+
+  // Agents switch tabs with ui_set_state("app.nav", { activeTab }) — limited to
+  // the tabs this role can see, so an agent can't open a hidden one.
+  const visibleKey = visibleTabs.map((t) => t.id).join(",");
+  const navSchema = useMemo(
+    () => tabsStateSchema(visibleKey.split(",") as [string, ...string[]]),
+    [visibleKey]
+  );
+  const navState = useMemo(() => ({ activeTab: active?.id ?? "reservations" }), [active?.id]);
+  useAgentComponent({
+    id: "app.nav",
+    kind: "tabs",
+    title: "App tabs",
+    description: `The app's main tab bar: ${visibleTabs.map((t) => `${t.id} (${t.label})`).join(", ")}. Switch tabs to reach components that live on another tab.`,
+    schema: navSchema,
+    state: navState,
+    setState: (next) => setActiveTab(next.activeTab),
+  });
 
   // First load of a tab plays its feature intro, once per user (server-side).
   // Wait for the user so a not-yet-known role can't pick the wrong intros.

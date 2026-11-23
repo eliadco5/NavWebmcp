@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 1.2.0
+version: 1.3.0
 protocol: ">=1.0.0 <2.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -10,7 +10,9 @@ description: >
   claims. Covers the connect handshake, capability caching, discovery, sequential
   vs parallel vs bulk invocation, stateless invoke vs load_tools promotion,
   gather-first/ask-once, composite operations, the double-envelope result shape,
-  and error handling. Consumer side only — not for building a server.
+  operating on-screen UI components (ui_list, ui_get_state, ui_set_state,
+  ui_action — filters, sort, tabs), and error handling. Consumer side only — not
+  for building a server.
 ---
 
 # NavWebMcp agent guide
@@ -61,7 +63,8 @@ a single schema. If the surface supports batching (see §5), issue both as one b
 
 A NavWebMcp server intentionally exposes only a small always-on set of meta-operations at
 the top level — typically around 8: `explore`, `search`, `describe_tool`, `invoke`,
-`load_tools`, `unload_tools`, `getContext`, `getCapabilities`. This is the design, not a
+`load_tools`, `unload_tools`, `getContext`, `getCapabilities` (plus, since 1.3.0, the four
+UI ops `ui_list`, `ui_get_state`, `ui_set_state`, `ui_action`, see §11). This is the design, not a
 bug: the full operation catalogue can be large, and shipping every schema on every
 connection is wasted context. The real catalogue is reachable through discovery (§4),
 not through `tools/list`. Never guess operation names from what `tools/list` shows.
@@ -209,7 +212,50 @@ confirmation is actually enforced:**
 - `CONFIRMATION_DENIED` means the user (or a UI-side confirmation dialog) explicitly
   refused. Stop. Do not retry the same call.
 
-## 11. Error codes and how to react
+## 11. Operating the UI (≥ 1.3.0)
+
+Business operations return data **to you**. The user's screen does not change. When the
+user should **see** the result ("show me the open tasks, highest priority first", "open the
+Tasks tab"), operate the UI components instead. They are always-on, like the navigation ops:
+
+- **`ui_list({ kind? })`**: the components mounted in the user's open app tab. For each one
+  you get `id`, `kind`, `state`, `stateSchema`, `version`, `actions` and `view` (row counts),
+  plus the page's `activeTab`.
+- **`ui_set_state({ componentId, patch, expectedVersion? })`**: change the state as if the
+  user had used the controls.
+  - Plain objects merge, and arrays and scalars replace.
+  - `null` clears a key.
+  - The merged state must validate against `stateSchema`.
+- **`ui_get_state({ componentId })`**: re-read the state after a change, e.g. to report the
+  row count.
+- **`ui_action({ componentId, action })`**: run a declared action such as `reset` or `refresh`.
+
+Standard kinds:
+
+- `table`: `{ filters: {…}, sort: [{ column, direction }] }`
+- `tabs`: `{ activeTab }`. `app.nav` is the app's tab bar.
+
+A component on another tab isn't mounted. Set `app.nav` first, then call `ui_list` again:
+
+```json
+ui_set_state({ "componentId": "app.nav", "patch": { "activeTab": "tasks" } })
+ui_list({ "kind": "table" })
+ui_set_state({ "componentId": "tasks.table",
+  "patch": { "filters": { "status": "open" }, "sort": [{ "column": "priority", "direction": "desc" }] } })
+```
+
+`ui_*` ops change only the view, never business data, so no user confirmation is needed.
+They are view-only even though they are `permission: "write"`.
+
+Over MCP, they act on the user's own open browser tab through a relay:
+
+- If the user has none open, you get `UI_NO_ACTIVE_PAGE`.
+- If the tab didn't answer within about 8s, you get `UI_TIMEOUT`.
+
+The user can change the same component while you work. Pass the `version` you read as
+`expectedVersion` so you don't overwrite their change.
+
+## 12. Error codes and how to react
 
 | Code | Meaning | React |
 |---|---|---|
@@ -222,11 +268,17 @@ confirmation is actually enforced:**
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
 | `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
 | `HANDLER_ERROR` | Unhandled server-side failure | Transient or a bug. Retry at most once. |
+| `UI_COMPONENT_NOT_FOUND` | No mounted component with that id (≥ 1.3.0) | It's probably on another tab. Set `app.nav`, then `ui_list`. |
+| `UI_INVALID_PATCH` | The merged state doesn't match the component's `stateSchema` | Fix the patch against `stateSchema`, retry once. |
+| `UI_STALE_STATE` | `expectedVersion` is out of date because the user changed it | `ui_get_state`, then decide again. |
+| `UI_UNKNOWN_ACTION` | The component has no such action | Use one listed by `ui_list`. |
+| `UI_NO_ACTIVE_PAGE` | The user has no open app tab (MCP only) | Ask the user to open the app. |
+| `UI_TIMEOUT` | The user's tab didn't answer in time (MCP only) | `ui_get_state` to see whether it applied. |
 
 Servers may define additional domain-specific error codes beyond this protocol-level set.
 Read the `message` field for those — don't blind-retry a code you don't recognize.
 
-## 12. Anti-patterns
+## 13. Anti-patterns
 
 - Reading `tools/list` and guessing operation names from it, instead of using `explore`/`search`.
 - Calling `explore()` on the whole tree when you already know the keyword — use `search()`.
@@ -237,8 +289,11 @@ Read the `message` field for those — don't blind-retry a code you don't recogn
 - Sharing one cached capability manifest across two different credentials/roles.
 - Batching calls that have a data dependency into one bulk `invoke`.
 - Hand-orchestrating a multi-step sequence without first searching for a composite operation.
+- Calling a business operation and narrating its result when the user asked to *see* it on
+  screen. Use `ui_set_state` instead.
+- Asking the user to confirm a `ui_*` change. It is view-only.
 
-## 13. Installing this skill
+## 14. Installing this skill
 
 Copy this directory into your own agent's skills location:
 

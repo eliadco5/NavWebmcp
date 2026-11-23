@@ -6,8 +6,9 @@ Not the app version (`package.json`) — the two are deliberately independent.
 ## When to bump
 
 The protocol surface is: the capability manifest shape (`lib/capabilities.ts`), the
-8 always-on meta-op names and input schemas, the `Result` envelope (`lib/result.ts`),
-and the error-code vocabulary.
+always-on meta-op names and input schemas (including the `ui_*` ops), the UI component
+kinds and contract (`lib/ui-components/contract.ts`), the `Result` envelope
+(`lib/result.ts`), and the error-code vocabulary.
 
 | Bump | Trigger |
 |---|---|
@@ -21,6 +22,38 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
+
+## 1.3.0
+
+**Agent-operable UI components.** Agents can now change what the user *sees*, such as a
+table's filters and sort or the active tab, without touching the DOM. Components publish a
+typed state contract and agents patch it. The full spec is in `docs/ui-components.md`. All
+additive.
+
+- **Four new always-on meta-ops:** `ui_list`, `ui_get_state`, `ui_set_state`, `ui_action`.
+  - They change only the view, never business data, so they never require confirmation.
+  - `ui_set_state` and `ui_action` are `permission: "write"`, but they are not
+    destructive or consequential.
+- **Component contract:** `{ id, kind, title, stateSchema, state, version, actions, view }`.
+  - There are two standard kinds. `table` is `{ filters, sort: [{column, direction}] }`, and
+    `tabs` is `{ activeTab }`.
+  - `version` supports optimistic concurrency through `expectedVersion`.
+- **Patch semantics:** objects merge, arrays and scalars replace, and `null` clears a key.
+  The merged state must validate against `stateSchema`.
+- **Two reach paths with the same behaviour.**
+  - The in-page agent goes straight to the page's component registry.
+  - MCP clients go through a server relay to the caller's own open tab. The relay endpoints
+    are `POST /api/ui/snapshot` and `POST /api/ui/relay`, and they use Redis when
+    `REDIS_URL` is set.
+- **New error codes:** `UI_COMPONENT_NOT_FOUND`, `UI_INVALID_PATCH`, `UI_STALE_STATE`,
+  `UI_UNKNOWN_ACTION`, `UI_NO_ACTIVE_PAGE`, `UI_TIMEOUT`.
+- **New `Operation` field `runsInPage`.** On the in-page surface, ops with this field are
+  served by the page, not by `/api/call`.
+- **Reference components:**
+  - `tasks.table` (Task Search), which also gains a sort control.
+  - `app.nav` (the tab bar).
+- **Business op change (moves `capabilityHash` only):** `searchTasks` takes optional
+  `sortBy` and `sortDir`.
 
 ## 1.2.0
 

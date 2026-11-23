@@ -3,7 +3,7 @@
 // with no undeclared fields (the published JSON Schema says additionalProperties:
 // false). MCP rejects a non-conforming structuredContent outright, so this is
 // the safety net for that surface.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { adminCtx } from '@/tests/helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,6 +34,40 @@ beforeEach(async () => {
   bugId = r.report.id
 })
 
+afterEach(() => {
+  stopFakePage?.()
+  stopFakePage = undefined
+})
+
+let stopFakePage: (() => void) | undefined
+
+/** A stand-in browser tab for the ui_* ops: publishes one table component to the
+ *  relay as adminCtx's user and answers relayed commands, like lib/ui-relay/client.ts. */
+async function startFakePage() {
+  const { z } = await import('zod')
+  const { UiComponentRegistry } = await import('@/lib/ui-components/registry')
+  const { tableStateSchema } = await import('@/lib/ui-components/kinds')
+  const relay = await import('@/lib/ui-relay/store')
+  const reg = new UiComponentRegistry()
+  let state: Record<string, unknown> = { filters: {}, sort: [] }
+  reg.register({
+    id: 'demo.table', kind: 'table', title: 'Demo',
+    schema: tableStateSchema({ status: z.enum(['open', 'done']).optional().describe('Status') }, ['title'] as const) as never,
+    getState: () => state, setState: (s) => { state = s },
+    actions: { reset: { description: 'Reset', run: (_a, set) => set({ filters: {}, sort: [] }) } },
+    getView: () => ({ total: 3, shown: 3 }),
+  })
+  const publish = () => relay.putSnapshot(adminCtx.userId, { tabId: 'tab_test', activeTab: 'tasks', visible: true, focusedAt: Date.now(), components: reg.list() })
+  await publish()
+  const timer = setInterval(async () => {
+    for (const cmd of await relay.claimCommands(adminCtx.userId, 'tab_test')) {
+      await relay.putResult(adminCtx.userId, cmd.cmdId, await reg.applyCommand(cmd))
+      await publish()
+    }
+  }, 10)
+  return () => clearInterval(timer)
+}
+
 type Args = Record<string, unknown>
 /** One or more happy-path calls per op. `setup` runs other ops first, in the same fresh store. */
 type Case = { args: () => Args; setup?: [string, () => Args][] }
@@ -59,6 +93,11 @@ const CASES: Record<string, Case[]> = {
   unload_tools: [{ args: () => ({ names: ['getGuest'] }) }],
   getContext: [{ args: () => ({}) }],
   getCapabilities: [{ args: () => ({}) }],
+  // UI components — served by startFakePage() below
+  ui_list: [{ args: () => ({}) }, { args: () => ({ kind: 'table' }) }],
+  ui_get_state: [{ args: () => ({ componentId: 'demo.table' }) }],
+  ui_set_state: [{ args: () => ({ componentId: 'demo.table', patch: { filters: { status: 'open' } } }) }],
+  ui_action: [{ args: () => ({ componentId: 'demo.table', action: 'reset' }) }],
   // reservation
   searchAvailability: [{ args: () => ({ date: tomorrow, partySize: 2 }) }],
   createReservation: [{ args: () => ({ slotId: `slot_${tomorrow}_1800`, name: 'Dana', partySize: 2 }) }],
@@ -162,6 +201,7 @@ describe('success data matches outputSchema exactly', () => {
     cases.forEach((c, i) => {
       it(`${name} #${i + 1}`, async () => {
         let last: unknown
+        if (name.startsWith('ui_')) stopFakePage = await startFakePage()
         for (const [setupOp, setupArgs] of c.setup ?? []) {
           const r = await run(setupOp, setupArgs())
           expect(r.success, `setup ${setupOp}: ${JSON.stringify(r.error)}`).toBe(true)

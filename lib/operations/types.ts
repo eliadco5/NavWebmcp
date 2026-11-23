@@ -34,6 +34,10 @@ export interface Operation<
   module?: string;                // dot-path of owning leaf module (e.g. "reservation.booking")
   parallelSafe?: boolean;         // defaults: read=true, write=false
   alwaysOn?: boolean;             // always registered regardless of loaded-tools selection
+  /** In the in-page (WebMCP) surface, served by the page's own UiComponentRegistry
+   *  (lib/ui-components/local.ts) instead of POST /api/call. `handler` is the
+   *  server implementation, used by MCP clients through the UI relay. */
+  runsInPage?: boolean;
   handler: (
     input: z.infer<z.ZodObject<TShape>>,
     ctx: OperationContext

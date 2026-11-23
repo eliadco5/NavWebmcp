@@ -494,7 +494,9 @@ describe("call — confirmation", () => {
         expect(onConfirmation, `${op.name} should not show the dialog`).not.toHaveBeenCalled();
         expect(handler, `${op.name} should still run once self-declared`).toHaveBeenCalled();
       }
-    });
+      // ~1s alone, but this is the file's first import of the full registry and
+      // takes 5-7s when the whole suite runs in parallel.
+    }, 20_000);
 
     it("no requiresConfirmation op is missing its own confirm field", async () => {
       const { registry } = await import("@/lib/operations");
