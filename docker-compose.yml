@@ -1,0 +1,17 @@
+# Local Redis for testing the Redis-backed code paths (shared state, the SOC2
+# audit trail, sessions/agent clients, usage metrics). `npm run test:redis`
+# starts it, runs the live tests and stops it; see scripts/test-redis.mjs.
+#
+# Port 6390 (not 6379) so it doesn't clash with a Redis you already run.
+# No volume: every run starts from an empty database.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6390:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
