@@ -9,6 +9,8 @@ import { withSharedState } from "@/lib/shared-state";
 import "@/lib/ui-relay/store";
 // Turns on the SOC2 audit trail for every call execute() runs (lib/audit/port.ts).
 import "@/lib/audit";
+// ...and usage metrics / OpenTelemetry export (lib/telemetry/port.ts).
+import "@/lib/telemetry";
 import type { Actor } from "@/lib/operations/types";
 import { AGENT_HEADER, CHANNEL_HEADER } from "@/lib/constants";
 

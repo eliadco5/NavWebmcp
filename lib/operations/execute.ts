@@ -4,6 +4,7 @@ import type { Result } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { auditLog } from "@/lib/auditlog";
 import { auditRecorder } from "@/lib/audit/port";
+import { telemetryObserver } from "@/lib/telemetry/port";
 import { registry } from "./registry";
 import type { Actor, CallMeta, Channel, OperationContext } from "./types";
 
@@ -83,6 +84,7 @@ export async function executeDetailed(
 ): Promise<{ result: Result<unknown>; stage: ExecuteStage }> {
   const codes = options.codes ?? DISPATCH_CODES;
   const started = performance.now();
+  const startedAt = Date.now();
   const actor = ctx.actor ?? defaultActor(ctx);
   const parentMeta = ctx.meta ?? requestMeta("internal");
   // A context that already has a callId is the parent's: we're nested.
@@ -110,7 +112,11 @@ export async function executeDetailed(
     auditLog.recordCall(call);
     // SOC2 trail — durable, hash-chained. Awaited so the event is stored
     // before the caller sees the result; never throws (lib/audit/store.ts).
-    await auditRecorder()?.({ ...call, op });
+    // Usage metrics + OTLP alongside it; best-effort, also never throws.
+    await Promise.all([
+      auditRecorder()?.({ ...call, op }),
+      telemetryObserver()?.({ ...call, permission: op?.permission, startedAt }),
+    ]);
     return { result, stage };
   };
 

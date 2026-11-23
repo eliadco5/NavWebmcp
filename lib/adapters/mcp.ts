@@ -20,6 +20,8 @@ import { execute, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
 import { noteAgentSoftware } from "@/lib/management/sessions";
 // Also turns on the SOC2 audit trail for every call execute() runs.
 import { auditOperation } from "@/lib/audit";
+// ...and usage metrics / OpenTelemetry export.
+import { observeCall } from "@/lib/telemetry";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -133,7 +135,10 @@ export function registerMcpTools(server: McpServer) {
               meta: { ...meta, callId: crypto.randomUUID() },
             };
             auditLog.recordCall(denied);
-            await auditOperation({ ...denied, op });
+            await Promise.all([
+              auditOperation({ ...denied, op }),
+              observeCall({ ...denied, permission: op.permission, durationMs: 0, startedAt: Date.now() }),
+            ]);
             return errorResult(err.error);
           }
 

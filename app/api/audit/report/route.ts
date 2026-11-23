@@ -6,6 +6,7 @@ import { getOpByName, requestMeta } from "@/lib/operations/execute";
 import { roleSatisfies } from "@/lib/auth";
 import { auditLog } from "@/lib/auditlog";
 import { auditOperation } from "@/lib/audit";
+import { observeCall } from "@/lib/telemetry";
 import { authenticateSession, requestInfo } from "@/lib/management/auth";
 
 // The in-page agent's ui_* writes run entirely in the browser (they act on the
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest) {
     meta,
   };
   auditLog.recordCall(call);
-  await auditOperation({ ...call, op, reportedBy: "client" });
+  await Promise.all([
+    auditOperation({ ...call, op, reportedBy: "client" }),
+    // Ran in the browser, so its real duration isn't known here.
+    observeCall({ ...call, permission: op.permission, durationMs: 0, startedAt: Date.now() }),
+  ]);
   return Response.json({ success: true, data: {} });
 }
