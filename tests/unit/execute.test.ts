@@ -79,10 +79,13 @@ describe('POST /api/call actor classification', () => {
 
   it('the in-page WebMCP agent is an agent on the webmcp channel', async () => {
     await post({ name: 'getWaitTime', params: {} }, { 'x-navwebmcp-channel': 'webmcp', 'x-navwebmcp-agent': 'Gemini in Chrome' })
-    expect((await entries())[0]).toMatchObject({
+    const [e] = await entries()
+    expect(e).toMatchObject({
       actorType: 'agent', channel: 'webmcp', source: 'agent',
-      agent: { clientId: 'webmcp:in-page', name: 'Gemini in Chrome' },
+      agent: { name: 'Gemini in Chrome' },
     })
+    expect(e.sessionId).toBeTruthy()
+    expect(e.agent?.clientId).toBe(`webmcp-${e.sessionId}`)
   })
 
   it('keeps 404 for unknown ops and 403 for RBAC, both audited', async () => {

@@ -17,6 +17,7 @@ import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { execute, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
+import { noteAgentSoftware } from "@/lib/management/sessions";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -135,13 +136,16 @@ export function registerMcpTools(server: McpServer) {
           // clientInfo from `initialize`, when this server instance saw it
           // (stateless transports may not: then it's just unknown).
           const client = server.server?.getClientVersion?.();
+          const clientId: string = extra?.authInfo?.clientId ?? userId;
+          await noteAgentSoftware(clientId, client?.name, client?.version);
           const actor: Actor = {
             type: "agent",
             userId,
             role,
             assurance: "verified",
+            sessionId: extra?.authInfo?.extra?.sid,
             agent: {
-              clientId: extra?.authInfo?.clientId ?? userId,
+              clientId,
               name: client?.name,
               version: client?.version,
               sessionId: extra?.sessionId,

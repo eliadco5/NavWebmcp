@@ -31,6 +31,8 @@ export interface Actor {
   userId: string;
   role: Role;
   assurance: ActorAssurance;
+  /** The human sign-in session behind this call (lib/management/sessions.ts). */
+  sessionId?: string;
   agent?: AgentIdentity;
 }
 

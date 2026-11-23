@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import "@/lib/operations"; // populates the registry
 import { executeDetailed, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
 import type { ExecuteStage } from "@/lib/operations/execute";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession, requestInfo } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
 // Installs the UI relay for ui_* ops reached through invoke (lib/ui-relay/port.ts).
 import "@/lib/ui-relay/store";
@@ -17,7 +17,7 @@ const STATUS: Partial<Record<ExecuteStage, number>> = { lookup: 404, rbac: 403 }
 
 export const POST = withSharedState(async function POST(req: NextRequest) {
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user, sid } = await authenticateSession(cookieStore, requestInfo(req.headers));
   if (!user) {
     return Response.json(
       { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },
@@ -36,9 +36,11 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
         userId: user.id,
         role: user.role,
         assurance: "asserted",
-        agent: { clientId: "webmcp:in-page", name: agentName },
+        sessionId: sid,
+        // One in-page agent per browser session.
+        agent: { clientId: `webmcp-${sid}`, name: agentName, sessionId: sid },
       }
-    : { type: "human", userId: user.id, role: user.role, assurance: "asserted" };
+    : { type: "human", userId: user.id, role: user.role, assurance: "asserted", sessionId: sid };
 
   const { result, stage } = await executeDetailed(
     name,

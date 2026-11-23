@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { verifyCredentials, SESSION_COOKIE } from "@/lib/auth";
-import { createSession, issueToken, COOKIE_OPTS } from "@/lib/auth-tokens";
+import { createSession, issueToken, newSessionId, COOKIE_OPTS } from "@/lib/auth-tokens";
+import { requestInfo, startSession } from "@/lib/management/auth";
 
 export async function POST(req: NextRequest) {
   const { username, password } = await req.json();
@@ -13,11 +14,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const sessionId = createSession(user);
-  const agentToken = issueToken(user);
+  // Each sign-in is its own session: monitored, and revocable on its own.
+  const sid = newSessionId();
+  await startSession(sid, user, requestInfo(req.headers));
+  const agentToken = issueToken(user, { sid });
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, sessionId, COOKIE_OPTS);
+  cookieStore.set(SESSION_COOKIE, createSession(user, sid), COOKIE_OPTS);
 
   return Response.json({
     success: true,

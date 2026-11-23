@@ -1,12 +1,12 @@
 import { cookies } from "next/headers";
-import { getOrProvisionUser } from "@/lib/auth-tokens";
+import { authenticateSession } from "@/lib/management/auth";
 import { readAuditEntries } from "@/lib/shared-state";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const cookieStore = await cookies();
-  const { user } = getOrProvisionUser(cookieStore);
+  const { user } = await authenticateSession(cookieStore);
   if (!user) {
     return Response.json(
       { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },

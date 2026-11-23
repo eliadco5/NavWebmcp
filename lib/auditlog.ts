@@ -20,6 +20,7 @@ export interface AuditEntry {
   role?: Role;
   actorType?: ActorType;
   assurance?: ActorAssurance;
+  sessionId?: string;
   agent?: AgentIdentity;
   channel?: Channel;
   requestId?: string;
@@ -57,6 +58,7 @@ class AuditLog {
       role: c.actor.role,
       actorType: c.actor.type,
       assurance: c.actor.assurance,
+      sessionId: c.actor.sessionId,
       agent: c.actor.agent,
       channel: c.meta.channel,
       requestId: c.meta.requestId,
