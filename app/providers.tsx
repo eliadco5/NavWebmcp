@@ -11,6 +11,7 @@ import { hostVipGuest } from "@/lib/ui-tools/hostVipGuest";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { registry } from "@/lib/operations";
 import type { Role } from "@/lib/auth";
+import { CHANNEL_HEADER } from "@/lib/constants";
 import { installCapture } from "@/lib/bugreport/capture";
 import { startUiRelay } from "@/lib/ui-relay/client";
 
@@ -28,11 +29,12 @@ interface AuthUser {
 export async function serverCall(
   name: string,
   params: Record<string, unknown> = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  channel: "ui" | "webmcp" = "ui"
 ): Promise<unknown> {
   const res = await fetch("/api/call", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", [CHANNEL_HEADER]: channel },
     body: JSON.stringify({ name, params }),
     signal,
   });
@@ -151,7 +153,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
           getUserId: () => userRef.current?.id ?? null,
           getUserRole: () => (userRef.current?.role as Role | undefined) ?? null,
         },
-        serverCall
+        // Tagged so the server can tell the in-page agent's calls from the
+        // user's own clicks (recorded as an "asserted" agent actor).
+        (name, params, signal) => serverCall(name, params, signal, "webmcp")
       );
     } catch (err) {
       // A spec-drifted or unexpectedly strict native implementation should degrade

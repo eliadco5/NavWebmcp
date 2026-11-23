@@ -5,10 +5,56 @@ import type { Role } from "@/lib/auth";
 export type { Role };
 export type Permission = "read" | "write";
 
+/** Which surface a call arrived through. */
+export type Channel = "ui" | "webmcp" | "mcp" | "internal";
+
+/** Who is acting: a person clicking in the UI, an AI agent acting on a
+ *  person's behalf, or the platform itself (seed data, scheduled jobs). */
+export type ActorType = "human" | "agent" | "system";
+
+/** How much the server trusts the actor classification. MCP calls carry a
+ *  server-minted bearer token ("verified"); the WebMCP/UI split on /api/call
+ *  is declared by the browser ("asserted") — fine for telemetry, and recorded
+ *  as such so an auditor can tell the two apart. */
+export type ActorAssurance = "verified" | "asserted";
+
+export interface AgentIdentity {
+  clientId: string;
+  name?: string;
+  version?: string;
+  sessionId?: string;
+}
+
+export interface Actor {
+  type: ActorType;
+  /** The accountable human principal. For agents, the user who authorised it. */
+  userId: string;
+  role: Role;
+  assurance: ActorAssurance;
+  agent?: AgentIdentity;
+}
+
+export interface CallMeta {
+  /** One per top-level request; shared by every nested call it fans out to. */
+  requestId: string;
+  /** One per operation invocation. Absent on the request-level context a
+   *  surface builds; execute() assigns it, and a nested call made from inside
+   *  a handler sees it as its parent. */
+  callId?: string;
+  /** Set on calls made by another operation (invoke, composites). */
+  parentCallId?: string;
+  channel: Channel;
+  ip?: string;
+  userAgent?: string;
+}
+
 export interface OperationContext {
   userId: string;
   role: Role;
   token: string;
+  /** Filled by execute() when the caller didn't supply one (tests, scripts). */
+  actor?: Actor;
+  meta?: CallMeta;
 }
 
 export interface Operation<

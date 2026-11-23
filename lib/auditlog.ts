@@ -1,3 +1,8 @@
+import type { Role } from "@/lib/auth";
+import type {
+  Actor, ActorAssurance, ActorType, AgentIdentity, CallMeta, Channel,
+} from "@/lib/operations/types";
+
 export interface AuditEntry {
   id: string;
   timestamp: string;
@@ -9,10 +14,64 @@ export interface AuditEntry {
   output?: unknown;
   success: boolean;
   source: "ui" | "agent";
+  /** Who and how — set for every call that goes through execute(). Optional
+   *  only so older entries (and the legacy record() signature) stay valid. */
+  userId?: string;
+  role?: Role;
+  actorType?: ActorType;
+  assurance?: ActorAssurance;
+  agent?: AgentIdentity;
+  channel?: Channel;
+  requestId?: string;
+  callId?: string;
+  parentCallId?: string;
+  errorCode?: string;
+  durationMs?: number;
+}
+
+export interface CallRecord {
+  operation: string;
+  input: Record<string, unknown>;
+  success: boolean;
+  output?: unknown;
+  actor: Actor;
+  meta: CallMeta;
+  errorCode?: string;
+  durationMs?: number;
 }
 
 class AuditLog {
   private entries: AuditEntry[] = [];
+
+  /** Record one operation call with its full actor/channel context. */
+  recordCall(c: CallRecord): AuditEntry {
+    return this.push({
+      id: c.meta.callId ?? crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      operation: c.operation,
+      input: c.input,
+      output: c.output,
+      success: c.success,
+      source: c.actor.type === "human" ? "ui" : "agent",
+      userId: c.actor.userId,
+      role: c.actor.role,
+      actorType: c.actor.type,
+      assurance: c.actor.assurance,
+      agent: c.actor.agent,
+      channel: c.meta.channel,
+      requestId: c.meta.requestId,
+      callId: c.meta.callId,
+      parentCallId: c.meta.parentCallId,
+      errorCode: c.errorCode,
+      durationMs: c.durationMs,
+    });
+  }
+
+  private push(entry: AuditEntry): AuditEntry {
+    this.entries.unshift(entry);
+    if (this.entries.length > 100) this.entries.pop();
+    return entry;
+  }
 
   record(
     operation: string,
@@ -30,9 +89,7 @@ class AuditLog {
       success,
       source,
     };
-    this.entries.unshift(entry);
-    if (this.entries.length > 100) this.entries.pop();
-    return entry;
+    return this.push(entry);
   }
 
   getEntries(): AuditEntry[] {
