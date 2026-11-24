@@ -5,6 +5,9 @@ import { roleSatisfies } from "@/lib/auth";
 import { auditLog } from "@/lib/auditlog";
 import { auditRecorder } from "@/lib/audit/port";
 import { telemetryObserver } from "@/lib/telemetry/port";
+import { credits as creditsPort, type CallOutcome } from "@/lib/credits/port";
+import { bytesOf } from "@/lib/credits/policy";
+import type { CreditInfo } from "@/lib/result";
 import { registry } from "./registry";
 import type { Actor, CallMeta, Channel, OperationContext } from "./types";
 
@@ -64,8 +67,41 @@ function formatIssues(issues: { path: PropertyKey[]; message: string }[]): strin
 }
 
 /** Where a call stopped. Lets a surface map gate failures to its own status
- *  codes (HTTP 404/403) without confusing them with a handler's own errors. */
-export type ExecuteStage = "lookup" | "rbac" | "input" | "handler";
+ *  codes (HTTP 404/403/429) without confusing them with a handler's own errors. */
+export type ExecuteStage = "credits" | "fanout" | "lookup" | "rbac" | "input" | "handler";
+
+/** Fan-out limits for one request (invoke batches, composites, invoke inside invoke). */
+export const FANOUT = {
+  /** Deepest nesting allowed: invoke(0) → invoke(1) → book(2) → createReservation(3). */
+  maxDepth: 3,
+  /** Most operations one top-level call may run underneath it. */
+  maxNested: 200,
+};
+
+/** Default handler deadline (ms); OP_DEADLINE_MS overrides, op.deadlineMs per op. */
+function defaultDeadlineMs(): number {
+  const n = Number(typeof process !== "undefined" ? process.env?.OP_DEADLINE_MS : undefined);
+  return Number.isFinite(n) && n > 0 ? n : 15_000;
+}
+
+class DeadlineExceeded extends Error {}
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DeadlineExceeded()), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
+export interface ExecuteDetail {
+  result: Result<unknown>;
+  stage: ExecuteStage;
+  /** Credit state after a metered top-level call — always, for surfaces that
+   *  carry it out of band (MCP _meta, HTTP headers). The Result itself only
+   *  carries it when there's a hint. */
+  credits?: CreditInfo;
+}
 
 export async function execute(
   name: string,
@@ -81,24 +117,43 @@ export async function executeDetailed(
   args: Record<string, unknown>,
   ctx: OperationContext,
   options: ExecuteOptions = {}
-): Promise<{ result: Result<unknown>; stage: ExecuteStage }> {
+): Promise<ExecuteDetail> {
   const codes = options.codes ?? DISPATCH_CODES;
   const started = performance.now();
   const startedAt = Date.now();
   const actor = ctx.actor ?? defaultActor(ctx);
   const parentMeta = ctx.meta ?? requestMeta("internal");
   // A context that already has a callId is the parent's: we're nested.
+  const nested = parentMeta.callId !== undefined;
   const meta: CallMeta = {
     ...parentMeta,
     callId: crypto.randomUUID(),
     parentCallId: parentMeta.callId,
+    depth: nested ? (parentMeta.depth ?? 0) + 1 : 0,
+    // One counter object per top-level call, shared by everything under it.
+    fanout: nested ? parentMeta.fanout ?? { count: 0 } : { count: 0 },
   };
   const callCtx: OperationContext = { ...ctx, actor, meta };
 
   const op = getOpByName().get(name);
+  let settleCredits: ((o: CallOutcome) => Promise<(CreditInfo & { hinted: boolean }) | null>) | undefined;
 
-  const finish = async (stage: ExecuteStage, result: Result<unknown>) => {
-    const call = {
+  const finish = async (stage: ExecuteStage, result0: Result<unknown>, creditsOut?: CreditInfo) => {
+    let result = result0;
+    let credits = creditsOut;
+    if (settleCredits) {
+      const info = await settleCredits({
+        durationMs: performance.now() - started,
+        responseBytes: bytesOf(result0),
+        nestedOps: meta.fanout?.count ?? 0,
+      });
+      if (info) {
+        const { hinted, ...rest } = info;
+        credits = rest;
+        // Piggyback only when the caller should change what it's doing.
+        if (hinted) result = { ...result0, credits: rest };
+      }
+    }    const call = {
       operation: name,
       input: args,
       success: result.success,
@@ -115,10 +170,35 @@ export async function executeDetailed(
     // Usage metrics + OTLP alongside it; best-effort, also never throws.
     await Promise.all([
       auditRecorder()?.({ ...call, op }),
-      telemetryObserver()?.({ ...call, permission: op?.permission, startedAt }),
+      telemetryObserver()?.({ ...call, permission: op?.permission, startedAt, credits: credits?.charged }),
     ]);
-    return { result, stage };
+    return { result, stage, credits };
   };
+
+  // Fan-out cap: one request can't grow without bound through invoke batches
+  // nested inside invoke batches. Checked before anything else for nested calls.
+  if (nested) {
+    const fanout = meta.fanout!;
+    fanout.count += 1;
+    if ((meta.depth ?? 0) > FANOUT.maxDepth) {
+      return finish("fanout", fail("FANOUT_LIMIT", `Calls may nest at most ${FANOUT.maxDepth} levels deep; '${name}' was not run. Flatten the request into one invoke batch.`));
+    }
+    if (fanout.count > FANOUT.maxNested) {
+      return finish("fanout", fail("FANOUT_LIMIT", `One request may run at most ${FANOUT.maxNested} operations; '${name}' was not run. Split the work into several requests.`));
+    }
+  }
+
+  // Credits: only the top-level call pays, before anything runs, so a
+  // composite can never run out halfway through its writes.
+  const meter = nested ? undefined : creditsPort();
+  if (meter) {
+    const admission = await meter.admit({ operation: name, op, args, actor, meta });
+    if (!admission.admitted) {
+      const c = admission.credits;
+      return finish("credits", { ...fail("INSUFFICIENT_CREDITS", c.hint ?? "Out of credits; retry later."), credits: c }, c);
+    }
+    settleCredits = admission.finish;
+  }
 
   if (!op) return finish("lookup", fail(codes.unknown, `No operation named '${name}'.`));
   if (!roleSatisfies(actor.role, op.roles)) {
@@ -126,11 +206,17 @@ export async function executeDetailed(
   }
   const parsed = inputObject(op.inputSchema).safeParse(args);
   if (!parsed.success) return finish("input", fail(codes.invalid, formatIssues(parsed.error.issues)));
+  const deadlineMs = op.deadlineMs ?? defaultDeadlineMs();
   try {
-    const result = (await op.handler(parsed.data, callCtx)) as Result<unknown>;
+    const result = (await withDeadline(op.handler(parsed.data, callCtx), deadlineMs)) as Result<unknown>;
     if (result.success) checkOutput(op.name, op.outputSchema, result.data);
     return finish("handler", result);
   } catch (err) {
+    if (err instanceof DeadlineExceeded) {
+      // The handler may still finish in the background; the caller is told it
+      // didn't complete in time, and the time is charged either way.
+      return finish("handler", fail("HANDLER_TIMEOUT", `'${name}' did not finish within ${Math.round(deadlineMs / 1000)} s. Check whether it took effect before retrying.`));
+    }
     return finish("handler", fail("HANDLER_ERROR", String(err)));
   }
 }

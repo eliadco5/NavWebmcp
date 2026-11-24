@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 1.3.0
+version: 1.4.0
 protocol: ">=1.0.0 <2.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -255,7 +255,36 @@ Over MCP, they act on the user's own open browser tab through a relay:
 The user can change the same component while you work. Pass the `version` you read as
 `expectedVersion` so you don't overwrite their change.
 
-## 12. Error codes and how to react
+## 12. Credits and pacing (≥ 1.4.0)
+
+The server meters every top-level call with credits, the way SMB does. You don't have to
+track anything: the server does the accounting and tells you when to change course.
+
+- **What a call costs.** A fixed per-request cost, plus the operation's weight (read 1,
+  write 2, composites the number of operations they run), plus size (large arguments or
+  results), plus run time (each full second a call runs). Nested calls inside `invoke` or
+  a composite are paid for by the top-level call.
+- **How credits come back.** Each response hands credits back, usually what the call
+  cost. A slow trickle also refills over time. Under heavy server load the server hands
+  back less, and a long or expensive call shrinks how many credits you may hold.
+- **The hint.** When you should change what you're doing, the result carries
+  `credits: { balance, window, charged, granted, retryAfterMs?, heldMs?, hint }`. On MCP
+  you also get a short `[credits] …` text block. Follow the `hint`: it says how long to
+  wait or how to make the work cheaper. A result without `credits` means carry on.
+- **Getting cheaper.** One `invoke({ calls: [...] })` batch pays the per-request cost
+  once. N separate calls pay it N times. Prefer composites. Don't fire a long run of calls
+  in parallel.
+- **Backpressure.** If you're slightly short, the server may hold your call briefly and
+  then run it, reporting `heldMs`. Treat that as "slow down".
+- **Refusal.** `INSUFFICIENT_CREDITS` means nothing ran. Wait `retryAfterMs` (HTTP also
+  sends `Retry-After`), then retry. Don't retry in a tight loop.
+- **Planning ahead.** `getContext()` returns your current `credits` snapshot.
+- **Optional, for protocol-aware clients.** On MCP, `_meta["navwebmcp/credits"]` carries
+  the state on every result. Send `_meta["navwebmcp/credits"] = { request: n }` to ask for
+  more credits back. Over HTTP, use the `X-NavWebMcp-Credits-*` and
+  `X-NavWebMcp-Credit-Request` headers.
+
+## 13. Error codes and how to react
 
 | Code | Meaning | React |
 |---|---|---|
@@ -268,6 +297,9 @@ The user can change the same component while you work. Pass the `version` you re
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
 | `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
 | `HANDLER_ERROR` | Unhandled server-side failure | Transient or a bug. Retry at most once. |
+| `HANDLER_TIMEOUT` | The operation didn't finish within the server's deadline (≥ 1.4.0) | It may still have taken effect. Read back before retrying a write. |
+| `INSUFFICIENT_CREDITS` | Out of credits; the call didn't run (≥ 1.4.0) | Wait `retryAfterMs`, then retry. Follow `credits.hint`. |
+| `FANOUT_LIMIT` | The request nested too deep or ran too many operations (≥ 1.4.0) | Flatten nested `invoke`s into one batch, or split the work. |
 | `UI_COMPONENT_NOT_FOUND` | No mounted component with that id (≥ 1.3.0) | It's probably on another tab. Set `app.nav`, then `ui_list`. |
 | `UI_INVALID_PATCH` | The merged state doesn't match the component's `stateSchema` | Fix the patch against `stateSchema`, retry once. |
 | `UI_STALE_STATE` | `expectedVersion` is out of date because the user changed it | `ui_get_state`, then decide again. |
@@ -278,7 +310,7 @@ The user can change the same component while you work. Pass the `version` you re
 Servers may define additional domain-specific error codes beyond this protocol-level set.
 Read the `message` field for those — don't blind-retry a code you don't recognize.
 
-## 13. Anti-patterns
+## 14. Anti-patterns
 
 - Reading `tools/list` and guessing operation names from it, instead of using `explore`/`search`.
 - Calling `explore()` on the whole tree when you already know the keyword — use `search()`.
@@ -293,7 +325,7 @@ Read the `message` field for those — don't blind-retry a code you don't recogn
   screen. Use `ui_set_state` instead.
 - Asking the user to confirm a `ui_*` change. It is view-only.
 
-## 14. Installing this skill
+## 15. Installing this skill
 
 Copy this directory into your own agent's skills location:
 

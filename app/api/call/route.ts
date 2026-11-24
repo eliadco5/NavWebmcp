@@ -13,13 +13,31 @@ import "@/lib/audit";
 import "@/lib/telemetry";
 // ...and the management service behind the admin.* operations (lib/management/port.ts).
 import "@/lib/management/service";
+// ...and credit metering for every top-level call (lib/credits/port.ts).
+import "@/lib/credits";
 import type { Actor } from "@/lib/operations/types";
-import { AGENT_HEADER, CHANNEL_HEADER } from "@/lib/constants";
+import type { CreditInfo } from "@/lib/result";
+import { AGENT_HEADER, CHANNEL_HEADER, CREDIT_HEADERS } from "@/lib/constants";
+import { readJsonCapped } from "@/lib/http-limits";
 
 export const dynamic = "force-dynamic";
 
 
-const STATUS: Partial<Record<ExecuteStage, number>> = { lookup: 404, rbac: 403 };
+const STATUS: Partial<Record<ExecuteStage, number>> = { lookup: 404, rbac: 403, credits: 429 };
+
+/** NavWebMcp credits over HTTP (docs/credits.md): always as headers; in the
+ *  body only when the Result carries a hint. */
+function creditHeaders(c: CreditInfo | undefined): Record<string, string> {
+  if (!c) return {};
+  const h: Record<string, string> = {
+    [CREDIT_HEADERS.balance]: String(c.balance),
+    [CREDIT_HEADERS.window]: String(c.window),
+    [CREDIT_HEADERS.charged]: String(c.charged),
+    [CREDIT_HEADERS.granted]: String(c.granted),
+  };
+  if (c.retryAfterMs !== undefined) h["Retry-After"] = String(Math.max(1, Math.ceil(c.retryAfterMs / 1000)));
+  return h;
+}
 
 export const POST = withSharedState(async function POST(req: NextRequest) {
   const cookieStore = await cookies();
@@ -31,7 +49,9 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
     );
   }
 
-  const { name, params } = await req.json();
+  const body = await readJsonCapped(req);
+  if (body instanceof Response) return body;
+  const { name, params } = (body ?? {}) as { name?: unknown; params?: unknown };
 
   const isAgent = req.headers.get(CHANNEL_HEADER) === "webmcp";
   // Client-supplied: cap it so it can't bloat audit entries.
@@ -48,14 +68,20 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
       }
     : { type: "human", userId: user.id, role: user.role, assurance: "asserted", sessionId: sid };
 
-  const { result, stage } = await executeDetailed(
-    name,
-    params ?? {},
-    { userId: user.id, role: user.role, token: "", actor, meta: requestMeta(isAgent ? "webmcp" : "ui", req.headers) },
+  const requested = Number(req.headers.get(CREDIT_HEADERS.request));
+  const meta = {
+    ...requestMeta(isAgent ? "webmcp" : "ui", req.headers),
+    ...(req.headers.has(CREDIT_HEADERS.request) && Number.isFinite(requested) && requested >= 0 && { creditRequest: Math.min(requested, 1024) }),
+  };
+
+  const { result, stage, credits } = await executeDetailed(
+    typeof name === "string" ? name : "",
+    params && typeof params === "object" ? (params as Record<string, unknown>) : {},
+    { userId: user.id, role: user.role, token: "", actor, meta },
     { codes: SURFACE_CODES }
   );
 
   // Only gate failures change the HTTP status, as before; a handler's own
   // NOT_FOUND (e.g. unknown reservation id) is a normal 200 Result.
-  return Response.json(result, { status: STATUS[stage] ?? 200 });
+  return Response.json(result, { status: STATUS[stage] ?? 200, headers: creditHeaders(credits) });
 });

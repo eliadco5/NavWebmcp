@@ -26,6 +26,21 @@ describe.skipIf(!URL)('against a real Redis', () => {
     delete process.env.VERCEL_ENV
   })
 
+  it('credits: concurrent ledger updates never lose a write (CAS)', async () => {
+    const { updateLedger, getLedger, freshLedger } = await import('@/lib/credits/ledger')
+    const { profile } = await import('@/lib/credits/policy')
+    const p = profile('agent')
+    // Fewer than the CAS retry budget would ever need to fall back in-process.
+    await Promise.all(Array.from({ length: 4 }, () =>
+      updateLedger('a:live', (cur) => {
+        const l = cur ?? freshLedger(p, Date.now())
+        return { next: { ...l, calls: l.calls + 1 }, value: null }
+      })))
+    const { ledger } = await getLedger('a:live')
+    expect(ledger?.calls).toBe(4)
+    expect(ledger?.v).toBe(4)
+  })
+
   it('audit: concurrent appends form one verifiable chain; tampering is detected', async () => {
     const store = await import('@/lib/audit/store')
     const body = (i: number) => ({

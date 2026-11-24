@@ -12,6 +12,7 @@ export const bookOp = defineOperation({
     "reserves it, and validates the booking. Prefer this over calling " +
     "searchAvailability + createReservation separately.",
   permission: "write",
+  credits: { weight: 4 }, // runs 4 operations (lib/core/book.ts)
   roles: ["customer", "support", "admin"],
   module: "reservation.booking",
   tags: ["booking"],

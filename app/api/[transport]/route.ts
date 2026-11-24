@@ -7,6 +7,7 @@ import { authenticateAgentToken, requestInfo } from "@/lib/management/auth";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { AGENT_INSTRUCTIONS } from "@/lib/agent-instructions";
 import { withSharedState } from "@/lib/shared-state";
+import { declaredTooLarge, readTextCapped } from "@/lib/http-limits";
 
 // mcp-handler needs the Node runtime (lib/adapters/mcp.ts uses AsyncLocalStorage
 // from async_hooks) — don't let this get inferred to edge.
@@ -79,8 +80,23 @@ const mcpHandlerWithRole = withMcpAuthRole(withSharedState(mcpHandler), getRole,
 // ".../api/mcp/.well-known/oauth-protected-resource". Omitting it lets mcp-handler
 // derive the origin from Vercel's own x-forwarded-host/x-forwarded-proto headers,
 // which is correct with zero config on every deployment (preview or production).
-const handler = withMcpAuth(mcpHandlerWithRole, verifyToken, {
+const authed = withMcpAuth(mcpHandlerWithRole, verifyToken, {
   required: true,
 });
+
+// Body cap before anything is parsed (lib/http-limits.ts). A declared
+// Content-Length is checked for free; without one, a clone is read up to the
+// cap — the original request goes on to the transport untouched.
+async function handler(req: Request): Promise<Response> {
+  if (req.method === "POST") {
+    const declared = declaredTooLarge(req);
+    if (declared) return declared;
+    if (!req.headers.has("content-length")) {
+      const probe = await readTextCapped(req.clone());
+      if (probe instanceof Response) return probe;
+    }
+  }
+  return authed(req);
+}
 
 export { handler as GET, handler as POST, handler as DELETE };

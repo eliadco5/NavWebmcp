@@ -376,3 +376,94 @@ export const revokeSession = defineOperation({
     return ok({ sessionId, revoked: r.revoked });
   },
 });
+
+// ── Credits (lib/credits, docs/credits.md) ───────────────────────────────────
+
+const CreditLedgerOut = () => z.object({
+  principal: z.string().describe("a:<clientId> for an agent client, h:<userId> for a person"),
+  kind: z.enum(["agent", "human"]),
+  id: z.string().describe("The agent client id or user id"),
+  balance: z.number().describe("Credits available now (negative = in debt after expensive calls)"),
+  outstanding: z.number().describe("Credits reserved by calls still running"),
+  window: z.number().describe("Most credits it may hold right now"),
+  maxWindow: z.number(),
+  refillPerSec: z.number(),
+  frozen: z.boolean().describe("Every call is refused"),
+  calls: z.number().int().describe("Metered calls since the ledger was created"),
+  spent: z.number().describe("Credits charged in total"),
+  refused: z.number().int().describe("Calls refused for lack of credits"),
+  lastAt: z.string().optional(),
+  override: z.object({
+    maxWindow: z.number().optional(),
+    refillPerSec: z.number().optional(),
+    frozen: z.boolean().optional(),
+    by: z.string().optional(),
+    at: z.string().optional(),
+  }).optional(),
+});
+
+export const getCreditLedgers = defineOperation({
+  name: "getCreditLedgers",
+  title: "Get Credit Ledgers",
+  description:
+    "Credit state of every metered caller — agent clients and people: balance, window, credits spent, calls " +
+    "refused, and any admin override. Use it to spot an agent hammering the server. Admin only.",
+  permission: "read",
+  roles: ["admin"],
+  module: "admin.access",
+  inputSchema: {
+    kind: z.enum(["agent", "human"]).optional().describe("Only agents, or only people"),
+    limit: z.number().int().min(1).max(200).optional().describe("Most rows returned (default 50), most recently active first"),
+  },
+  outputSchema: { count: z.number().int(), ledgers: z.array(CreditLedgerOut()) },
+  audit: { target: () => null },
+  async handler({ kind, limit }, _ctx) {
+    const s = svc();
+    if (!s) return UNAVAILABLE();
+    const all = await s.listCreditLedgers({ kind });
+    return ok(clean({ count: all.length, ledgers: all.slice(0, limit ?? 50) }) as never);
+  },
+});
+
+export const setClientCreditPolicy = defineOperation({
+  name: "setClientCreditPolicy",
+  title: "Set Client Credit Policy",
+  description:
+    "Change how one caller is metered: cap its window (maxWindow), change its refill rate (refillPerSec), " +
+    "freeze it (every call refused) or reset it to the defaults. Takes effect on its next call. Audited. " +
+    "Requires confirm: true. Admin only.",
+  permission: "write",
+  roles: ["admin"],
+  module: "admin.access",
+  requiresConfirmation: true,
+  inputSchema: {
+    kind: z.enum(["agent", "human"]).describe("agent = an agent client id; human = a user id"),
+    id: z.string().min(1).max(100).describe("Agent client id (from listAgentClients) or user id"),
+    maxWindow: z.number().int().min(1).max(4096).optional().describe("Most credits it may hold at once"),
+    refillPerSec: z.number().min(0).max(1000).optional().describe("Credits that trickle back per second"),
+    frozen: z.boolean().optional().describe("true refuses every call; false lifts that"),
+    reset: z.boolean().optional().describe("Drop the override: back to the defaults"),
+    confirm: z.boolean().describe("Must be true"),
+  },
+  outputSchema: {
+    principal: z.string(),
+    override: z.object({
+      maxWindow: z.number().optional(),
+      refillPerSec: z.number().optional(),
+      frozen: z.boolean().optional(),
+      by: z.string().optional(),
+      at: z.string().optional(),
+    }).nullable().describe("The override now in force; null after a reset"),
+  },
+  audit: { target: (input) => ({ type: input.kind === "agent" ? "agentClient" : "user", id: String(input.id) }) },
+  async handler({ kind, id, maxWindow, refillPerSec, frozen, reset, confirm }, ctx) {
+    if (!confirm) return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to change this caller's credit policy.");
+    if (!reset && maxWindow === undefined && refillPerSec === undefined && frozen === undefined) {
+      return fail("INVALID_ARGS", "Give at least one of maxWindow, refillPerSec, frozen or reset.");
+    }
+    const s = svc();
+    if (!s) return UNAVAILABLE();
+    const override = await s.setCreditPolicy({ kind, id }, { maxWindow, refillPerSec, frozen, reset }, actorOf(ctx), revokeInfo(ctx));
+    return ok(clean({ principal: `${kind === "agent" ? "a" : "h"}:${id}`, override }) as never);
+  },
+});

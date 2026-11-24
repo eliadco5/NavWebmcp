@@ -14,6 +14,8 @@ export interface CallObservation {
   durationMs: number;
   /** Wall-clock start, ms since epoch. */
   startedAt: number;
+  /** Credits the call was charged (lib/credits); absent when not metered. */
+  credits?: number;
 }
 
 export type CallObserver = (o: CallObservation) => Promise<unknown>;

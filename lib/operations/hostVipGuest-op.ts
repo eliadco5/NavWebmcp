@@ -13,6 +13,7 @@ export const hostVipGuestOp = defineOperation({
     "calling getGuestPreferences + getLoyaltyStatus + getOccupancy + checkInGuest + " +
     "getCheckinStatus + addLoyaltyPoints + logCommunication separately.",
   permission: "write",
+  credits: { weight: 7 }, // runs 7 operations (lib/core/hostVipGuest.ts)
   roles: ["support", "admin"],
   module: "frontoffice.checkin",
   tags: ["checkin", "frontoffice", "crm"],

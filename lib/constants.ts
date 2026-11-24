@@ -17,6 +17,16 @@ export const AGENT_TOKEN_PREFIX = "ab1";
 export const CHANNEL_HEADER = "x-navwebmcp-channel";
 export const AGENT_HEADER = "x-navwebmcp-agent";
 
+// NavWebMcp credits over HTTP (docs/credits.md). `request` is the caller's
+// optional CreditRequest; the rest come back on every metered response.
+export const CREDIT_HEADERS = {
+  request: "x-navwebmcp-credit-request",
+  balance: "x-navwebmcp-credits-balance",
+  window: "x-navwebmcp-credits-window",
+  charged: "x-navwebmcp-credits-charged",
+  granted: "x-navwebmcp-credits-granted",
+} as const;
+
 // The three seeded demo users, by id. Used to auto-provision a session when none exists.
 export const DEMO_USER_IDS = ["u_alice", "u_carol", "u_bob"] as const;
 

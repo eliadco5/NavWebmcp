@@ -63,6 +63,8 @@ export const uiList = defineOperation({
   roles: [...ALL_ROLES],
   alwaysOn: true,
   runsInPage: true,
+  // Served over MCP by relaying to the user's tab and waiting for it (up to 8 s).
+  credits: { weight: 2 },
   tags: ["ui"],
   inputSchema: {
     kind: z.enum(UI_KINDS).optional().describe("Only components of this kind"),
@@ -97,6 +99,8 @@ export const uiGetState = defineOperation({
   roles: [...ALL_ROLES],
   alwaysOn: true,
   runsInPage: true,
+  // Served over MCP by relaying to the user's tab and waiting for it (up to 8 s).
+  credits: { weight: 2 },
   tags: ["ui"],
   inputSchema: {
     componentId: ComponentId().describe("Component id from ui_list, e.g. tasks.table"),
@@ -134,6 +138,8 @@ export const uiSetState = defineOperation({
   roles: [...ALL_ROLES],
   alwaysOn: true,
   runsInPage: true,
+  // Served over MCP by relaying to the user's tab and waiting for it (up to 8 s).
+  credits: { weight: 3 },
   parallelSafe: false,
   tags: ["ui"],
   inputSchema: {
@@ -159,6 +165,8 @@ export const uiAction = defineOperation({
   roles: [...ALL_ROLES],
   alwaysOn: true,
   runsInPage: true,
+  // Served over MCP by relaying to the user's tab and waiting for it (up to 8 s).
+  credits: { weight: 3 },
   parallelSafe: false,
   tags: ["ui"],
   inputSchema: {

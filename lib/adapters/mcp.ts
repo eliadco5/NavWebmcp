@@ -16,7 +16,8 @@ import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
 import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
-import { execute, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
+import { executeDetailed, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
+import type { CreditInfo } from "@/lib/result";
 import { noteAgentSoftware } from "@/lib/management/sessions";
 // Also turns on the SOC2 audit trail for every call execute() runs.
 import { auditOperation } from "@/lib/audit";
@@ -24,6 +25,8 @@ import { auditOperation } from "@/lib/audit";
 import { observeCall } from "@/lib/telemetry";
 // ...and the management service behind the admin.* operations.
 import "@/lib/management/service";
+// ...and credit metering for every top-level call (lib/credits/port.ts).
+import "@/lib/credits";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -37,8 +40,32 @@ export function mcpAnnotations(op: AnyOp) {
 }
 
 /** Every failure, whatever its origin, goes out as the same `{code, message}` shape. */
-function errorResult(error: { code: string; message: string }) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(error, null, 2) }], isError: true };
+function errorResult(error: { code: string; message: string }, credits?: CreditInfo, hinted = false) {
+  const content = [{ type: "text" as const, text: JSON.stringify(error, null, 2) }];
+  // A refusal's guidance is already its message; any other error gets the hint as its own block.
+  if (hinted && credits?.hint && error.code !== "INSUFFICIENT_CREDITS") content.push(hintBlock(credits));
+  return { content, isError: true, ...creditsMeta(credits) };
+}
+
+/** NavWebMcp credits on MCP (docs/credits.md): machine-readable state on every
+ *  metered result in `_meta`; the hint, when there is one, as a short text
+ *  block — the part a model reads. structuredContent is left untouched so it
+ *  still matches the tool's outputSchema. */
+export const CREDITS_META_KEY = "navwebmcp/credits";
+
+function creditsMeta(credits?: CreditInfo) {
+  return credits ? { _meta: { [CREDITS_META_KEY]: credits } } : {};
+}
+
+function hintBlock(credits: CreditInfo) {
+  return { type: "text" as const, text: `[credits] ${credits.hint}` };
+}
+
+/** The client's optional CreditRequest: params._meta["navwebmcp/credits"].request. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function creditRequestOf(extra: any): number | undefined {
+  const n = Number(extra?._meta?.[CREDITS_META_KEY]?.request);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 1024) : undefined;
 }
 
 interface McpContext {
@@ -123,7 +150,7 @@ export function registerMcpTools(server: McpServer) {
         try {
           const userId: string | undefined = extra?.authInfo?.extra?.userId;
           const role: Role | undefined = extra?.authInfo?.extra?.role;
-          const meta = mcpRequestMeta(extra);
+          const meta: CallMeta = { ...mcpRequestMeta(extra), creditRequest: creditRequestOf(extra) };
 
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
@@ -165,18 +192,22 @@ export function registerMcpTools(server: McpServer) {
           const bearerToken: string = extra?.authInfo?.token ?? "";
           // execute() re-checks the role on every call (defense-in-depth on
           // top of the registration-time gate above) and audits the outcome.
-          const result = await execute(
+          const { result, credits } = await executeDetailed(
             op.name,
             input,
             { userId, role, token: bearerToken, actor, meta },
             { codes: SURFACE_CODES }
           );
-          if (!result.success) return errorResult(result.error);
+          const hinted = Boolean(result.credits?.hint);
+          if (!result.success) return errorResult(result.error, credits, hinted);
           // The text block is kept for clients that predate structuredContent
           // (and for scripts/bench.mjs, which parses content[0].text).
+          const content = [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }];
+          if (hinted && credits) content.push(hintBlock(credits));
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }],
+            content,
             structuredContent: result.data as Record<string, unknown>,
+            ...creditsMeta(credits),
           };
         } finally {
           await flushCurrentSharedState();

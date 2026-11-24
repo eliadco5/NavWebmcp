@@ -29,6 +29,11 @@ const SINGLETON_KEYS = [
   "__auditRecorder",
   "__metrics",
   "__telemetryObserver",
+  "__creditsPort",
+  "__creditLedgers",
+  "__creditsHeld",
+  "__creditsInFlight",
+  "__loginAttempts",
 ] as const;
 
 beforeEach(() => {

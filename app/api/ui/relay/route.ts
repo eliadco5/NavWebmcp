@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticateSession } from "@/lib/management/auth";
 import { TabRef } from "@/lib/ui-components/contract";
 import { claimCommands, putResult } from "@/lib/ui-relay/store";
+import { readJsonCapped } from "@/lib/http-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,9 @@ export async function POST(req: Request) {
   if (!user) {
     return Response.json({ success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } }, { status: 401 });
   }
-  const parsed = Body.safeParse(await req.json().catch(() => undefined));
+  const body = await readJsonCapped(req);
+  if (body instanceof Response) return body;
+  const parsed = Body.safeParse(body);
   if (!parsed.success) {
     return Response.json({ success: false, error: { code: "INVALID_INPUT", message: parsed.error.issues.map((i) => i.message).join("; ") } }, { status: 400 });
   }
