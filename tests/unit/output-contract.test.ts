@@ -237,7 +237,8 @@ describe('success data matches outputSchema exactly', () => {
 
         const op = registry.find((o) => o.name === name)
         const wire = JSON.parse(JSON.stringify(result.data))
-        const parsed = schema.outputObject(op.outputSchema).safeParse(wire)
+        // openOutput ops (invoke) relay another op's data, which that op's own case checks.
+        const parsed = schema.outputObject(op.outputSchema, op.openOutput).safeParse(wire)
         expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
         // Zod strips undeclared keys, so any difference here is a field the schema doesn't declare.
         expect(parsed.data).toEqual(wire)

@@ -90,6 +90,42 @@ describe("computeCapabilityHash", () => {
     const changed: Operation = { ...base, outputSchema: { a: z.string(), b: z.number() } };
     expect(computeCapabilityHash([base])).not.toBe(computeCapabilityHash([changed]));
   });
+
+  // Same key names, different contract: the old key-name-only fingerprint missed all of these.
+  it("changing a field's type, required-ness, enum values or confirmation flag changes the hash", async () => {
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
+    const { z } = await import("zod");
+    const base: Operation = {
+      name: "opD",
+      title: "D",
+      description: "d",
+      inputSchema: { n: z.string(), mode: z.enum(["a", "b"]) },
+      outputSchema: { ok: z.boolean() },
+      permission: "write",
+      roles: ["customer"],
+      handler: async () => ({ success: true, data: { ok: true } }),
+    };
+    const h = computeCapabilityHash([base]);
+    const variants: Operation[] = [
+      { ...base, inputSchema: { n: z.number(), mode: z.enum(["a", "b"]) } },
+      { ...base, inputSchema: { n: z.string().optional(), mode: z.enum(["a", "b"]) } },
+      { ...base, inputSchema: { n: z.string(), mode: z.enum(["a", "b", "c"]) } },
+      { ...base, outputSchema: { ok: z.literal(true) } },
+      { ...base, requiresConfirmation: true },
+    ];
+    for (const v of variants) expect(computeCapabilityHash([v])).not.toBe(h);
+  });
+
+  it("key order inside a schema does not change the hash", async () => {
+    const { computeCapabilityHash } = await import("@/lib/capabilities");
+    const { z } = await import("zod");
+    const mk = (shape: Record<string, import("zod").ZodTypeAny>): Operation => ({
+      name: "opE", title: "E", description: "e", inputSchema: shape, outputSchema: {},
+      permission: "read", roles: ["customer"], handler: async () => ({ success: true, data: {} }),
+    });
+    expect(computeCapabilityHash([mk({ a: z.string(), b: z.number() })]))
+      .toBe(computeCapabilityHash([mk({ b: z.number(), a: z.string() })]));
+  });
 });
 
 describe("visibleOps", () => {

@@ -1,7 +1,7 @@
 ---
 name: navwebmcp-agent
-version: 1.4.0
-protocol: ">=1.0.0 <2.0.0"
+version: 2.0.0
+protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
   exposing progressive tool disclosure — the always-on meta operations explore,
@@ -9,7 +9,7 @@ description: >
   getCapabilities — or when tools/list returns far fewer tools than the server
   claims. Covers the connect handshake, capability caching, discovery, sequential
   vs parallel vs bulk invocation, stateless invoke vs load_tools promotion,
-  gather-first/ask-once, composite operations, the double-envelope result shape,
+  gather-first/ask-once, composite operations, the result and error shapes,
   operating on-screen UI components (ui_list, ui_get_state, ui_set_state,
   ui_action — filters, sort, tabs), and error handling. Consumer side only — not
   for building a server.
@@ -17,8 +17,9 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 1.x · skill revision 1.0.0. This document is valid for any server whose
-`protocolVersion` satisfies `>=1.0.0 <2.0.0`. If the server reports a version outside
+NavWebMcp 2.x · skill revision 2.0.0. This document is valid for any server whose
+`protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
+the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
 the protocol may have changed shape.
 
@@ -40,11 +41,13 @@ NavWebMcp server, in any language, behaves as described here.
 On connect, before asking the user anything, call these two operations **in parallel**:
 
 ```json
-getContext()        // → { authenticated, ...caller identity fields }
+getContext()        // → { authenticated, user, role, now, today, timezone, credits?, ... }
 getCapabilities()   // → { protocolVersion, capabilityHash, count, tools: [...] }
 ```
 
-`getContext` answers *who is this?*; `getCapabilities` answers *what may they do?* — every
+`getContext` answers *who is this, and what day is it?* Resolve relative dates
+("tomorrow", "next Friday") against its `today` and `timezone`, never against your own
+clock, which may be in another timezone or simply wrong. `getCapabilities` answers *what may they do?* — every
 operation visible to the caller, with `permission` and `requiresConfirmation`, and no input
 schemas yet (cheap). Together they let you rule out unauthorized operations before fetching
 a single schema. If the surface supports batching (see §5), issue both as one bulk call.
@@ -94,7 +97,7 @@ protocol features, not just syntax variants:
 
 | Mode | Shape | Semantics |
 |---|---|---|
-| **Single** | `invoke({ name, args })` | One operation, stateless. Result is the inner `Result` wrapped once (see §8). |
+| **Single** | `invoke({ name, args })` | One operation, stateless. Returns exactly the operation's own `Result` (see §8). |
 | **Bulk / parallel** | `invoke({ calls: [{ name, args }, …] })` | The server partitions by parallel-safety: safe calls run concurrently, the rest run **in order**. Results are **re-indexed to input order**, so positional mapping onto your original call list is always safe. |
 | **Sequential (forced)** | Separate `invoke` calls, or `parallelSafe: false` per call | Use when call N's arguments depend on call N-1's result. A single bulk call cannot thread an output into a later input — you must make the first call, read its result, then issue the second. |
 | **Parallel (forced)** | `parallelSafe: true` per call | Override the default for a write operation you know to be independent of the others in the same batch. |
@@ -159,20 +162,20 @@ Every operation result follows one shape:
 
 ```json
 { "success": true, "data": <result> }
-{ "success": false, "error": { "code": "...", "message": "..." } }
+{ "success": false, "error": { "code": "...", "message": "...", "retryable": false, ... } }
 ```
 
-**The double-envelope trap:** `invoke`'s outer result only tells you the call *dispatched*.
-A failed operation still dispatches successfully, so you get:
+A single `invoke` returns the operation's own result, with no extra wrapping (≥ 2.0.0):
 
 ```json
 invoke({ "name": "someOp", "args": { "badField": true } })
-// → { "success": true, "data": { "success": false, "error": { "code": "INVALID_ARGS", ... } } }
+// → { "success": false, "error": { "code": "INVALID_INPUT", "retryable": false,
+//      "details": [{ "path": "", "message": "Unrecognized key(s) in object: 'badField'" }], ... } }
 ```
 
-Always check the **inner** `success`, not just the outer one. The bulk form nests one
-level further: `{ success: true, data: { results: [ <inner Result>, ... ] } }` — check
-each element of `results` individually.
+The bulk form returns one result per call: `{ success: true, data: { results: [ <Result>, ... ] } }`.
+The outer `success` only says the batch ran, so check each element of `results`
+individually.
 
 A promoted native tool (via `load_tools`) called directly through the host's tool-call
 mechanism, rather than through `invoke`, typically returns its `data` unwrapped on success
@@ -185,7 +188,7 @@ the same `data` as the JSON text block, already parsed and matching the tool's
 `outputSchema`. Prefer it over re-parsing the text.
 
 Input is validated strictly (≥ 1.1.0): an unknown or misspelt parameter fails with
-`INVALID_INPUT` / `INVALID_ARGS` rather than being silently ignored. Copy parameter names
+`INVALID_INPUT` rather than being silently ignored. Copy parameter names
 from the input schema exactly.
 
 ## 9. Gather-first, ask-once
@@ -291,17 +294,37 @@ track anything: the server does the accounting and tells you when to change cour
 
 ## 13. Error codes and how to react
 
+Every error has the same shape (≥ 2.0.0):
+
+```json
+{ "code": "INVALID_INPUT", "message": "date: Must be YYYY-MM-DD",
+  "retryable": false,
+  "details": [{ "path": "date", "message": "Must be YYYY-MM-DD" }],
+  "hint": "Fix the fields in details, then retry once.",
+  "requestId": "4f1c…", "callId": "9b2e…" }
+```
+
+- `retryable`: re-send the identical call only when this is `true`. Otherwise something
+  has to change first (the arguments, the user's approval, or the state). For
+  `INSUFFICIENT_CREDITS` it is `true`, but wait `credits.retryAfterMs` first.
+- `details`: one entry per bad field. Fix exactly those fields; no need to re-read the schema.
+- `hint`: the server's one-line next step. It takes precedence over the generic advice below.
+- `suggestions`: on `UNKNOWN_TOOL`, near-miss names your role can call. Try them before `search()`.
+- `requestId` / `callId`: quote them when reporting a problem. `callId` is the server's
+  audit entry for the call that failed, even when `invoke` relayed it.
+
 | Code | Meaning | React |
 |---|---|---|
 | `UNAUTHENTICATED` | Credentials missing or expired | Re-authenticate. Don't retry the same call as-is. |
 | `FORBIDDEN` | Caller's role can't access this operation | Stop — `getCapabilities` already told you this was off-limits. Don't retry. |
-| `INVALID_ARGS` / `INVALID_INPUT` | Arguments failed validation (two spellings of the same condition occur across different surfaces of some implementations) | `describe_tool(name)`, fix the arguments, retry once. |
-| `UNKNOWN_TOOL` | You called an operation name that doesn't exist | You likely guessed a name — use `search()` instead. |
+| `INVALID_INPUT` | Arguments failed validation | Fix the fields in `details` (`describe_tool(name)` if unsure), retry once. |
+| `UNKNOWN_TOOL` | You called an operation name that doesn't exist | You likely guessed a name. Check `suggestions`, else use `search()`. |
 | `NOT_FOUND` | A referenced entity or module path doesn't exist | Not retryable with the same identifier. |
 | `CONFIRMATION_REQUIRED` | A `confirm` parameter was omitted on a gated operation | Ask the user, re-call with `confirm: true`. |
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
 | `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
-| `HANDLER_ERROR` | Unhandled server-side failure | Transient or a bug. Retry at most once. |
+| `VALIDATION_FAILED` | A composite's write could not be confirmed afterwards | Read the current state before retrying, so you don't repeat a write that landed. |
+| `HANDLER_ERROR` | Unhandled server-side failure (`retryable: true`) | Transient or a bug. Retry at most once. |
 | `HANDLER_TIMEOUT` | The operation didn't finish within the server's deadline (≥ 1.4.0) | It may still have taken effect. Read back before retrying a write. |
 | `INSUFFICIENT_CREDITS` | Out of credits; the call didn't run (≥ 1.4.0) | Wait `retryAfterMs`, then retry. Follow `credits.hint`. |
 | `FANOUT_LIMIT` | The request nested too deep or ran too many operations (≥ 1.4.0) | Flatten nested `invoke`s into one batch, or split the work. |
@@ -322,7 +345,9 @@ Read the `message` field for those — don't blind-retry a code you don't recogn
 - Calling `describe_tool` once per name instead of passing an array.
 - Asking the user one question, waiting, then asking another.
 - Promoting an operation via `load_tools` for a single call.
-- Checking only the outer `success` and missing a failed inner result.
+- Checking only a batch's outer `success` and missing a failed entry in `results`.
+- Retrying a call whose error has `retryable: false` without changing anything.
+- Working out "today" or "tomorrow" from your own clock instead of `getContext`.
 - Sharing one cached capability manifest across two different credentials/roles.
 - Batching calls that have a data dependency into one bulk `invoke`.
 - Hand-orchestrating a multi-step sequence without first searching for a composite operation.

@@ -101,7 +101,7 @@ describe('unknown input keys are rejected, not silently dropped', () => {
     const r = await runOne('updateGuestPreferences', typo, adminCtx)
     expect(r.success).toBe(false)
     if (!r.success) {
-      expect(r.error.code).toBe('INVALID_ARGS')
+      expect(r.error.code).toBe('INVALID_INPUT')
       expect(r.error.message).toMatch(/specialNote/)
     }
   })

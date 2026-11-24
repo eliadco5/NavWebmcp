@@ -13,7 +13,9 @@ You are operating the AgentBridge Hospitality platform via the NavWebMcp protoco
 
 ## Connect once, in parallel
 On connect, before asking the user anything, call getContext() and getCapabilities()
-in parallel (batch via invoke({ calls: [...] }) if convenient). Cache the capabilities
+in parallel (batch via invoke({ calls: [...] }) if convenient). getContext returns the
+platform's today, now and timezone: resolve relative dates ("tomorrow", "tonight")
+against those, never against your own clock. Cache the capabilities
 manifest keyed on protocolVersion + capabilityHash: a changed capabilityHash means the
 tool list drifted (refresh it); a changed protocolVersion means the contract itself
 changed. capabilityHash is role-scoped — never reuse a cached manifest across tokens.
@@ -34,7 +36,7 @@ This prevents chatty back-and-forth: gather first, act once.
 - describe_tool(name) → full input and output schema before invoking. Accepts an array of names.
 
 ## Invocation
-- invoke({ name, args }) → call any function without loading it first (stateless, default choice).
+- invoke({ name, args }) → call any function without loading it first (stateless, default choice). Returns exactly what the function returns.
 - invoke({ calls: [{ name, args }, ...] }) → batch independent calls in one round-trip. Parallel-safe calls run concurrently; the rest run in order. Results are re-indexed to input order.
 - load_tools([names]) / unload_tools([names]) → promote a function to the native tool list only if you will call it 3+ more times this session; otherwise prefer invoke. Re-fetch tools/list after either call.
 - Prefer a composite tool over hand-orchestrating a multi-step CRUD sequence — search() for one before sequencing calls yourself.
@@ -48,7 +50,8 @@ Business operations return data to YOU; the screen does not change. When the use
 - ui_* ops change only the view, never business data: no user confirmation needed.
 
 ## Reading results
-- invoke wraps the inner result: a dispatched-but-failed call is { success: true, data: { success: false, error: {...} } }. Always check the inner success, not just the outer one.
+- A single invoke returns the function's own result: { success: true, data } or { success: false, error }. A batch returns { results }, one such result per call; check each.
+- Errors are { code, message, retryable, details?, hint?, suggestions?, requestId?, callId? }. Re-send the identical call only when retryable is true. Fix INVALID_INPUT from details; try UNKNOWN_TOOL's suggestions before searching. Follow hint when present.
 - A function's outputSchema (from describe_tool or tools/list) describes its success data. On MCP, read structuredContent when present; it is the same data as the text block.
 - Unknown parameters are rejected (INVALID_INPUT), not ignored: use the exact names from the input schema.
 - Write operations (permission: "write") require all parameters confirmed by the user before executing — except the view-only ui_* ops.
@@ -58,6 +61,6 @@ Business operations return data to YOU; the screen does not change. When the use
 Calls cost credits by type, size and run time; credits come back with each response and refill over time. explore, search, describe_tool and getCapabilities show each function's base cost as \`credits\`. When a result carries credits.hint (or a "[credits]" note), follow it before your next call. Batch independent reads with invoke({ calls }) — it costs less than separate calls.
 
 ## Error codes
-UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once) · HANDLER_TIMEOUT (check whether it took effect before retrying) · INSUFFICIENT_CREDITS (wait retryAfterMs, then retry) · FANOUT_LIMIT (flatten or split the request).
+UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_INPUT (fix the fields in details, retry once) · UNKNOWN_TOOL (try suggestions, else search) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once) · HANDLER_TIMEOUT (check whether it took effect before retrying) · INSUFFICIENT_CREDITS (wait retryAfterMs, then retry) · FANOUT_LIMIT (flatten or split the request).
 UI: UI_COMPONENT_NOT_FOUND (switch tabs via app.nav, ui_list) · UI_INVALID_PATCH (fix against stateSchema, retry once) · UI_STALE_STATE (ui_get_state, decide again) · UI_UNKNOWN_ACTION (use a listed action) · UI_NO_ACTIVE_PAGE (ask the user to open the app) · UI_TIMEOUT (ui_get_state to check).
 `.trim();

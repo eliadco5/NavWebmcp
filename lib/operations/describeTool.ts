@@ -3,13 +3,18 @@ import { defineOperation } from "./types";
 import { ok } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { getOpByName } from "./dispatch";
+import { suggestOpNames } from "./execute";
+import type { Role } from "./types";
 import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
 import { ShortText, DescribedToolSchema } from "./schemas";
 import { creditCost } from "@/lib/credits/policy";
 
-function describeOne(name: string, role: string): z.infer<typeof DescribedToolSchema> {
+function describeOne(name: string, role: Role): z.infer<typeof DescribedToolSchema> {
   const op = getOpByName().get(name);
-  if (!op) return { name, error: "UNKNOWN_TOOL", message: `No operation named '${name}'.` };
+  if (!op) {
+    const suggestions = suggestOpNames(name, role);
+    return { name, error: "UNKNOWN_TOOL", message: `No operation named '${name}'.`, ...(suggestions.length > 0 ? { suggestions } : {}) };
+  }
   if (!roleSatisfies(role as never, op.roles)) return { name, error: "FORBIDDEN", message: `Role '${role}' cannot access '${name}'.` };
   return {
     name: op.name, title: op.title, description: op.description,
@@ -18,7 +23,7 @@ function describeOne(name: string, role: string): z.infer<typeof DescribedToolSc
     parallelSafe: op.parallelSafe ?? (op.permission === "read"),
     credits: creditCost(op),
     inputSchema: toJsonSchema(inputObject(op.inputSchema)),
-    outputSchema: toJsonSchema(outputObject(op.outputSchema)),
+    outputSchema: toJsonSchema(outputObject(op.outputSchema, op.openOutput)),
   };
 }
 

@@ -459,7 +459,9 @@ export const setClientCreditPolicy = defineOperation({
   async handler({ kind, id, maxWindow, refillPerSec, frozen, reset, confirm }, ctx) {
     if (!confirm) return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to change this caller's credit policy.");
     if (!reset && maxWindow === undefined && refillPerSec === undefined && frozen === undefined) {
-      return fail("INVALID_ARGS", "Give at least one of maxWindow, refillPerSec, frozen or reset.");
+      return fail("INVALID_INPUT", "Give at least one of maxWindow, refillPerSec, frozen or reset.", {
+        details: [{ path: "", message: "One of maxWindow, refillPerSec, frozen or reset is required" }],
+      });
     }
     const s = svc();
     if (!s) return UNAVAILABLE();

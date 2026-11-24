@@ -197,7 +197,7 @@ describe('Flow C — invoke("book") dispatch', () => {
       customerCtx
     )
     expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)
   })
@@ -234,31 +234,31 @@ describe('Flow C — invoke("book") dispatch', () => {
       { name: 'book', args: { date, time: slot.time, partySize: 2, name: 'Customer' } },
       customerCtx
     )
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
   })
 
-  it('invoke("book") with bad date format returns INVALID_ARGS', async () => {
+  it('invoke("book") with bad date format returns INVALID_INPUT', async () => {
     const result = await invoke.handler(
       { name: 'book', args: { date: 'not-a-date', time: '18:00', partySize: 2, name: 'Alice' } },
       customerCtx
     )
-    expect(result.success).toBe(true)  // invoke itself succeeds
-    const inner = result.data as any
+    // Protocol ≥ 2.0.0: a failed op fails invoke itself — no outer success to check.
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
-  it('invoke("book") with partySize 0 returns INVALID_ARGS', async () => {
+  it('invoke("book") with partySize 0 returns INVALID_INPUT', async () => {
     const found = await pickSlot(1)
     const { date, slot } = found!
     const result = await invoke.handler(
       { name: 'book', args: { date, time: slot.time, partySize: 0, name: 'Alice' } },
       customerCtx
     )
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 })
 
@@ -332,7 +332,7 @@ describe('Flow D — same store, same result regardless of call path', () => {
       { name: 'book', args: { date, time: slot.time, partySize: 2, name: 'Rebook' } },
       adminCtx
     )
-    const inner = rebook.data as any
+    const inner = rebook as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
   })
 })

@@ -56,7 +56,9 @@ export const getWeeklyRevenueSummary = defineOperation({
   async handler({ weekStartDate }, _ctx) {
     const start = new Date(weekStartDate);
     if (isNaN(start.getTime())) {
-      return fail("INVALID_DATE", "weekStartDate must be a valid YYYY-MM-DD date");
+      return fail("INVALID_INPUT", "weekStartDate: must be a real calendar date (YYYY-MM-DD)", {
+        details: [{ path: "weekStartDate", message: "Must be a real calendar date (YYYY-MM-DD)" }],
+      });
     }
 
     const days: string[] = [];

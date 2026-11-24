@@ -3,6 +3,7 @@ import { getModelContext } from "./webmcp-polyfill";
 import type { ModelContextLike, ToolAnnotations } from "./webmcp-polyfill";
 import { inputObject, envelopeSchema, outputObject, toJsonSchema } from "./schema";
 import { auditLog } from "./auditlog";
+import { fail, invalidInput } from "./result";
 import type { OperationContext } from "./operations/types";
 import type { Role } from "./auth";
 import { roleSatisfies } from "./auth";
@@ -20,6 +21,8 @@ export interface AgentBridgeRegistration {
   requiresConfirmation?: boolean;
   untrustedOutput?: boolean;
   dispatchesOps?: boolean;
+  /** See Operation.openOutput. */
+  openOutput?: boolean;
   tags?: string[];
   /** `signal` aborts when the WebMCP caller cancels the execution. */
   handler: (input: Record<string, unknown>, ctx: OperationContext, options?: { signal?: AbortSignal }) => Promise<unknown>;
@@ -97,7 +100,7 @@ export class AgentBridge {
       title: reg.title,
       description: reg.description,
       inputSchema: toJsonSchema(inputObject(reg.inputSchema)),
-      ...(reg.outputSchema && { outputSchema: toJsonSchema(envelopeSchema(reg.outputSchema)) }),
+      ...(reg.outputSchema && { outputSchema: toJsonSchema(envelopeSchema(reg.outputSchema, reg.openOutput)) }),
       annotations: webmcpAnnotations(reg),
       execute: async (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
         return this.call(reg.name, input, { signal: options?.signal });
@@ -122,17 +125,11 @@ export class AgentBridge {
     const userId = this.getUserId();
     const role = this.getUserRole();
     if (!userId || !role) {
-      return {
-        success: false,
-        error: { code: "UNAUTHENTICATED", message: "A valid user token is required." },
-      };
+      return fail("UNAUTHENTICATED", "A valid user token is required.");
     }
 
     if (!roleSatisfies(role, reg.roles)) {
-      return {
-        success: false,
-        error: { code: "FORBIDDEN", message: `Role '${role}' is not permitted to call '${name}'.` },
-      };
+      return fail("FORBIDDEN", `Role '${role}' is not permitted to call '${name}'.`);
     }
 
     // Confirmation before validation, not after: some confirmation-requiring ops
@@ -155,9 +152,9 @@ export class AgentBridge {
       if (!selfDeclared) {
         const approved = await this.confirmationHandler(name, input);
         if (!approved) {
-          const denial = { code: "CONFIRMATION_DENIED", message: "User denied the action." };
-          auditLog.record(name, input, false, "ui", denial);
-          return { success: false, error: denial };
+          const denial = fail("CONFIRMATION_DENIED", "User denied the action.");
+          auditLog.record(name, input, false, "ui", denial.error);
+          return denial;
         }
         // Only inject the field where the schema declares it; strict input
         // validation below would reject it anywhere else.
@@ -167,19 +164,13 @@ export class AgentBridge {
 
     const parsed = inputObject(reg.inputSchema).safeParse(confirmedInput);
     if (!parsed.success) {
-      return {
-        success: false,
-        error: {
-          code: "INVALID_INPUT",
-          message: parsed.error.issues.map((i) => i.message).join("; "),
-        },
-      };
+      return invalidInput(parsed.error.issues);
     }
 
     // The caller may have cancelled while the confirmation dialog was open; a
     // cancelled execution must not reach the server afterwards.
     if (signal?.aborted) {
-      return { success: false, error: { code: "CANCELLED", message: "The caller cancelled this call." } };
+      return fail("CANCELLED", "The caller cancelled this call.");
     }
 
     const ctx: OperationContext = { userId, role, token: "" };
@@ -210,7 +201,7 @@ export class AgentBridge {
         tags: r.tags ?? [],
         requiresConfirmation: r.requiresConfirmation ?? false,
         inputSchema: toJsonSchema(inputObject(r.inputSchema)),
-        ...(r.outputSchema && { outputSchema: toJsonSchema(outputObject(r.outputSchema)) }),
+        ...(r.outputSchema && { outputSchema: toJsonSchema(outputObject(r.outputSchema, r.openOutput)) }),
       })),
     };
   }

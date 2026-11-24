@@ -157,7 +157,8 @@ describe('seatGuestOp in registry', () => {
     const { explore } = await import('@/lib/operations/explore')
     const result = await explore.handler({ path: 'frontoffice.checkin' }, supportCtx)
     expect(result.success).toBe(true)
-    const names = result.data.functions.map((f: { name: string }) => f.name)
+    if (!result.success) throw new Error(result.error.message)
+    const names = result.data.functions!.map((f: { name: string }) => f.name)
     expect(names).toContain('seatGuest')
   })
 
@@ -165,7 +166,8 @@ describe('seatGuestOp in registry', () => {
     const { search } = await import('@/lib/operations/search')
     const result = await search.handler({ pattern: 'seatGuest' }, supportCtx)
     expect(result.success).toBe(true)
-    const names = result.data.functions.map((f: { name: string }) => f.name)
+    if (!result.success) throw new Error(result.error.message)
+    const names = result.data.functions!.map((f: { name: string }) => f.name)
     expect(names).toContain('seatGuest')
   })
 
@@ -173,7 +175,8 @@ describe('seatGuestOp in registry', () => {
     const { describeTool } = await import('@/lib/operations/describeTool')
     const result = await describeTool.handler({ name: 'seatGuest' }, supportCtx)
     expect(result.success).toBe(true)
-    const schema = result.data.inputSchema
+    if (!result.success) throw new Error(result.error.message)
+    const schema = result.data.inputSchema!
     expect(schema.properties).toHaveProperty('reservationId')
     expect(schema.properties).toHaveProperty('tableId')
   })
@@ -185,7 +188,8 @@ describe('seatGuestOp in registry', () => {
       adminCtx
     )
     expect(result.success).toBe(true)
-    const inner = result.data as { success: boolean; data: { validated: boolean } }
+    if (!result.success) throw new Error(result.error.message)
+    const inner = result as { success: boolean; data: { validated: boolean } }  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)
   })

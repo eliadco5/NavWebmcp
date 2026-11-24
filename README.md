@@ -198,10 +198,10 @@ sequenceDiagram
 
     par Preflight — identity and permission scope
         Agent->>Platform: getContext()
-        Platform-->>Agent: { user: { id, displayName }, authenticated: true, page: "booking" }
+        Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "1.0.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "2.0.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -238,7 +238,7 @@ When an agent connects to the MCP HTTP endpoint, `tools/list` returns **only the
 
 | Tool | Role | What it returns |
 |---|---|---|
-| `getContext` | **Preflight** | Who the user is: `{ page, authenticated, locale, user: { id, displayName } }` |
+| `getContext` | **Preflight** | Who the user is and what day it is: `{ user: { id, displayName }, role, now, today, timezone, locale, authenticated, page, credits? }` |
 | `getCapabilities` | **Preflight** | What their role allows: `{ protocolVersion, capabilityHash, tools: [{ name, permission, requiresConfirmation }] }` |
 | `explore` | Discovery | Module tree navigation by dot-path |
 | `search` | Discovery | Find operations by Linux-style glob |
@@ -249,7 +249,7 @@ When an agent connects to the MCP HTTP endpoint, `tools/list` returns **only the
 
 **The agent should call `getContext` and `getCapabilities` in parallel immediately after connecting.** This is the preflight:
 
-- `getContext` answers *who is this user?* — identity, current page, locale. The agent can personalise its behaviour and skip domains the user won't need.
+- `getContext` answers *who is this user, and what day is it?* — identity, role, locale, and the platform's `now` / `today` / `timezone`. The agent resolves "tomorrow" against the platform clock rather than its own, and can skip domains the user won't need.
 - `getCapabilities` answers *what is this role allowed to do?* — the full tool list scoped to the caller's role, including which operations require explicit confirmation. The agent can rule out unauthorised tools without fetching their schemas first.
 
 With this information in hand before any `explore` call, the agent can identify every relevant operation, fetch only the schemas it needs, aggregate all required parameters in one pass, and ask the user a **single consolidated question** rather than sequential one-at-a-time prompts.
@@ -332,6 +332,21 @@ invoke({
 })
 // → { "results": [ <availability>, <reservations> ] }  — one round-trip, two results
 ```
+
+A single `invoke` returns exactly the operation's own result, `{ success: true, data }` or
+`{ success: false, error }`, with no second envelope (protocol ≥ 2.0.0). Every error has
+the same shape on every surface, so an agent can act on it without parsing prose:
+
+```json
+{ "code": "UNKNOWN_TOOL", "message": "No operation named 'searchAvailabilty'.",
+  "retryable": false, "suggestions": ["searchAvailability"],
+  "hint": "No operation has this name. Try suggestions, else use search(); don't guess.",
+  "requestId": "4f1c2a9e-…", "callId": "9b2e71d0-…" }
+```
+
+`retryable` says whether re-sending the identical call can help. `details` lists each bad
+field for `INVALID_INPUT`. `requestId` and `callId` find the call in the audit trail. The
+codes and their defaults are in `PROTOCOL_ERROR_CODES` (`lib/result.ts`).
 
 | Situation | Use |
 |---|---|
@@ -1716,7 +1731,7 @@ Already running a Redis? `REDIS_LIVE_URL=redis://localhost:6379 npm run test:red
 
 Three protocol features work together to give the agent everything it needs before it says a word to the user:
 
-**`getContext`** — called on connect, returns the authenticated user's identity (`page`, `authenticated`, `locale`, `user: { id, displayName }`). The agent knows who it is talking to and what page they are on. It can personalise responses without fetching any schemas.
+**`getContext`** — called on connect, returns the authenticated user's identity and role (`user: { id, displayName }`, `role`, `authenticated`, `locale`), the platform clock (`now`, `today`, `timezone`) and, when metered, the caller's credits. The agent knows who it is talking to and which date "tomorrow" means, without fetching any schemas. `page` is `null` on the server, which cannot see the browser.
 
 **`getCapabilities`** — called on connect (in parallel with `getContext`), returns every operation the caller's role is allowed to invoke: name, permission level, and `requiresConfirmation` flag. No input schemas yet — this is cheap. The agent can rule out unauthorised tools immediately and build the full picture of what is possible before exploring anything.
 
@@ -1856,7 +1871,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "1.2.0"
+document.modelContext.protocolVersion   // "2.0.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool

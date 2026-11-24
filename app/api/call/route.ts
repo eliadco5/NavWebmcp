@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import "@/lib/operations"; // populates the registry
-import { executeDetailed, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
+import { executeDetailed, requestMeta } from "@/lib/operations/execute";
 import type { ExecuteStage } from "@/lib/operations/execute";
 import { authenticateSession, requestInfo } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
@@ -16,7 +16,7 @@ import "@/lib/management/service";
 // ...and credit metering for every top-level call (lib/credits/port.ts).
 import "@/lib/credits";
 import type { Actor } from "@/lib/operations/types";
-import type { CreditInfo } from "@/lib/result";
+import { fail, type CreditInfo } from "@/lib/result";
 import { AGENT_HEADER, CHANNEL_HEADER, CREDIT_HEADERS } from "@/lib/constants";
 import { readJsonCapped } from "@/lib/http-limits";
 import { gateHint, withResponseGate } from "@/lib/credits/gate";
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const { user, sid } = await authenticateSession(await cookies(), requestInfo(req.headers));
   if (!user) {
     return Response.json(
-      { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },
+      fail("UNAUTHENTICATED", "Login required."),
       { status: 401 }
     );
   }
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       const refused = await quickRefusal(key, isAgent ? "agent" : "human");
       if (refused) {
         return Response.json(
-          { success: false, error: { code: "INSUFFICIENT_CREDITS", message: refused.hint ?? "Out of credits; retry later." }, credits: refused },
+          { ...fail("INSUFFICIENT_CREDITS", refused.hint ?? "Out of credits; retry later."), credits: refused },
           { status: 429, headers: creditHeaders(refused) }
         );
       }
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     },
     (limit) =>
       Response.json(
-        { success: false, error: { code: "INSUFFICIENT_CREDITS", message: gateHint(limit) } },
+        fail("INSUFFICIENT_CREDITS", gateHint(limit)),
         { status: 429, headers: { "Retry-After": "1" } }
       )
   );
@@ -114,8 +114,7 @@ const runLocked = withSharedState(async function runLocked(
   const { result, stage, credits } = await executeDetailed(
     typeof name === "string" ? name : "",
     params && typeof params === "object" ? (params as Record<string, unknown>) : {},
-    { userId: user.id, role: user.role, token: "", actor, meta },
-    { codes: SURFACE_CODES }
+    { userId: user.id, role: user.role, token: "", actor, meta }
   );
 
   // Only gate failures change the HTTP status, as before; a handler's own

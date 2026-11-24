@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ok, fail } from "@/lib/result";
+import { ok, fail, invalidInput } from "@/lib/result";
 import type { Result } from "@/lib/result";
 
 describe("ok", () => {
@@ -44,12 +44,34 @@ describe("ok", () => {
 });
 
 describe("fail", () => {
-  it("wraps code and message in a failure shape", () => {
+  it("wraps code and message in a failure shape, with the catalogue's retryable and hint", () => {
     const r = fail("NOT_FOUND", "Resource not found");
     expect(r).toEqual({
       success: false,
-      error: { code: "NOT_FOUND", message: "Resource not found" },
+      error: { code: "NOT_FOUND", message: "Resource not found", retryable: false, hint: expect.any(String) },
     });
+  });
+
+  it("domain codes default to retryable: false with no hint", () => {
+    expect(fail("NO_AVAILABILITY", "full").error).toEqual({ code: "NO_AVAILABILITY", message: "full", retryable: false });
+  });
+
+  it("HANDLER_ERROR and INSUFFICIENT_CREDITS are retryable; HANDLER_TIMEOUT is not", () => {
+    expect(fail("HANDLER_ERROR", "boom").error.retryable).toBe(true);
+    expect(fail("INSUFFICIENT_CREDITS", "wait").error.retryable).toBe(true);
+    expect(fail("HANDLER_TIMEOUT", "slow").error.retryable).toBe(false);
+  });
+
+  it("extra fields override the catalogue and empty arrays are dropped", () => {
+    const e = fail("NOT_FOUND", "x", { retryable: true, hint: "h", suggestions: [], details: [], requestId: "r1", callId: "c1" }).error;
+    expect(e).toEqual({ code: "NOT_FOUND", message: "x", retryable: true, hint: "h", requestId: "r1", callId: "c1" });
+  });
+
+  it("invalidInput turns Zod issues into details and a path-prefixed message", () => {
+    const e = invalidInput([{ path: ["a", 0], message: "bad" }, { path: [], message: "root" }]).error;
+    expect(e.code).toBe("INVALID_INPUT");
+    expect(e.details).toEqual([{ path: "a.0", message: "bad" }, { path: "", message: "root" }]);
+    expect(e.message).toBe("a.0: bad; root");
   });
 
   it("sets success: false", () => {

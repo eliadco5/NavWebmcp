@@ -1,3 +1,5 @@
+import { fail } from "@/lib/result";
+
 // Request-size limits for the JSON routes. Without them a caller could post a
 // body of any size and the server would buffer and parse all of it before any
 // check ran. Bug-report attachments have their own, larger limits
@@ -11,14 +13,14 @@ export function maxBodyBytes(): number {
 
 function tooLarge(limit: number): Response {
   return Response.json(
-    { success: false, error: { code: "PAYLOAD_TOO_LARGE", message: `Request body exceeds ${limit} bytes.` } },
+    fail("PAYLOAD_TOO_LARGE", `Request body exceeds ${limit} bytes.`, { hint: "Send a smaller request; split large batches into several calls." }),
     { status: 413 }
   );
 }
 
 function invalid(): Response {
   return Response.json(
-    { success: false, error: { code: "INVALID_INPUT", message: "Request body must be valid JSON." } },
+    fail("INVALID_INPUT", "Request body must be valid JSON.", { details: [{ path: "", message: "Not valid JSON" }] }),
     { status: 400 }
   );
 }

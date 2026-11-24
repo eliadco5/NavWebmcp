@@ -1,4 +1,4 @@
-import { fail } from "@/lib/result";
+import { fail, invalidInput } from "@/lib/result";
 import { inputObject, checkOutput } from "@/lib/schema";
 import type { Result } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
@@ -21,19 +21,9 @@ import type { Actor, CallMeta, Channel, OperationContext } from "./types";
  * and how the call relates to the request that caused it.
  */
 
-/** Error-code spelling differs by surface for historical reasons; agents are
- *  told both mean the same thing (lib/agent-instructions.ts). */
-export interface ExecuteCodes {
-  unknown: string;
-  invalid: string;
-}
-
-const DISPATCH_CODES: ExecuteCodes = { unknown: "UNKNOWN_TOOL", invalid: "INVALID_ARGS" };
-export const SURFACE_CODES: ExecuteCodes = { unknown: "NOT_FOUND", invalid: "INVALID_INPUT" };
-
-export interface ExecuteOptions {
-  codes?: ExecuteCodes;
-}
+// Since protocol 2.0.0 every surface uses the same error codes (UNKNOWN_TOOL,
+// INVALID_INPUT). Before, /api/call and MCP said NOT_FOUND / INVALID_INPUT while
+// invoke and composites said UNKNOWN_TOOL / INVALID_ARGS for the same conditions.
 
 let _opByName: Map<string, (typeof registry)[number]> | undefined;
 export function getOpByName() {
@@ -60,10 +50,52 @@ export function requestMeta(channel: Channel, headers?: Headers): CallMeta {
   };
 }
 
-function formatIssues(issues: { path: PropertyKey[]; message: string }[]): string {
-  return issues
-    .map((i) => (i.path.length ? `${i.path.map(String).join(".")}: ${i.message}` : i.message))
-    .join("; ");
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = up;
+    }
+  }
+  return prev[b.length];
+}
+
+/** Up to 3 operation names the caller's role can see that look like `name`:
+ *  case-insensitive substring matches first, then small edit distances. Never
+ *  names an op the role can't call, so it can't leak what exists. */
+export function suggestOpNames(name: string, role: Actor["role"]): string[] {
+  const needle = name.toLowerCase();
+  if (!needle) return [];
+  const scored: { name: string; score: number }[] = [];
+  for (const op of registry) {
+    if (!roleSatisfies(role, op.roles)) continue;
+    const hay = op.name.toLowerCase();
+    const substring = hay.includes(needle) || needle.includes(hay);
+    const dist = editDistance(needle, hay);
+    if (substring || dist <= Math.max(2, Math.floor(needle.length / 3))) {
+      scored.push({ name: op.name, score: substring ? -1 : dist });
+    }
+  }
+  return scored.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name)).slice(0, 3).map((s) => s.name);
+}
+
+/** Give every failure the full ProtocolError shape (retryable, default hint) and
+ *  the ids that find it in the audit trail. Handlers build errors with fail(),
+ *  but a hand-written literal may lack fields. An id already present wins: it is
+ *  a nested call's (invoke relaying a failed op), which points at the specific call. */
+function normaliseFailure(result: Result<unknown>, meta: CallMeta): Result<unknown> {
+  if (result.success) return result;
+  const { code, message, ...extra } = result.error;
+  const normalised = fail(code, message, {
+    ...extra,
+    requestId: extra.requestId ?? meta.requestId,
+    callId: extra.callId ?? meta.callId,
+  });
+  return result.credits ? { ...normalised, credits: result.credits } : normalised;
 }
 
 /** Where a call stopped. Lets a surface map gate failures to its own status
@@ -106,19 +138,16 @@ export interface ExecuteDetail {
 export async function execute(
   name: string,
   args: Record<string, unknown>,
-  ctx: OperationContext,
-  options: ExecuteOptions = {}
+  ctx: OperationContext
 ): Promise<Result<unknown>> {
-  return (await executeDetailed(name, args, ctx, options)).result;
+  return (await executeDetailed(name, args, ctx)).result;
 }
 
 export async function executeDetailed(
   name: string,
   args: Record<string, unknown>,
-  ctx: OperationContext,
-  options: ExecuteOptions = {}
+  ctx: OperationContext
 ): Promise<ExecuteDetail> {
-  const codes = options.codes ?? DISPATCH_CODES;
   const started = performance.now();
   const startedAt = Date.now();
   const actor = ctx.actor ?? defaultActor(ctx);
@@ -138,7 +167,8 @@ export async function executeDetailed(
   const op = getOpByName().get(name);
   let settleCredits: ((o: CallOutcome) => Promise<(CreditInfo & { hinted: boolean }) | null>) | undefined;
 
-  const finish = async (stage: ExecuteStage, result0: Result<unknown>, creditsOut?: CreditInfo) => {
+  const finish = async (stage: ExecuteStage, raw: Result<unknown>, creditsOut?: CreditInfo) => {
+    const result0 = normaliseFailure(raw, meta);
     let result = result0;
     let credits = creditsOut;
     if (settleCredits) {
@@ -204,14 +234,20 @@ export async function executeDetailed(
   // runs and the credits reserved above are always settled.
   const deadlineMs = op?.deadlineMs ?? defaultDeadlineMs();
   try {
-    if (!op) return finish("lookup", fail(codes.unknown, `No operation named '${name}'.`));
+    if (!op) {
+      return finish("lookup", fail("UNKNOWN_TOOL", `No operation named '${name}'.`, { suggestions: suggestOpNames(name, actor.role) }));
+    }
     if (!roleSatisfies(actor.role, op.roles)) {
       return finish("rbac", fail("FORBIDDEN", `Role '${actor.role}' is not permitted to call '${name}'.`));
     }
     const parsed = inputObject(op.inputSchema).safeParse(args);
-    if (!parsed.success) return finish("input", fail(codes.invalid, formatIssues(parsed.error.issues)));
+    if (!parsed.success) {
+      const bad = invalidInput(parsed.error.issues);
+      bad.error.hint = `Call describe_tool({ name: "${name}" }) for the exact input schema, fix the fields in details, then retry once.`;
+      return finish("input", bad);
+    }
     const result = (await withDeadline(op.handler(parsed.data, callCtx), deadlineMs)) as Result<unknown>;
-    if (result.success) checkOutput(op.name, op.outputSchema, result.data);
+    if (result.success) checkOutput(op.name, op.outputSchema, result.data, op.openOutput);
     return finish("handler", result);
   } catch (err) {
     if (err instanceof DeadlineExceeded) {

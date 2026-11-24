@@ -365,12 +365,13 @@ async function laneAInvoke(flow, bearerToken, n, adminCookie) {
       runTokens.input += estimateTokens(invokeArgs);
       const res = await client.callTool({ name: "invoke", arguments: invokeArgs });
       runTokens.output += mcpResultTokens(res);
+      // Protocol ≥ 2.0.0: a single invoke returns the op's own data (or isError
+      // with the op's error), with no second envelope.
       const text = res.content?.[0]?.text ?? "{}";
-      let outer;
-      try { outer = JSON.parse(text); } catch { outer = {}; }
-      const data = outer?.data ?? outer;
-      if (res.isError || outer?.success === false) success = false;
-      return { data, isError: res.isError || outer?.success === false };
+      let data;
+      try { data = JSON.parse(text); } catch { data = {}; }
+      if (res.isError) success = false;
+      return { data, isError: !!res.isError };
     };
     const finalRes = await def.primitiveSteps(input, callTool, acc);
     if (!finalRes) success = false;

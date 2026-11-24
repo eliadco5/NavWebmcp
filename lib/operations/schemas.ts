@@ -263,6 +263,7 @@ export const DescribedToolSchema = z.object({
   outputSchema: z.record(z.unknown()).optional().describe("JSON Schema of the function's success data"),
   error: z.enum(["UNKNOWN_TOOL", "FORBIDDEN"]).optional(),
   message: z.string().optional(),
+  suggestions: z.array(z.string()).optional().describe("Did-you-mean names, for UNKNOWN_TOOL"),
 });
 
 // ── Compile-time drift guard: each schema must match its existing type ────────
