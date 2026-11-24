@@ -23,6 +23,49 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 1.4.0
+
+**Credits: SMB-style flow control.** Every top-level call is metered with credits, so one
+agent can't flood the server with many calls, long calls or huge fan-outs. The full spec is
+in `docs/credits.md`. All additive, and no client change is required. A client that has never
+heard of credits is still paced correctly, and it is told what to do in plain language.
+
+- **Cost of a call.** A fixed per-request cost, plus the operation's weight, plus request and
+  response size, plus run time.
+  - Only the top-level call pays; nested calls are covered by it.
+  - Credits come back with each response, scaled down under server load, and a slow
+    trickle refills over time.
+  - The caller's window adapts (AIMD).
+- **Optional `credits` field on the `Result` envelope:**
+  `{ balance, window, charged, granted, retryAfterMs?, heldMs?, hint? }`.
+  - It is present only when the caller should change course (low balance, debt, shrunk
+    window, held call, refusal).
+  - `hint` is one actionable sentence.
+- **MCP:**
+  - `_meta["navwebmcp/credits"]` carries the state on every metered result;
+  - a `[credits] …` text block carries the hint;
+  - optional `_meta["navwebmcp/credits"].request` asks for more credits.
+- **HTTP:**
+  - `X-NavWebMcp-Credits-{Balance,Window,Charged,Granted}` response headers;
+  - optional `X-NavWebMcp-Credit-Request` request header;
+  - a refusal is `429` with `Retry-After`.
+- **`getContext` gains an optional `credits` snapshot.**
+- **Every function shows its credit cost before it is called.** The function entries of
+  `explore`, `search` and `describe_tool`, and the tools in the `getCapabilities` manifest,
+  carry `credits`. That is the cost of one call on its own: 1 per request plus the
+  operation's weight. On MCP, each tool in `tools/list` carries
+  `_meta["navwebmcp/credits"] = { cost }`. The cost is part of the `capabilityHash`
+  fingerprint, so a change in an operation's cost invalidates cached manifests.
+- **Refusals at the door.** A caller over its in-progress limit (8 agents / 16 people per
+  instance), or already out of credits, gets `INSUFFICIENT_CREDITS` with a hint before its
+  request does any work. On MCP this is a tool result with `isError`; on HTTP it is 429.
+- **Malformed MCP bodies** (not a JSON-RPC object or batch) get HTTP 400 with JSON-RPC
+  `-32700`.
+- **New error codes:**
+  - `INSUFFICIENT_CREDITS`: refused, nothing ran;
+  - `FANOUT_LIMIT`: nesting deeper than 3 levels, or more than 200 operations under one call;
+  - `HANDLER_TIMEOUT`: the operation passed its deadline (15 s by default).
+
 ## 1.3.0
 
 **Agent-operable UI components.** Agents can now change what the user *sees*, such as a

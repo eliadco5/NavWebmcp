@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticateSession } from "@/lib/management/auth";
 import { UiPageSnapshotSchema, TabRef } from "@/lib/ui-components/contract";
 import { putSnapshot, removeSnapshot } from "@/lib/ui-relay/store";
+import { readTextCapped } from "@/lib/http-limits";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,9 @@ export async function POST(req: Request) {
   }
 
   // navigator.sendBeacon (tab closing) posts text/plain, so parse the raw text.
-  const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) {
-    return Response.json({ success: false, error: { code: "INVALID_INPUT", message: "Snapshot too large." } }, { status: 413 });
-  }
+  // Stops reading at the cap instead of buffering the whole body first.
+  const text = await readTextCapped(req, MAX_BODY_BYTES);
+  if (text instanceof Response) return text;
   let json: unknown;
   try { json = JSON.parse(text); } catch { json = undefined; }
   const parsed = Body.safeParse(json);

@@ -66,7 +66,7 @@ export function latencyBucket(ms: number): number {
   return i === -1 ? LATENCY_BUCKETS_MS.length : i;
 }
 
-const DENIALS = new Set(["FORBIDDEN", "UNAUTHENTICATED", "CONFIRMATION_DENIED"]);
+const DENIALS = new Set(["FORBIDDEN", "UNAUTHENTICATED", "CONFIRMATION_DENIED", "INSUFFICIENT_CREDITS", "FANOUT_LIMIT"]);
 
 export function dimensionsOf(o: CallObservation): Dimensions {
   return {
@@ -83,6 +83,7 @@ function increments(o: CallObservation): { ints: [string, number][]; floats: [st
   const d = dimKey(dimensionsOf(o));
   const ints: [string, number][] = [[`${d}#n`, 1], [`${d}#b${latencyBucket(o.durationMs)}`, 1]];
   if (!o.meta.parentCallId) ints.push([`${d}#top`, 1]);
+  if (o.credits) ints.push([`${d}#cr`, o.credits]);
   return { ints, floats: [[`${d}#ms`, o.durationMs]] };
 }
 

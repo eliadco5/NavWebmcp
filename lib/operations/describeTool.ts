@@ -5,6 +5,7 @@ import { roleSatisfies } from "@/lib/auth";
 import { getOpByName } from "./dispatch";
 import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
 import { ShortText, DescribedToolSchema } from "./schemas";
+import { creditCost } from "@/lib/credits/policy";
 
 function describeOne(name: string, role: string): z.infer<typeof DescribedToolSchema> {
   const op = getOpByName().get(name);
@@ -15,6 +16,7 @@ function describeOne(name: string, role: string): z.infer<typeof DescribedToolSc
     permission: op.permission, roles: op.roles, module: op.module,
     requiresConfirmation: op.requiresConfirmation ?? false,
     parallelSafe: op.parallelSafe ?? (op.permission === "read"),
+    credits: creditCost(op),
     inputSchema: toJsonSchema(inputObject(op.inputSchema)),
     outputSchema: toJsonSchema(outputObject(op.outputSchema)),
   };

@@ -4,12 +4,36 @@ import { verifyCredentials, SESSION_COOKIE } from "@/lib/auth";
 import { createSession, issueToken, newSessionId, COOKIE_OPTS } from "@/lib/auth-tokens";
 import { requestInfo, startSession } from "@/lib/management/auth";
 import { auditAuth, humanActor } from "@/lib/audit";
+import { loginBlockedFor, noteLoginFailure } from "@/lib/login-throttle";
+import { readJsonCapped } from "@/lib/http-limits";
 
 export async function POST(req: NextRequest) {
-  const { username, password } = await req.json();
-  const user = verifyCredentials(String(username ?? ""), String(password ?? ""));
   const info = requestInfo(req.headers);
+  const body = await readJsonCapped(req, 4096);
+  if (body instanceof Response) return body;
+  const { username: rawUser, password } = (body ?? {}) as { username?: unknown; password?: unknown };
+  const username = String(rawUser ?? "");
+
+  const blockedMs = await loginBlockedFor(info.ip, username);
+  if (blockedMs !== null) {
+    await auditAuth({
+      action: "auth.login",
+      outcome: "denied",
+      errorCode: "TOO_MANY_ATTEMPTS",
+      actor: { type: "human", userId: "anonymous", role: "customer", assurance: "asserted" },
+      ...info,
+      detail: { username: username.slice(0, 64) },
+    });
+    const retryS = Math.max(1, Math.ceil(blockedMs / 1000));
+    return Response.json(
+      { success: false, error: { code: "TOO_MANY_ATTEMPTS", message: `Too many failed sign-ins. Try again in ${retryS} s.` } },
+      { status: 429, headers: { "Retry-After": String(retryS) } }
+    );
+  }
+
+  const user = verifyCredentials(username, String(password ?? ""));
   if (!user) {
+    await noteLoginFailure(info.ip, username);
     // Failed sign-ins are what brute-force monitoring looks for (SOC2 CC7.2).
     await auditAuth({
       action: "auth.login",

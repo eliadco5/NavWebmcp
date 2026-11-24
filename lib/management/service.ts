@@ -8,6 +8,7 @@ import { getUsageSummary } from "@/lib/telemetry";
 import type { Actor } from "@/lib/operations/types";
 import { revokeRecord, getClient, getEnd, getSession, listClients, listSessions } from "./sessions";
 import { installManagement, type ManagementPort, type RevokeInfo, type RevokeResult } from "./port";
+import { listCreditLedgers, principalFor, setCreditPolicy } from "@/lib/credits/admin";
 
 
 async function revoke(
@@ -45,6 +46,24 @@ export const managementService: ManagementPort = {
   },
   async revokeClient(clientId, by, info) {
     return revoke("agentClient", clientId, Boolean(await getClient(clientId)), by, info);
+  },
+  async listCreditLedgers({ kind }) {
+    return (await listCreditLedgers()).filter((l) => !kind || l.kind === kind);
+  },
+  async setCreditPolicy(target, change, by, info = {}) {
+    const principal = principalFor(target.kind, target.id);
+    const override = await setCreditPolicy(principal, change, by.userId);
+    await auditAdmin({
+      action: "admin.credit_policy_set",
+      outcome: "success",
+      actor: by,
+      channel: info.channel ?? "ui",
+      ip: info.ip,
+      userAgent: info.userAgent,
+      target: { type: target.kind === "agent" ? "agentClient" : "user", id: target.id },
+      detail: { ...change },
+    });
+    return override;
   },
 };
 

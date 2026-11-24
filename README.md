@@ -2,7 +2,7 @@
 
 **Business logic that lives in the browser page, exposed to agents as structured tools through the WebMCP standard.**
 
-WebMCP (`document.modelContext`) is a browser-native API that lets a page register callable tools for AI agents — the same way it registers event listeners for users. **NavWebMcp** is the protocol layered on top: progressive tool disclosure, RBAC, and composite operations. **AgentBridge** is this repo's reference implementation of NavWebMcp: it adds RBAC, progressive tool disclosure, audit logging, a polyfill for today's browsers, and an MCP Streamable HTTP surface so external agents (Claude Code, Claude Desktop, MCP Inspector) can connect with no browser required. A [management layer](#management-layer-monitoring-telemetry-and-soc2-audit) tells people's actions from agents' on every call and every record, monitors usage, controls sessions and agent connections, and keeps a tamper-evident, SOC2-oriented audit trail. A [protocol-level agent skill](skills/navwebmcp-agent/SKILL.md) ships alongside it, for any agent talking to any NavWebMcp server.
+WebMCP (`document.modelContext`) is a browser-native API that lets a page register callable tools for AI agents — the same way it registers event listeners for users. **NavWebMcp** is the protocol layered on top: progressive tool disclosure, RBAC, and composite operations. **AgentBridge** is this repo's reference implementation of NavWebMcp: it adds RBAC, progressive tool disclosure, audit logging, a polyfill for today's browsers, and an MCP Streamable HTTP surface so external agents (Claude Code, Claude Desktop, MCP Inspector) can connect with no browser required. A [management layer](#management-layer-monitoring-telemetry-and-soc2-audit) tells people's actions from agents' on every call and every record, monitors usage, controls sessions and agent connections, and keeps a tamper-evident, SOC2-oriented audit trail. [Credits](#credits-flow-control-for-agent-traffic-navwebmcp-14), modeled on SMB, stop any one agent from flooding the server with many, long or fanned-out calls, and tell agents in plain language how to pace themselves. A [protocol-level agent skill](skills/navwebmcp-agent/SKILL.md) ships alongside it, for any agent talking to any NavWebMcp server.
 
 Built on [Next.js](https://nextjs.org) and the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -133,7 +133,7 @@ The agent sees none of steps 1–3. Source: `lib/core/book.ts`. `seatGuest` (`li
 
 ```mermaid
 flowchart TD
-    REG["lib/operations/\nOperation registry\n(59 business ops + 8 meta + 4 ui_*)"]
+    REG["lib/operations/\nOperation registry\n(61 business ops + 8 meta + 4 ui_*)"]
 
     REG -->|lib/adapters/mcp.ts| MCP["MCP Streamable HTTP\napp/api/[transport]/\nBearer token · 8h TTL"]
     REG -->|lib/adapters/webmcp.ts| WEB["In-page WebMCP\ndocument.modelContext\nSession cookie"]
@@ -1458,6 +1458,199 @@ and they add no new error codes.
 
 ---
 
+## Credits: flow control for agent traffic (NavWebMcp 1.4)
+
+Agents can make the server slow for everyone. Before this, nothing limited:
+- how many calls one agent client had in flight;
+- how long its calls ran (a `ui_*` call over MCP waits up to 8 s for the user's tab);
+- how far one request fanned out: `invoke` takes 50 calls, and each can be another `invoke`,
+  so three levels is 125,000 operations;
+- how large a request body was.
+
+A per-minute rate limit doesn't fit this. It treats a 5 ms read like an 8 s wait and
+ignores how busy the server is. A daily quota limits the wrong thing. What's needed is
+**flow control**, and SMB2/3 (Windows file sharing) solved that with **credits**.
+
+> Full explanation, with formulas, a worked example and every option:
+> [`docs/credits.md`](docs/credits.md).
+
+### How it works
+
+Every agent client has a credit **balance** and a **window**, the most it may hold.
+
+1. **Each call is charged up front:** 1 per request, plus the operation's **weight**, plus
+   **size**.
+   - Weight is read 1, write 2; a composite costs the number of operations it runs (`book`
+     4); `invoke` costs what it will run.
+   - Size is 1 per 4 KB of arguments.
+   - Only the top-level call pays, before anything runs, so a composite is never cut off
+     halfway through its writes.
+2. **When it finishes, the real cost is settled.** Each full second it ran costs 1 more, and
+   a large result costs more. Long calls can leave the agent **in debt**.
+3. **Credits come back with the response**, normally what the call cost. The server hands
+   back **less when it is busy**. That is SMB's server-controlled `CreditResponse`, and it
+   makes heavy callers slow down by themselves.
+4. **The window adapts.** A long or debt-making call halves it; quick calls grow it, up to 64.
+   A slow trickle (2/s) refills the balance, so no agent is stuck at zero for good.
+
+If an agent is a little short, the server **holds** the call for up to 1.5 s and then runs
+it, so the agent just sees a slower call. Only if that's not enough is the call **refused**
+(`INSUFFICIENT_CREDITS`); nothing runs, and the refusal is audited.
+
+```mermaid
+flowchart LR
+    A["Agent call"] --> R{"Enough credits?<br/>charge = 1 + weight + size"}
+    R -->|yes| RUN["Run the operation"]
+    R -->|"a little short"| HOLD["Hold ≤ 1.5 s<br/>(backpressure)"] --> RUN
+    R -->|no| NO["INSUFFICIENT_CREDITS<br/>+ hint + retryAfterMs"]
+    RUN --> S["Settle: + run time + result size<br/>(may go into debt)"]
+    S --> G["Grant credits back<br/>scaled down under load<br/>window grows or halves"]
+    G --> OUT["Result<br/>(+ credits hint only if the agent<br/>should change course)"]
+```
+
+### Every function shows its cost
+
+Agents see the price before they call. Every function returned by `explore`, `search`,
+`describe_tool` and `getCapabilities` carries a `credits` attribute. On MCP, every tool in
+`tools/list` carries `_meta["navwebmcp/credits"] = { cost }`. The attribute is the cost of
+one call on its own, before size and run time:
+
+```jsonc
+// search({ pattern: "book" }) → one of functions[]
+{ "name": "book", "permission": "write", "module": "reservation.booking", "credits": 5 }
+```
+
+| Function | `credits` |
+|---|---|
+| any read (`getGuest`, `explore`, …) | 2 |
+| any write (`createTask`, …) | 3 |
+| `book`, `seatGuest` | 5 |
+| `hostVipGuest` | 8 |
+| `ui_list`, `ui_get_state` | 3 |
+| `ui_set_state`, `ui_action` | 4 |
+| `invoke` | 1, plus the weights of what it runs |
+
+A small, quick call is charged exactly the published number. The cost is part of the
+`capabilityHash`, so a cost change invalidates cached manifests.
+
+### Agents don't need to know any of this
+
+The server does the accounting. It tells the agent what it needs to know **inside the
+result the agent already reads**, and only when it matters. A steady-state call carries
+nothing extra and costs no extra tokens. When the balance is low, the agent is in debt, the
+window shrank, or the call was held or refused, the `Result` envelope gains a `credits`
+field with one plain-language sentence:
+
+```jsonc
+{
+  "success": true,
+  "data": { … },
+  "credits": {
+    "balance": 3, "window": 16, "charged": 7, "granted": 2,
+    "hint": "Credits low (3 of 16). That call cost 7 credits because it ran 4 s; wait ~3 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch."
+  }
+}
+```
+
+The mechanism is defined once, on the envelope, and each surface carries it its own way,
+the same transport-agnostic approach as the rest of NavWebMcp:
+
+| Surface | What a model reads | For protocol-aware clients |
+|---|---|---|
+| WebMCP (in-page) | `credits` in the returned Result | same |
+| MCP | an extra `[credits] …` text block, only when there's a hint | `_meta["navwebmcp/credits"]` on every result; send `_meta["navwebmcp/credits"] = { request: n }` to ask for more |
+| HTTP `/api/call` | `credits` in the body | `X-NavWebMcp-Credits-*` headers; refusal is `429` + `Retry-After` |
+
+Agents learn about it from two sentences in the server instructions (sent on every MCP
+`initialize`), from `getContext()`, which returns the current `credits` snapshot, and from
+the `invoke` description: one batch pays the per-request cost once, so it is cheaper than
+separate calls.
+
+### Who is metered
+
+| | Agents (MCP clients, the in-page agent) | People clicking in the UI | System |
+|---|---|---|---|
+| Window | 16, adapts between 2 and 64 | 128, between 32 and 512 | not metered |
+| Run time | charged, 1 per full second | not charged | — |
+
+### Admin controls
+
+- **Management tab → Access → Credits** lists every caller with its balance, window,
+  calls, credits spent and refusals, and has **Freeze** / **Unfreeze** buttons.
+- An admin's agent can call **`getCreditLedgers`** and **`setClientCreditPolicy`** (cap
+  the window, change the refill rate, freeze, or reset; requires confirmation).
+- Every change is in the audit trail as `admin.credit_policy_set`.
+
+### Limits that ship with it
+
+| Limit | Default | Error |
+|---|---|---|
+| Nesting depth (`invoke` in `invoke` in a composite) | 3 levels | `FANOUT_LIMIT` |
+| Operations under one top-level call | 200 | `FANOUT_LIMIT` |
+| Handler deadline | 15 s | `HANDLER_TIMEOUT` (time still charged) |
+| JSON request body | 64 KB | HTTP 413 |
+| Failed sign-ins per IP and username | 10 per 5 min | HTTP 429 |
+| Requests in progress per caller (the request gate) | 8 per agent, 16 per person | `INSUFFICIENT_CREDITS` at once, with a hint |
+| One request holding the instance's state lock | 30 s | lock passed on, event logged |
+| Malformed MCP body | — | HTTP 400, JSON-RPC `-32700` |
+
+Callers that are already out of credits, or over the gate, are turned away **at the door**:
+before the request queues for the instance, and before the MCP transport builds a server for
+it. A refusal costs about what any request costs the framework.
+
+### Configuration and limits
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CREDITS_ENABLED` | on | `false` switches metering off |
+| `CREDITS_CAPACITY` | `64` | Concurrent calls per instance at which grants drop to zero |
+| `CREDITS_AGENT_*`, `CREDITS_HUMAN_*` | see [docs](docs/credits.md#15-configuration) | Any profile field, e.g. `CREDITS_AGENT_MAX_WINDOW=128` |
+| `OP_DEADLINE_MS` | `15000` | Handler deadline |
+| `MAX_BODY_BYTES` | `65536` | JSON body cap |
+| `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S` | `10`, `300` | Sign-in throttle |
+| `CREDITS_MAX_INFLIGHT_AGENT`, `_HUMAN` | `8`, `16` | The request gate |
+| `STATE_LOCK_MAX_MS` | `30000` | State-lock watchdog |
+| `REDIS_COMMAND_TIMEOUT_MS`, `REDIS_SOCKET_TIMEOUT_MS` | `1000`, `3000` | A hung Redis is detected and skipped, never waited on |
+
+**Storage:**
+- **With Redis,** all instances share one ledger per caller, updated by compare-and-set
+  (`npm run test:redis` checks it).
+- **Without Redis,** limits apply per instance instead of switching off.
+
+### Tested to destruction
+
+Credits sit in front of every call, so if they break, the app is unreachable. They are tested
+at four levels:
+- **property-based fuzzing:** 480,000 random steps checked against six safety invariants;
+- **failure injection:** Redis hung, throwing, returning garbage or losing every race;
+  corrupt ledgers; never-ending requests;
+- **unit and integration** tests;
+- **a "Mad Max" stress harness** against real servers (`npm run test:stress`): floods,
+  fan-out bombs, long calls, slow clients, malformed bodies, many agents, two instances
+  sharing Redis, and Redis stopped and **frozen** mid-run.
+
+Testing found and fixed four ways to take the app down or starve every caller. Three were
+pre-existing:
+- **a 10-byte malformed MCP request** wedged the whole instance;
+- **a frozen Redis** hung every request;
+- **reservations leaked** by killed instances;
+- **a corrupt stored ledger.**
+
+Final run: **184 / 184** end-to-end checks, plus 979 automated tests (975 in the suite and 4 against a live Redis). While one agent
+floods at 40-way concurrency, other agents and people keep **100 %** success, and the flooder
+gets 93 of its 2,870 calls through. Full report: [`docs/credits-test-report.md`](docs/credits-test-report.md).
+
+**Known limits:**
+- **A raw request flood still costs CPU.** A refusal is as cheap as any request the framework
+  serves, but not free. Put a per-IP request limit at the edge (Vercel Firewall, a WAF or the
+  load balancer) in front of production.
+- **Proxies must overwrite the client IP header.** The sign-in throttle trusts
+  `x-forwarded-for`; Vercel overwrites it, other proxies must too.
+
+All of this is in [`docs/credits.md`](docs/credits.md#17-known-limits).
+
+---
+
 ## Features
 
 ### Progressive tool disclosure
@@ -1470,11 +1663,11 @@ A composite tool (like `book`, `seatGuest`, or `hostVipGuest`) wraps multi-step 
 
 ### Two surfaces, one registry
 
-The same 59 business operations are exposed over both surfaces simultaneously. Adding an operation to `lib/operations/` and registering it in `lib/operations/index.ts` makes it automatically available on both the MCP HTTP endpoint and `document.modelContext` — with full RBAC, audit logging, and progressive disclosure on both. Each operation's `inputSchema` and `outputSchema` are published on both surfaces too: as MCP `inputSchema`/`outputSchema` (with `structuredContent` on results), and as the WebMCP `ModelContextTool` members of the same names. Where we follow or depart from the WebMCP draft is tracked in [`docs/webmcp-alignment.md`](docs/webmcp-alignment.md).
+The same 61 business operations are exposed over both surfaces simultaneously. Adding an operation to `lib/operations/` and registering it in `lib/operations/index.ts` makes it automatically available on both the MCP HTTP endpoint and `document.modelContext` — with full RBAC, audit logging, and progressive disclosure on both. Each operation's `inputSchema` and `outputSchema` are published on both surfaces too: as MCP `inputSchema`/`outputSchema` (with `structuredContent` on results), and as the WebMCP `ModelContextTool` members of the same names. Where we follow or depart from the WebMCP draft is tracked in [`docs/webmcp-alignment.md`](docs/webmcp-alignment.md).
 
 ### RBAC and confirmation gates
 
-Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops). Destructive operations carry `requiresConfirmation: true`, and all eight of them (`cancelReservation`, `cancelAnyReservation`, `checkOutGuest`, `deleteTask`, `issueRefund`, `applyNoShowFee`, and the admin `revokeSession` and `revokeAgentClient`) enforce it server-side: the input schema has a `confirm` parameter, and omitting it (or passing `false`) returns `CONFIRMATION_REQUIRED` — no surface (MCP-over-HTTP, in-page WebMCP, or the UI) can complete one of these without it. The UI-side confirmation dialog (`app/providers.tsx`) checks `requiresConfirmation` generically and shows a dialog before sending `confirm: true` itself, once approved. The in-page WebMCP surface (`lib/agentbridge.ts`) additionally skips its own dialog when a caller has *already* self-declared `confirm: true` — the same trust model the MCP-over-HTTP surface always used for these ops — since a genuinely autonomous agent has no way to click a browser dialog.
+Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops). Destructive operations carry `requiresConfirmation: true`, and all nine of them (`cancelReservation`, `cancelAnyReservation`, `checkOutGuest`, `deleteTask`, `issueRefund`, `applyNoShowFee`, and the admin `revokeSession`, `revokeAgentClient` and `setClientCreditPolicy`) enforce it server-side: the input schema has a `confirm` parameter, and omitting it (or passing `false`) returns `CONFIRMATION_REQUIRED` — no surface (MCP-over-HTTP, in-page WebMCP, or the UI) can complete one of these without it. The UI-side confirmation dialog (`app/providers.tsx`) checks `requiresConfirmation` generically and shows a dialog before sending `confirm: true` itself, once approved. The in-page WebMCP surface (`lib/agentbridge.ts`) additionally skips its own dialog when a caller has *already* self-declared `confirm: true` — the same trust model the MCP-over-HTTP surface always used for these ops — since a genuinely autonomous agent has no way to click a browser dialog.
 
 ### Audit, monitoring and access control
 
@@ -1489,6 +1682,16 @@ and `admin.*` operations their agents can call. Full details: [Management layer]
 The Activity Log card under every tab is the live feed of recent calls (the last 100,
 polled from `/api/audit` every 4 seconds — SSE doesn't survive Vercel's serverless
 model). Non-admins see only their own calls in full there.
+
+### Credits (flow control)
+
+Every top-level call costs credits by operation type, size and run time. The server grants
+credits back with each response, fewer when it is busy, so no single agent can flood it
+with many, long or fanned-out calls. Agents need no special support: when they should slow
+down, the result itself carries a one-sentence hint telling them what to do. People in the
+UI get a loose safety net; admins can freeze or cap any caller. Full details:
+[Credits](#credits-flow-control-for-agent-traffic-navwebmcp-14) and
+[`docs/credits.md`](docs/credits.md).
 
 ### Shared state on Vercel (optional)
 
@@ -1704,7 +1907,7 @@ If the caller cancels while a confirmation dialog is open, the operation is neve
 | `getContext` | Current page URL, auth state, locale |
 | `getCapabilities` | Role-scoped manifest with version hash |
 
-**Business operations (59) — discovered via `explore`/`search`, loaded via `load_tools` or called via `invoke`:**
+**Business operations (61) — discovered via `explore`/`search`, loaded via `load_tools` or called via `invoke`:**
 
 #### Reservation — `reservation.*`
 
@@ -1804,6 +2007,8 @@ If the caller cancels while a confirmation dialog is open, the operation is neve
 | `listAgentClients` | read | admin | Connected agents and their status |
 | `revokeSession` | write ⚠️ | admin | `requiresConfirmation`; also disconnects the session's agents |
 | `revokeAgentClient` | write ⚠️ | admin | `requiresConfirmation`; disconnects one agent |
+| `getCreditLedgers` | read | admin | Every caller's credit balance, window, spend and refusals ([Credits](#credits-flow-control-for-agent-traffic-navwebmcp-14)) |
+| `setClientCreditPolicy` | write ⚠️ | admin | `requiresConfirmation`; cap one caller's window or refill rate, freeze it, or reset it |
 
 See [Management layer](#management-layer-monitoring-telemetry-and-soc2-audit).
 
@@ -1865,6 +2070,9 @@ Parent/child relationships are inferred from dot-path prefixes; the tree is defi
 | Audit trail | Append-only, HMAC hash-chained, redacted, 365-day retention, exportable to a SIEM; denials and sign-in events included |
 | Admin access | `/api/admin/*` and `admin.*` operations behind one guard; denied attempts are audited |
 | Activity feed scoping | `/api/audit` shows non-admins only their own calls in full |
+| Flow control | SMB-style credits per agent client and per person: charged by op type, size and run time, granted back under server control; plain-language hints in results ([Credits](#credits-flow-control-for-agent-traffic-navwebmcp-14)) |
+| Request shape limits | Nesting ≤ 3 levels and ≤ 200 operations per request (`FANOUT_LIMIT`), 15 s handler deadline, 64 KB JSON bodies |
+| Sign-in throttle | 10 failed sign-ins per IP per 5 minutes, then HTTP 429 |
 | Capability versioning | DJB2 hash over op fingerprints — agents detect registry changes |
 | Token audience binding | RFC 8707 — a token minted for this server cannot be replayed elsewhere |
 
@@ -2062,6 +2270,9 @@ lib/
     sinks/                 ← export: signed webhook, OTLP logs
     port.ts                ← how execute() reaches it (keeps node:crypto/redis out of the browser)
   telemetry/               ← usage metrics (metrics.ts), summaries (summary.ts), OTLP traces/metrics (otlp.ts), port.ts
+  credits/                 ← SMB-style credits: policy.ts (costs), ledger.ts (state, Redis CAS), hint.ts (wording), index.ts (admit/settle), port.ts
+  http-limits.ts           ← JSON body caps
+  login-throttle.ts        ← failed sign-in throttle per IP
   management/              ← sessions & agent clients (sessions.ts, records.ts), request auth with
                               revocation (auth.ts), admin guard (guard.ts), service + port for admin ops
   provenance.ts            ← createdBy / lastModifiedBy stamps
@@ -2085,6 +2296,7 @@ tests/bench/
 benchmark.mjs              ← earlier /api/call-only harness, kept for provenance
 docs/
   management-soc2.md       ← SOC 2 control mapping, required configuration, known limits
+  credits.md               ← credits: full explanation, formulas, worked example, configuration
   presentation.html        ← slide deck with live benchmark numbers
   bench-data.js, speedbase-data.js  ← generated by the scripts above
 ```

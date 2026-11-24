@@ -70,6 +70,7 @@ import { updateBugReportStatus } from "./updateBugReportStatus";
 import {
   queryAuditOp, getEntityHistory, verifyAuditChain, getUsageMetrics,
   listUserSessions, listAgentClients, revokeAgentClient, revokeSession,
+  getCreditLedgers, setClientCreditPolicy,
 } from "./management";
 
 registry.push(
@@ -102,6 +103,7 @@ registry.push(
   // Admin / management
   queryAuditOp, getEntityHistory, verifyAuditChain, getUsageMetrics,
   listUserSessions, listAgentClients, revokeAgentClient, revokeSession,
+  getCreditLedgers, setClientCreditPolicy,
 );
 
 // registry is filled in-place above; rebuild the name index once so dispatchers

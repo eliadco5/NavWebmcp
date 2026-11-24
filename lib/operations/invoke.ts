@@ -22,7 +22,8 @@ export const invoke = defineOperation({
   title: "Invoke",
   description:
     "Call a function without loading it (stateless, Path B). " +
-    "Single call: { name, args }. Batch: { calls: [{name, args}] } — reads run in parallel, writes run in order.",
+    "Single call: { name, args }. Batch: { calls: [{name, args}] } — reads run in parallel, writes run in order. " +
+    "A batch costs fewer credits than the same calls made one by one.",
   permission: "read",
   dispatchesOps: true,
   roles: ["customer", "support", "admin"],

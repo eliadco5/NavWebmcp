@@ -7,6 +7,7 @@ import type {
 import type { ShiftNote } from "@/lib/seed/frontoffice";
 import type { ModuleNode, FnSummary, ExploreNode } from "@/lib/modules";
 import type { CapabilityManifestTool } from "@/lib/capabilities";
+import { CREDIT_COST_DESCRIPTION } from "@/lib/credits/policy";
 
 // ── Input field helpers ───────────────────────────────────────────────────────
 // Factories, so every field gets its own instance (a shared instance would be
@@ -222,6 +223,7 @@ export const FnSummarySchema = z.object({
   permission: PermissionSchema,
   parallelSafe: z.boolean(),
   requiresConfirmation: z.boolean().optional(),
+  credits: z.number().describe(CREDIT_COST_DESCRIPTION),
 });
 
 export const ExploreNodeSchema = z.object({
@@ -243,6 +245,7 @@ export const CapabilityToolSchema = z.object({
   permission: PermissionSchema,
   roles: z.array(RoleSchema),
   requiresConfirmation: z.boolean(),
+  credits: z.number().describe(CREDIT_COST_DESCRIPTION),
 });
 
 /** One entry of describe_tool's output. Errors are reported inline. */
@@ -255,6 +258,7 @@ export const DescribedToolSchema = z.object({
   module: z.string().optional(),
   requiresConfirmation: z.boolean().optional(),
   parallelSafe: z.boolean().optional(),
+  credits: z.number().optional().describe(CREDIT_COST_DESCRIPTION),
   inputSchema: z.record(z.unknown()).optional().describe("JSON Schema of the function's input"),
   outputSchema: z.record(z.unknown()).optional().describe("JSON Schema of the function's success data"),
   error: z.enum(["UNKNOWN_TOOL", "FORBIDDEN"]).optional(),

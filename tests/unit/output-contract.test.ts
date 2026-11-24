@@ -188,6 +188,8 @@ const CASES: Record<string, Case[]> = {
   listAgentClients: [{ args: () => ({}) }],
   revokeAgentClient: [{ args: () => ({ clientId: 'c_contract', confirm: true }) }],
   revokeSession: [{ args: () => ({ sessionId: 's_contract', confirm: true }) }],
+  getCreditLedgers: [{ args: () => ({}) }, { args: () => ({ kind: 'agent', limit: 5 }) }],
+  setClientCreditPolicy: [{ args: () => ({ kind: 'agent', id: 'c_contract', maxWindow: 8, confirm: true }) }, { args: () => ({ kind: 'agent', id: 'c_contract', reset: true, confirm: true }) }],
 }
 
 /** Resolve "$last.a.b" placeholders against the previous step's data. */

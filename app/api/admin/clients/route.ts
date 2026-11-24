@@ -1,3 +1,4 @@
+import { readJsonOrEmpty } from "@/lib/http-limits";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { managementService } from "@/lib/management/service";
@@ -19,7 +20,7 @@ const Revoke = z.object({ clientId: z.string().min(1).max(100) });
 export async function DELETE(req: NextRequest) {
   const admin = await requireAdmin(req, "admin.agent_client_revoked");
   if (isResponse(admin)) return admin;
-  const parsed = Revoke.safeParse(await req.json().catch(() => ({})));
+  const parsed = Revoke.safeParse((await readJsonOrEmpty(req)) as unknown);
   if (!parsed.success) {
     return Response.json({ success: false, error: { code: "INVALID_INPUT", message: "clientId is required." } }, { status: 400 });
   }

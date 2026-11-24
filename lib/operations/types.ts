@@ -48,6 +48,14 @@ export interface CallMeta {
   channel: Channel;
   ip?: string;
   userAgent?: string;
+  /** Credits the caller asks for (SMB CreditRequest). Optional: without it the
+   *  server hands back what the call cost, minus load. */
+  creditRequest?: number;
+  /** Nesting depth: 0 for the top-level call, +1 per nested level. Set by execute(). */
+  depth?: number;
+  /** Shared by every call of one request (by reference): how many operations
+   *  ran underneath the top-level one. Set by execute(); caps fan-out. */
+  fanout?: { count: number };
 }
 
 export interface OperationContext {
@@ -86,6 +94,13 @@ export interface Operation<
    *  (lib/ui-components/local.ts) instead of POST /api/call. `handler` is the
    *  server implementation, used by MCP clients through the UI relay. */
   runsInPage?: boolean;
+  /** Credit metering (lib/credits, docs/credits.md). `weight` replaces the
+   *  default base cost (read 1, write 2); a composite sets it to the number of
+   *  operations it runs. */
+  credits?: { weight?: number };
+  /** Longest the handler may run before execute() gives up with HANDLER_TIMEOUT.
+   *  Defaults to OP_DEADLINE_MS (15 s). */
+  deadlineMs?: number;
   /** SOC2 audit tuning (lib/audit). Both optional: defaults redact known
    *  PII/secret keys and infer the target record from ids in input/output. */
   audit?: {

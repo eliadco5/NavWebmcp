@@ -12,6 +12,7 @@ export const seatGuestOp = defineOperation({
     "and validates the seating. Prefer this over calling " +
     "getOccupancy + checkInGuest separately.",
   permission: "write",
+  credits: { weight: 4 }, // runs 4 operations (lib/core/seatGuest.ts)
   roles: ["support", "admin"],
   module: "frontoffice.checkin",
   tags: ["checkin", "frontoffice"],

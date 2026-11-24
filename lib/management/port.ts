@@ -9,6 +9,8 @@ import type { AuditQuery } from "@/lib/audit/store";
 import type { ChainVerification } from "@/lib/audit/chain";
 import type { UsageQuery, UsageSummary } from "@/lib/telemetry/summary";
 import type { ClientView, SessionView } from "./sessions";
+import type { CreditLedgerView, PolicyChange } from "@/lib/credits/admin";
+import type { Override } from "@/lib/credits/ledger";
 
 export interface RevokeInfo {
   ip?: string;
@@ -31,6 +33,10 @@ export interface ManagementPort {
   listClients(filter: { userId?: string }): Promise<ClientView[]>;
   revokeSession(sid: string, by: Actor, info?: RevokeInfo): Promise<RevokeResult>;
   revokeClient(clientId: string, by: Actor, info?: RevokeInfo): Promise<RevokeResult>;
+  /** Credit ledgers (lib/credits), most recently active first. */
+  listCreditLedgers(filter: { kind?: "agent" | "human" }): Promise<CreditLedgerView[]>;
+  /** Override one caller's credit policy (or reset it). Audited. */
+  setCreditPolicy(target: { kind: "agent" | "human"; id: string }, change: PolicyChange, by: Actor, info?: RevokeInfo): Promise<Override | null>;
 }
 
 declare global {
