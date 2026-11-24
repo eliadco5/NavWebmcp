@@ -56,6 +56,11 @@ heard of credits is still paced correctly, and it is told what to do in plain la
   operation's weight. On MCP, each tool in `tools/list` carries
   `_meta["navwebmcp/credits"] = { cost }`. The cost is part of the `capabilityHash`
   fingerprint, so a change in an operation's cost invalidates cached manifests.
+- **Refusals at the door.** A caller over its in-progress limit (8 agents / 16 people per
+  instance), or already out of credits, gets `INSUFFICIENT_CREDITS` with a hint before its
+  request does any work. On MCP this is a tool result with `isError`; on HTTP it is 429.
+- **Malformed MCP bodies** (not a JSON-RPC object or batch) get HTTP 400 with JSON-RPC
+  `-32700`.
 - **New error codes:**
   - `INSUFFICIENT_CREDITS`: refused, nothing ran;
   - `FANOUT_LIMIT`: nesting deeper than 3 levels, or more than 200 operations under one call;

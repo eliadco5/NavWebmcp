@@ -200,14 +200,16 @@ export async function executeDetailed(
     settleCredits = admission.finish;
   }
 
-  if (!op) return finish("lookup", fail(codes.unknown, `No operation named '${name}'.`));
-  if (!roleSatisfies(actor.role, op.roles)) {
-    return finish("rbac", fail("FORBIDDEN", `Role '${actor.role}' is not permitted to call '${name}'.`));
-  }
-  const parsed = inputObject(op.inputSchema).safeParse(args);
-  if (!parsed.success) return finish("input", fail(codes.invalid, formatIssues(parsed.error.issues)));
-  const deadlineMs = op.deadlineMs ?? defaultDeadlineMs();
+  // Everything after admission is inside the try, so whatever throws, finish()
+  // runs and the credits reserved above are always settled.
+  const deadlineMs = op?.deadlineMs ?? defaultDeadlineMs();
   try {
+    if (!op) return finish("lookup", fail(codes.unknown, `No operation named '${name}'.`));
+    if (!roleSatisfies(actor.role, op.roles)) {
+      return finish("rbac", fail("FORBIDDEN", `Role '${actor.role}' is not permitted to call '${name}'.`));
+    }
+    const parsed = inputObject(op.inputSchema).safeParse(args);
+    if (!parsed.success) return finish("input", fail(codes.invalid, formatIssues(parsed.error.issues)));
     const result = (await withDeadline(op.handler(parsed.data, callCtx), deadlineMs)) as Result<unknown>;
     if (result.success) checkOutput(op.name, op.outputSchema, result.data);
     return finish("handler", result);

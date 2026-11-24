@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { authenticateSession } from "@/lib/management/auth";
 import { withSharedState } from "@/lib/shared-state";
-import { submitBugReport } from "@/lib/bugreport/submit";
+import { submitBugReport, MAX_BODY_BYTES } from "@/lib/bugreport/submit";
+import { readTextCapped } from "@/lib/http-limits";
 import { attachmentResponse } from "@/lib/bugreport/http";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,10 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
   if (!user) {
     return Response.json({ success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } }, { status: 401 });
   }
-  const outcome = await submitBugReport(user, await req.text());
+  // Stop reading at the cap (lib/bugreport/submit.ts checks the same limit).
+  const raw = await readTextCapped(req, MAX_BODY_BYTES);
+  if (raw instanceof Response) return raw;
+  const outcome = await submitBugReport(user, raw);
   if (!outcome.ok) {
     return Response.json({ success: false, error: { code: outcome.code, message: outcome.message } }, { status: outcome.status });
   }

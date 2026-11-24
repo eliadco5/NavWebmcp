@@ -11,6 +11,8 @@ export interface HintInput {
   durationMs?: number;
   timeCost?: number;
   sizeCost?: number;
+  /** Operations run beyond what the call declared up front. */
+  opsCost?: number;
   heldMs?: number;
   shrunk?: boolean;
   refused?: { reason: "insufficient" | "frozen" | "busy"; retryAfterMs: number };
@@ -49,6 +51,7 @@ export function hintFor(i: HintInput): string | undefined {
 
   const why: string[] = [];
   if ((i.timeCost ?? 0) > 0 && i.durationMs !== undefined) why.push(`it ran ${Math.max(1, Math.round(i.durationMs / 1000))} s`);
+  if ((i.opsCost ?? 0) > 0) why.push(`it ran ${i.opsCost} more operation${i.opsCost === 1 ? "" : "s"} than it declared`);
   if ((i.sizeCost ?? 0) > 0) why.push("it returned a large result");
   const cost = `That call cost ${i.charged} credit${i.charged === 1 ? "" : "s"}${why.length ? ` because ${why.join(" and ")}` : ""}`;
   const wait = recoverSecs(i);

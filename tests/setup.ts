@@ -34,6 +34,9 @@ const SINGLETON_KEYS = [
   "__creditsHeld",
   "__creditsInFlight",
   "__loginAttempts",
+  "__creditsGate",
+  "__creditsLag",
+  "__creditsRates",
 ] as const;
 
 beforeEach(() => {

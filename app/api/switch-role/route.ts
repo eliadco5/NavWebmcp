@@ -1,3 +1,4 @@
+import { readJsonOrEmpty } from "@/lib/http-limits";
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse((await readJsonOrEmpty(req)) as unknown);
   if (!parsed.success) {
     return Response.json(
       { success: false, error: { code: "INVALID_INPUT", message: "role must be customer, support, or admin." } },

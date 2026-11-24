@@ -140,12 +140,16 @@ describe('sign-in throttle', () => {
       const { loginBlockedFor, noteLoginFailure } = await import('@/lib/login-throttle')
       const now = 1_700_000_000_000
       for (let i = 0; i < 3; i++) {
-        expect(await loginBlockedFor('1.2.3.4', now)).toBeNull()
-        await noteLoginFailure('1.2.3.4', now)
+        expect(await loginBlockedFor('1.2.3.4', 'bob', now)).toBeNull()
+        await noteLoginFailure('1.2.3.4', 'bob', now)
       }
-      expect(await loginBlockedFor('1.2.3.4', now)).toBeGreaterThan(0)
-      expect(await loginBlockedFor('5.6.7.8', now)).toBeNull()
-      expect(await loginBlockedFor('1.2.3.4', now + 301_000)).toBeNull()
+      expect(await loginBlockedFor('1.2.3.4', 'bob', now)).toBeGreaterThan(0)
+      // Same IP, another user (an office NAT): not locked out.
+      expect(await loginBlockedFor('1.2.3.4', 'alice', now)).toBeNull()
+      expect(await loginBlockedFor('5.6.7.8', 'bob', now)).toBeNull()
+      // Usernames are case-insensitive for the throttle.
+      expect(await loginBlockedFor('1.2.3.4', 'BOB', now)).toBeGreaterThan(0)
+      expect(await loginBlockedFor('1.2.3.4', 'bob', now + 301_000)).toBeNull()
     } finally {
       delete process.env.LOGIN_MAX_ATTEMPTS
     }

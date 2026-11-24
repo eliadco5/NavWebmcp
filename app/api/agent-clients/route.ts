@@ -1,3 +1,4 @@
+import { readJsonOrEmpty } from "@/lib/http-limits";
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -32,7 +33,7 @@ const CreateBody = z.object({ label: z.string().trim().min(1).max(60) });
 export async function POST(req: NextRequest) {
   const { user, sid } = await authenticateSession(await cookies(), requestInfo(req.headers));
   if (!user) return unauthenticated();
-  const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = CreateBody.safeParse((await readJsonOrEmpty(req)) as unknown);
   if (!parsed.success) {
     return Response.json(
       { success: false, error: { code: "INVALID_INPUT", message: "label must be 1-60 characters." } },
@@ -65,7 +66,7 @@ const RevokeBody = z.object({ clientId: z.string().min(1).max(100) });
 export async function DELETE(req: NextRequest) {
   const { user, sid } = await authenticateSession(await cookies(), requestInfo(req.headers));
   if (!user) return unauthenticated();
-  const parsed = RevokeBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = RevokeBody.safeParse((await readJsonOrEmpty(req)) as unknown);
   if (!parsed.success) {
     return Response.json(
       { success: false, error: { code: "INVALID_INPUT", message: "clientId is required." } },

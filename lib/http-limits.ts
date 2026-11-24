@@ -62,6 +62,14 @@ export async function readJsonCapped(req: Request, limit = maxBodyBytes()): Prom
   }
 }
 
+/** For small routes that validate with zod afterwards: the parsed body, or `{}`
+ *  when it's empty, not JSON, or over the cap (the zod check then answers 400).
+ *  Never reads more than the cap. */
+export async function readJsonOrEmpty(req: Request, limit = maxBodyBytes()): Promise<unknown> {
+  const body = await readJsonCapped(req, limit);
+  return body instanceof Response || body === undefined ? {} : body;
+}
+
 /** Cheap pre-check for routes that must hand the untouched request on (MCP). */
 export function declaredTooLarge(req: Request, limit = maxBodyBytes()): Response | null {
   const declared = Number(req.headers.get("content-length"));

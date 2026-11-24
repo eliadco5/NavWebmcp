@@ -219,8 +219,15 @@ granted = min(asked, window − outstanding − balance) × (1 − pressure)
   was charged**. So a quick, cheap call costs nothing net: its charge comes straight back.
 - **`window − outstanding − balance`** stops the grant from overfilling the window. When the
   balance is negative, this room is larger, so grants pay the debt down first.
-- **`pressure`** compares the metered calls in flight on this instance with
-  `CREDITS_CAPACITY` (64). It is 0 below half capacity and reaches 1 at full capacity.
+- **`pressure`** is the worse of two load signals on this instance:
+  - **calls in flight**, compared with `CREDITS_CAPACITY` (64): 0 below half capacity,
+    1 at full capacity;
+  - **event-loop lag**, i.e. how late the server's timers fire: 0 at 50 ms, 1 at 400 ms.
+    A Node instance swamped with quick requests has few calls in flight at any instant, but
+    everyone waits in line for the CPU. Lag measures that wait, so it is what makes a flooding
+    caller's grants dry up. Stress testing showed in-flight count alone never rose during a
+    40-way flood.
+
   Under load the server hands back less than was spent, and heavy callers slow down by
   themselves.
 
@@ -402,7 +409,29 @@ Credits meter work; these limits cap the shape of a single request.
 | Operations run under one top-level call | 200 | Further nested calls aren't run: `FANOUT_LIMIT` |
 | Handler deadline | 15 s (`OP_DEADLINE_MS`, or `deadlineMs` on an operation) | `HANDLER_TIMEOUT`. The time is still charged. The handler may still finish in the background, so read back before retrying a write. |
 | JSON request body (`/api/call`, `/api/ui/relay`, `/api/admin/credits`, `/api/login`, MCP) | 64 KB (`MAX_BODY_BYTES`). Sign-in is 4 KB, and the UI snapshot keeps its own 256 KB | HTTP 413 `PAYLOAD_TOO_LARGE`. Reading stops at the cap instead of buffering everything first. |
-| Failed sign-ins per IP | 10 per 5 min (`LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S`) | HTTP 429 `TOO_MANY_ATTEMPTS` + `Retry-After`. Only failures count. |
+| Failed sign-ins per IP **and username** | 10 per 5 min (`LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S`) | HTTP 429 `TOO_MANY_ATTEMPTS` + `Retry-After`. Only failures count. Someone guessing one account can't lock every other user behind the same IP (an office NAT) out. |
+| Requests in progress per caller, per instance (the **request gate**) | 8 per agent client, 16 per person (`CREDITS_MAX_INFLIGHT_AGENT`, `_HUMAN`) | Further requests are answered at once with `INSUFFICIENT_CREDITS` and a hint; nothing runs. Counted from arrival until the response is fully sent. |
+| Time one request may hold the instance's state lock | 30 s (`STATE_LOCK_MAX_MS`) | The lock is handed to the next request and the event is logged. |
+| Malformed MCP body (not JSON, not a JSON-RPC object or batch) | — | HTTP 400, JSON-RPC `-32700`, before it reaches the transport. |
+
+### Protection at the door
+
+Two checks run **before** a request does any expensive work: before it queues for the
+instance's state lock, and before the MCP transport builds a server for it.
+
+1. **The request gate** (`lib/credits/gate.ts`). One caller may have only a few requests in
+   progress on this instance at once, so it can never fill the line everybody else waits in.
+2. **The quick refusal** (`quickRefusal` in `lib/credits/index.ts`). A caller that is frozen,
+   or whose balance can't cover even the cheapest call within the hold time, is refused on
+   the spot. That costs about as much as any request to the framework: 5–6 ms here, versus
+   about 12 ms for a real MCP call.
+
+Both answer **in-band**. On MCP the answer is a tool result with `isError` and the hint; on
+HTTP it is 429 with the hint and `Retry-After`. The model reads why, instead of seeing a
+transport error.
+
+Reading the request body, which a slow client can trickle in, also happens before the lock.
+A slow upload therefore never holds the instance.
 
 ## 14. Storage and multiple instances
 
@@ -417,6 +446,19 @@ Credits meter work; these limits cap the shape of a single request.
 - **All the arithmetic is in pure functions** (`refill`, `reserve`, `settle` in
   `lib/credits/ledger.ts`), shared by both paths, so the Redis path and the in-memory path
   can't drift apart.
+
+**What can't take the app down.** Each of these is covered by a test:
+
+| Failure | What happens |
+|---|---|
+| Redis down | In-process ledger. Metering continues per instance. |
+| Redis **connected but not answering** | Every credit command is bounded by `CREDITS_REDIS_TIMEOUT_MS` (300 ms), then falls back to memory. A call never hangs on Redis. |
+| A corrupt stored ledger or override (NaN, wrong types, bad JSON) | Discarded; the caller starts fresh. Never trusted, never a permanent lock-out. |
+| An instance killed mid-call, so its settle never runs | Each reservation carries its own id and time. A reservation older than `CREDITS_HOLD_STALE_MS` (120 s) expires, so no caller is starved by credits nobody will ever release. |
+| A settle that arrives after its reservation expired | Releases nothing; no double release. |
+| Many concurrent calls from one caller | Serialized per caller inside the instance, so they don't fight over the compare-and-set. Across instances, up to 10 jittered retries. |
+| Endless distinct callers | The in-process ledger map is LRU-bounded (`CREDITS_MEMORY_MAX_LEDGERS`, 20,000). The admin list is capped at 2,000. |
+| A bug inside the credit code | Admission fails **open**: the call runs unmetered and the error is logged. Metering exists to protect availability, so it must never be the reason for an outage. |
 
 ## 15. Configuration
 
@@ -433,6 +475,12 @@ Credits meter work; these limits cap the shape of a single request.
 | `OP_DEADLINE_MS` | `15000` | Handler deadline |
 | `MAX_BODY_BYTES` | `65536` | JSON body cap |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S` | `10`, `300` | Sign-in throttle |
+| `CREDITS_MAX_INFLIGHT_AGENT`, `CREDITS_MAX_INFLIGHT_HUMAN` | `8`, `16` | The request gate |
+| `CREDITS_LAG_LOW_MS`, `CREDITS_LAG_HIGH_MS` | `50`, `400` | Event-loop lag that maps to pressure 0 and 1 |
+| `CREDITS_REDIS_TIMEOUT_MS` | `300` | Longest a credit check waits on Redis |
+| `CREDITS_HOLD_STALE_MS` | `120000` | When an unsettled reservation is treated as lost |
+| `CREDITS_MEMORY_MAX_LEDGERS` | `20000` | Size bound of the in-process ledger map |
+| `STATE_LOCK_MAX_MS` | `30000` | Watchdog on the per-instance state lock |
 
 ## 16. Design decisions
 
@@ -460,16 +508,19 @@ Credits meter work; these limits cap the shape of a single request.
 
 ## 17. Known limits
 
-- **A single instance already serializes.** Requests that touch the demo's shared state run
-  one at a time per instance (`withStateLock`, `lib/shared-state/mutex.ts`). On one instance,
-  a burst of parallel calls is therefore queued, not refused: in testing, 40 parallel MCP
-  calls all succeeded. The window matters most across instances (shared through Redis) and
-  for long calls, which are charged and shrink the window however they arrive.
+- **Raw request floods need an edge limit too.** Inside the app, a refused request costs about
+  as much as any request the framework serves (5–6 ms). That is about half of a real MCP call,
+  but not zero. One client hammering a single Node process at full speed still uses CPU that
+  everyone else waits for. In testing, other callers stayed 100 % successful, but a person's
+  p95 rose to about 1.4 s during a 40-way flood on a laptop running both the load and the
+  server. Put a per-IP request rate limit at the edge (Vercel Firewall, a WAF, or the load
+  balancer) in front of production. Credits decide *how much work* each caller gets; the edge
+  limit decides *how many packets* reach the app. Report: [credits-test-report.md](credits-test-report.md).
 - **No holding inside the state lock.** For that reason a short caller is refused, not held,
   on routes that hold the lock (`/api/call`); `retryAfterMs` still tells it when to retry.
 - **One held call per instance, not globally.** With several instances, a caller could have
   one call held on each.
-- **The sign-in throttle keys on `x-forwarded-for`.** Vercel sets that header itself;
+- **The sign-in throttle trusts `x-forwarded-for`.** It keys on that header together with the username. Vercel sets the header itself;
   behind any other proxy, make sure the proxy overwrites it, or a client can rotate it to
   avoid the throttle.
 - **A deadline doesn't cancel the handler.** `HANDLER_TIMEOUT` frees the caller, but the
@@ -491,6 +542,8 @@ Credits meter work; these limits cap the shape of a single request.
 | `lib/operations/execute.ts` | The hook: credits stage, fan-out caps, deadline |
 | `lib/adapters/mcp.ts`, `app/api/call/route.ts` | How MCP and HTTP carry the credit state |
 | `lib/http-limits.ts`, `lib/login-throttle.ts` | Body caps, sign-in throttle |
+| `lib/credits/gate.ts` | The request gate: requests in progress per caller, held until the response body is sent |
+| `lib/shared-state/mutex.ts`, `lib/shared-state/redis.ts` | State-lock watchdog; Redis command, ping and socket timeouts |
 | `app/api/admin/credits/route.ts`, `components/management/AccessPanel.tsx` | Admin API and the Credits table |
 
 | Test | Covers |
@@ -499,3 +552,8 @@ Credits meter work; these limits cap the shape of a single request.
 | `tests/unit/credits/execute.test.ts` | Through `execute()`: who pays, no field in steady state, bursts refused with hints, audited refusals, hold, busy refusal, time charge, fan-out caps, deadline, `getContext` |
 | `tests/unit/credits/surfaces.test.ts` | Hint wording, MCP `_meta` and `[credits]` block, refusal over MCP, `CreditRequest` via `_meta`, body cap, sign-in throttle |
 | `tests/integration/redis-live.test.ts` | The compare-and-set against a real Redis (`npm run test:redis`) |
+| `tests/unit/credits/ledger-fuzz.test.ts` | 480,000 random steps checking six safety invariants; corrupt and hostile stored data; 1,000 concurrent updates; bounded memory |
+| `tests/unit/credits/redis-failures.test.ts` | Redis that hangs, throws, returns garbage or loses every compare-and-set |
+| `tests/unit/credits/gate.test.ts` | The request gate, quick refusal, lag pressure and fair share |
+| `tests/unit/shared-state/mutex-watchdog.test.ts` | A never-ending request can't wedge the instance |
+| `scripts/credits-stress.mjs` (`npm run test:stress`) | 14 attack and load scenarios against real servers, with and without Redis, including Redis outages. Results and fixed bugs: [credits-test-report.md](credits-test-report.md) |

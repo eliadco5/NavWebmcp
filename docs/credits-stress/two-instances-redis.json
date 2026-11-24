@@ -1,0 +1,758 @@
+{
+  "startedAt": "2026-11-24T12:15:29.574Z",
+  "base": "http://localhost:3202",
+  "base2": "http://localhost:3203",
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "Smoke: every surface carries credits",
+      "checks": [
+        {
+          "name": "MCP call succeeds",
+          "ok": true,
+          "detail": "null"
+        },
+        {
+          "name": "MCP _meta carries credits",
+          "ok": true,
+          "detail": "{\"balance\":16,\"window\":17,\"charged\":2,\"granted\":2}"
+        },
+        {
+          "name": "no [credits] block in steady state",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "search shows each function's cost",
+          "ok": true,
+          "detail": "5"
+        },
+        {
+          "name": "/api/call (in-page agent) succeeds with credit headers",
+          "ok": true,
+          "detail": "200 2"
+        },
+        {
+          "name": "/api/call (human UI) metered on the loose profile",
+          "ok": true,
+          "detail": "129"
+        },
+        {
+          "name": "getContext returns the snapshot",
+          "ok": true,
+          "detail": "{\"balance\":14,\"window\":18,\"maxWindow\":64,\"refillPerSec\":2,\"frozen\":false}"
+        }
+      ],
+      "metrics": {}
+    },
+    {
+      "id": "S2",
+      "title": "Negative: auth, malformed input, hostile credit requests, oversize bodies",
+      "checks": [
+        {
+          "name": "MCP without a token → 401",
+          "ok": true,
+          "detail": "401"
+        },
+        {
+          "name": "MCP with a forged token → 401",
+          "ok": true,
+          "detail": "401"
+        },
+        {
+          "name": "MCP garbage JSON → no 5xx",
+          "ok": true,
+          "detail": "400"
+        },
+        {
+          "name": "CreditRequest negative: call succeeds, grant stays within the window",
+          "ok": true,
+          "detail": "{\"balance\":16,\"window\":17,\"charged\":2,\"granted\":2}"
+        },
+        {
+          "name": "CreditRequest string: call succeeds, grant stays within the window",
+          "ok": true,
+          "detail": "{\"balance\":16,\"window\":18,\"charged\":2,\"granted\":2}"
+        },
+        {
+          "name": "CreditRequest huge: call succeeds, grant stays within the window",
+          "ok": true,
+          "detail": "{\"balance\":18,\"window\":19,\"charged\":2,\"granted\":4}"
+        },
+        {
+          "name": "CreditRequest object: call succeeds, grant stays within the window",
+          "ok": true,
+          "detail": "{\"balance\":18,\"window\":20,\"charged\":2,\"granted\":2}"
+        },
+        {
+          "name": "CreditRequest null meta: call succeeds, grant stays within the window",
+          "ok": true,
+          "detail": "{\"balance\":18,\"window\":21,\"charged\":2,\"granted\":2}"
+        },
+        {
+          "name": "HTTP credit-request header \"-1\": OK and bounded",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "HTTP credit-request header \"abc\": OK and bounded",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "HTTP credit-request header \"1e309\": OK and bounded",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "HTTP credit-request header \"\": OK and bounded",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "HTTP credit-request header \"  \": OK and bounded",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "/api/call malformed JSON → 400",
+          "ok": true,
+          "detail": "400"
+        },
+        {
+          "name": "/api/call JSON array body → handled, no 5xx",
+          "ok": true,
+          "detail": "404"
+        },
+        {
+          "name": "/api/call body over 64 KB → 413",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "MCP body over 64 KB → 413",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "chunked body (no Content-Length) over the cap → 413",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "lying Content-Length (claims 1 GB) → 413 at once, nothing buffered",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "body shorter than its Content-Length → no hang past the client, no 5xx",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "…and the next request on the instance is still served",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "argument near a limit is validated, not crashed",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "unknown op through invoke → handled",
+          "ok": true,
+          "detail": "null"
+        },
+        {
+          "name": "oversized sign-in body → 413",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "customer cannot change credit policy → 403",
+          "ok": true,
+          "detail": "403"
+        },
+        {
+          "name": "admin with an invalid value → 400",
+          "ok": true,
+          "detail": "400"
+        }
+      ],
+      "metrics": {}
+    },
+    {
+      "id": "S3",
+      "title": "Fan-out bombs: invoke inside invoke, 50×50 batches",
+      "checks": [
+        {
+          "name": "6-deep invoke → FANOUT_LIMIT, server fine",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "50×50 bomb (2,550 ops) is admitted, then capped at 200 operations",
+          "ok": true,
+          "detail": "100 inner calls refused"
+        },
+        {
+          "name": "…and leaves its caller in debt (the extra ops were charged)",
+          "ok": true,
+          "detail": "{\"balance\":-196,\"window\":8,\"charged\":228,\"granted\":16,\"hint\":\"That call cost 228 credits because it ran 200 more operations than it declared and it returned a large result; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~100 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch.\"}"
+        },
+        {
+          "name": "…so its next call is refused until the debt is paid",
+          "ok": true,
+          "detail": "INSUFFICIENT_CREDITS"
+        },
+        {
+          "name": "…and does not 5xx",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "…charged for what it asked to run (or refused up front)",
+          "ok": true,
+          "detail": "{\"balance\":-196,\"window\":8,\"charged\":228,\"granted\":16,\"hint\":\"That call cost 228 credits because it ran 200 more operations than it declared and it returned a large result; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~100 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch.\"}"
+        },
+        {
+          "name": "a bomb over 64 KB is stopped at the door (413)",
+          "ok": true,
+          "detail": "413"
+        },
+        {
+          "name": "server still answers",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "bomb body bytes": 56861,
+        "50×50 bomb ms": 940,
+        "inner calls refused with FANOUT_LIMIT": 100
+      }
+    },
+    {
+      "id": "S4",
+      "title": "Flood: one agent fires hundreds of parallel calls",
+      "checks": [
+        {
+          "name": "no HTTP 5xx from the app",
+          "ok": true,
+          "detail": "{\"ok\":10,\"INSUFFICIENT_CREDITS\":377,\"NET_ECONNREFUSED\":213}"
+        },
+        {
+          "name": "no timeouts or resets: the only network errors are OS backlog refusals",
+          "ok": true,
+          "detail": "{\"ok\":10,\"INSUFFICIENT_CREDITS\":377,\"NET_ECONNREFUSED\":213}"
+        },
+        {
+          "name": "every answered request is either success or INSUFFICIENT_CREDITS",
+          "ok": true,
+          "detail": "{\"ok\":10,\"INSUFFICIENT_CREDITS\":377,\"NET_ECONNREFUSED\":213}"
+        },
+        {
+          "name": "refusals carry a plain-language hint",
+          "ok": true,
+          "detail": "Refused: you already have 8 requests in progress on this server. Wait for one to finish before sending another; retry in 1 s."
+        },
+        {
+          "name": "refusals carry retryAfterMs in _meta",
+          "ok": true,
+          "detail": "{\"retryAfterMs\":1000,\"hint\":\"Refused: you already have 8 requests in progress on this server. Wait for one to finish before sending another; retry in 1 s.\"}"
+        },
+        {
+          "name": "server still answers",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the flooding agent recovers after a pause",
+          "ok": true,
+          "detail": "null"
+        }
+      ],
+      "metrics": {
+        "outcomes": {
+          "ok": 10,
+          "INSUFFICIENT_CREDITS": 377,
+          "NET_ECONNREFUSED": 213
+        },
+        "latency": {
+          "n": 600,
+          "p50": 1179,
+          "p95": 1928,
+          "p99": 2186,
+          "max": 2253
+        },
+        "same burst on /api/me (no credits, no lock)": {
+          "answered": 600
+        }
+      }
+    },
+    {
+      "id": "S5",
+      "title": "Isolation: a flooding agent must not take the app down for others",
+      "checks": [
+        {
+          "name": "victim agent: ≥ 99 % success while another agent floods",
+          "ok": true,
+          "detail": "100.0 % of 26"
+        },
+        {
+          "name": "victim agent: never refused for someone else's credits",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "human UI: 100 % success during the flood",
+          "ok": true,
+          "detail": "100.0 % of 24"
+        },
+        {
+          "name": "victim p95 < 1 s",
+          "ok": true,
+          "detail": "623"
+        },
+        {
+          "name": "human p95 < 4 s (usable)",
+          "ok": true,
+          "detail": "2324"
+        },
+        {
+          "name": "no 5xx anywhere",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the attacker's excess is refused at the door (gate), not queued",
+          "ok": true,
+          "detail": "{\"INSUFFICIENT_CREDITS\":9775,\"ok\":141}"
+        }
+      ],
+      "metrics": {
+        "attacker outcomes": {
+          "INSUFFICIENT_CREDITS": 9775,
+          "ok": 141
+        },
+        "victim agent latency": {
+          "n": 26,
+          "p50": 436,
+          "p95": 623,
+          "p99": 668,
+          "max": 668
+        },
+        "human UI latency": {
+          "n": 24,
+          "p50": 306,
+          "p95": 2324,
+          "p99": 2817,
+          "max": 2817
+        }
+      }
+    },
+    {
+      "id": "S14",
+      "title": "Slow clients and wedge attempts must not block the instance",
+      "checks": [
+        {
+          "name": "a trickling body does not hold the instance (others p95 < 500 ms)",
+          "ok": true,
+          "detail": "112"
+        },
+        {
+          "name": "…and the slow request itself completes",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "after malformed MCP bodies, /api/call still answers at once",
+          "ok": true,
+          "detail": "200 15 ms"
+        },
+        {
+          "name": "30 concurrent malformed bodies → all answered 400",
+          "ok": true,
+          "detail": "400"
+        },
+        {
+          "name": "…and the instance is still reachable",
+          "ok": true,
+          "detail": "200"
+        }
+      ],
+      "metrics": {
+        "other users while a body trickles in": {
+          "n": 19,
+          "p50": 63,
+          "p95": 112,
+          "p99": 112,
+          "max": 112
+        }
+      }
+    },
+    {
+      "id": "S6",
+      "title": "Many agents at once: overload is shed with hints, and agents that follow them all finish",
+      "checks": [
+        {
+          "name": "agents that follow the hints all complete every call",
+          "ok": true,
+          "detail": "1000/1000; "
+        },
+        {
+          "name": "no 5xx",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "at moderate load (20 agents, one call each) nobody is refused",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "calls": 1000,
+        "needed a retry (load shed)": 0,
+        "throughput calls/s": 93,
+        "latency of each attempt": {
+          "n": 1000,
+          "p50": 1077,
+          "p95": 1238,
+          "p99": 1262,
+          "max": 1344
+        }
+      }
+    },
+    {
+      "id": "S7",
+      "title": "Long calls: relay waits are charged for their time and shrink the window",
+      "checks": [
+        {
+          "name": "the long call ran ~8 s and timed out at the relay (not at credits)",
+          "ok": true,
+          "detail": "UI_TIMEOUT"
+        },
+        {
+          "name": "it was charged for its run time",
+          "ok": true,
+          "detail": "{\"balance\":8,\"window\":8,\"charged\":12,\"granted\":4,\"hint\":\"That call cost 12 credits because it ran 8 s; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~1 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch.\"}"
+        },
+        {
+          "name": "its window shrank",
+          "ok": true,
+          "detail": "{\"balance\":8,\"window\":8,\"charged\":12,\"granted\":4,\"hint\":\"That call cost 12 credits because it ran 8 s; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~1 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch.\"}"
+        },
+        {
+          "name": "the agent was told why in a [credits] block",
+          "ok": true,
+          "detail": "[credits] That call cost 12 credits because it ran 8 s; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~1 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch."
+        },
+        {
+          "name": "the shrunk window admits only a few long calls at once",
+          "ok": true,
+          "detail": "2 admitted"
+        },
+        {
+          "name": "another agent is unaffected right after",
+          "ok": true,
+          "detail": "null"
+        }
+      ],
+      "metrics": {
+        "first long call": {
+          "ms": 8186,
+          "code": "UI_TIMEOUT",
+          "credits": {
+            "balance": 8,
+            "window": 8,
+            "charged": 12,
+            "granted": 4,
+            "hint": "That call cost 12 credits because it ran 8 s; you can now hold at most 8 credits because your calls run long or cost more than they return. Make fewer, smaller calls; wait ~1 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch."
+          }
+        },
+        "10 parallel long calls": {
+          "admitted": 2,
+          "refused": 8
+        }
+      }
+    },
+    {
+      "id": "S8",
+      "title": "Long calls vs. everybody else: is the app reachable while slow calls run?",
+      "checks": [
+        {
+          "name": "victim agent stays ≥ 99 % successful",
+          "ok": true,
+          "detail": "57/57"
+        },
+        {
+          "name": "human UI stays 100 % successful",
+          "ok": true,
+          "detail": "28/28"
+        },
+        {
+          "name": "victim p95 < 3 s",
+          "ok": true,
+          "detail": "43"
+        },
+        {
+          "name": "human p95 < 3 s",
+          "ok": true,
+          "detail": "2263"
+        }
+      ],
+      "metrics": {
+        "attacker long calls": {
+          "total": 3328,
+          "admitted": 5
+        },
+        "victim latency while slow calls run": {
+          "n": 57,
+          "p50": 31,
+          "p95": 43,
+          "p99": 51,
+          "max": 51
+        },
+        "human latency while slow calls run": {
+          "n": 28,
+          "p50": 159,
+          "p95": 2263,
+          "p99": 2268,
+          "max": 2268
+        }
+      }
+    },
+    {
+      "id": "S9",
+      "title": "Admin controls under fire: freeze, cap, reset",
+      "checks": [
+        {
+          "name": "freeze accepted",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "frozen agent refused with the admin hint",
+          "ok": true,
+          "detail": "INSUFFICIENT_CREDITS"
+        },
+        {
+          "name": "…a sibling agent of the same user is unaffected",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "unfreeze restores access",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "a capped agent gets only one long call through at a time",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "name": "…and none 5xx",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "reset restores the defaults",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "ledger list still served under load",
+          "ok": true,
+          "detail": "200"
+        }
+      ],
+      "metrics": {
+        "window 2, 10 parallel long calls": {
+          "admitted": 1
+        }
+      }
+    },
+    {
+      "id": "S10",
+      "title": "Sign-in throttle",
+      "checks": [
+        {
+          "name": "first 10 → 401, then 429",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "same IP, another user can still sign in",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "the guessed account is throttled even with the right password",
+          "ok": true,
+          "detail": "429"
+        },
+        {
+          "name": "50 parallel bad sign-ins from different IPs → no 5xx",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "12 wrong passwords": "401,401,401,401,401,401,401,401,401,401,429,429"
+      }
+    },
+    {
+      "id": "S11",
+      "title": "Two instances sharing Redis: one ledger per agent across both",
+      "checks": [
+        {
+          "name": "the shared window admits ≤ 1 at a time across BOTH instances (per-instance ledgers would admit 2)",
+          "ok": true,
+          "detail": "1 admitted"
+        },
+        {
+          "name": "no 5xx across instances",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "8 long calls split over 2 instances": {
+          "admitted": 1,
+          "codes": [
+            "INSUFFICIENT_CREDITS",
+            "INSUFFICIENT_CREDITS",
+            "UI_TIMEOUT",
+            "INSUFFICIENT_CREDITS",
+            "INSUFFICIENT_CREDITS",
+            "INSUFFICIENT_CREDITS",
+            "INSUFFICIENT_CREDITS",
+            "INSUFFICIENT_CREDITS"
+          ]
+        },
+        "300-call flood across both instances": {
+          "ok": 16,
+          "INSUFFICIENT_CREDITS": 284
+        }
+      }
+    },
+    {
+      "id": "S12",
+      "title": "Redis outages: stopped, then frozen (connected but not answering)",
+      "checks": [
+        {
+          "name": "Redis hung: calls still answered, no 5xx",
+          "ok": true,
+          "detail": "{\"n\":289,\"p50\":18,\"p95\":29,\"p99\":3676,\"max\":3678}"
+        },
+        {
+          "name": "Redis hung: p95 bounded (< 5 s)",
+          "ok": true,
+          "detail": "29"
+        },
+        {
+          "name": "Redis down: calls still answered, no 5xx",
+          "ok": true,
+          "detail": "{\"n\":1152,\"p50\":16,\"p95\":29,\"p99\":37,\"max\":41}"
+        },
+        {
+          "name": "Redis down: p95 bounded (< 3 s)",
+          "ok": true,
+          "detail": "29"
+        },
+        {
+          "name": "Redis down: metering still on (per-instance)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "Redis back: service recovered",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "baseline (Redis up)": {
+          "n": 381,
+          "p50": 52,
+          "p95": 67,
+          "p99": 74,
+          "max": 76,
+          "ok": 381,
+          "fiveXX": 0
+        },
+        "Redis PAUSED (connected, not answering)": {
+          "n": 289,
+          "p50": 18,
+          "p95": 29,
+          "p99": 3676,
+          "max": 3678,
+          "ok": 289,
+          "fiveXX": 0
+        },
+        "Redis STOPPED": {
+          "n": 1152,
+          "p50": 16,
+          "p95": 29,
+          "p99": 37,
+          "max": 41,
+          "ok": 1152,
+          "fiveXX": 0
+        },
+        "Redis back": {
+          "n": 443,
+          "p50": 44,
+          "p95": 58,
+          "p99": 73,
+          "max": 80,
+          "ok": 443,
+          "fiveXX": 0
+        }
+      }
+    },
+    {
+      "id": "S13",
+      "title": "Soak: sustained mixed load, many agents",
+      "checks": [
+        {
+          "name": "no 5xx during the soak",
+          "ok": true,
+          "detail": "{\"ok\":4940}"
+        },
+        {
+          "name": "agents that follow the hints: ≥ 99 % of calls complete",
+          "ok": true,
+          "detail": "100.0 %"
+        },
+        {
+          "name": "server still answers",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "metrics": {
+        "duration s": 60,
+        "throughput calls/s": 82,
+        "outcomes": {
+          "ok": 4940
+        },
+        "latency": {
+          "n": 4940,
+          "p50": 206,
+          "p95": 424,
+          "p99": 525,
+          "max": 719
+        }
+      }
+    }
+  ],
+  "finishedAt": "2026-11-24T12:19:51.551Z",
+  "summary": {
+    "checks": 96,
+    "passed": 96,
+    "failed": 0
+  }
+}

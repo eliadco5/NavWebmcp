@@ -19,6 +19,9 @@ import type { Actor } from "@/lib/operations/types";
 import type { CreditInfo } from "@/lib/result";
 import { AGENT_HEADER, CHANNEL_HEADER, CREDIT_HEADERS } from "@/lib/constants";
 import { readJsonCapped } from "@/lib/http-limits";
+import { gateHint, withResponseGate } from "@/lib/credits/gate";
+import { quickRefusal } from "@/lib/credits";
+import type { User } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +42,12 @@ function creditHeaders(c: CreditInfo | undefined): Record<string, string> {
   return h;
 }
 
-export const POST = withSharedState(async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  const { user, sid } = await authenticateSession(cookieStore, requestInfo(req.headers));
+// Everything that can take time on the caller's side — authenticating, reading
+// the body (a slow client can trickle it in) — happens BEFORE the state lock,
+// and so does the request gate: a caller can only hold a few places in this
+// instance's queue (lib/credits/gate.ts). Only executing the call is locked.
+export async function POST(req: NextRequest) {
+  const { user, sid } = await authenticateSession(await cookies(), requestInfo(req.headers));
   if (!user) {
     return Response.json(
       { success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } },
@@ -51,9 +57,40 @@ export const POST = withSharedState(async function POST(req: NextRequest) {
 
   const body = await readJsonCapped(req);
   if (body instanceof Response) return body;
-  const { name, params } = (body ?? {}) as { name?: unknown; params?: unknown };
 
   const isAgent = req.headers.get(CHANNEL_HEADER) === "webmcp";
+  const key = isAgent ? `a:webmcp-${sid}` : `h:${user.id}`;
+  return withResponseGate(
+    key,
+    isAgent ? "agent" : "human",
+    async () => {
+      // A caller already out of credits is answered before it queues for the lock.
+      const refused = await quickRefusal(key, isAgent ? "agent" : "human");
+      if (refused) {
+        return Response.json(
+          { success: false, error: { code: "INSUFFICIENT_CREDITS", message: refused.hint ?? "Out of credits; retry later." }, credits: refused },
+          { status: 429, headers: creditHeaders(refused) }
+        );
+      }
+      return runLocked(req, user, sid, isAgent, body);
+    },
+    (limit) =>
+      Response.json(
+        { success: false, error: { code: "INSUFFICIENT_CREDITS", message: gateHint(limit) } },
+        { status: 429, headers: { "Retry-After": "1" } }
+      )
+  );
+}
+
+const runLocked = withSharedState(async function runLocked(
+  req: NextRequest,
+  user: User,
+  sid: string,
+  isAgent: boolean,
+  body: unknown
+) {
+  const { name, params } = (body ?? {}) as { name?: unknown; params?: unknown };
+
   // Client-supplied: cap it so it can't bloat audit entries.
   const agentName = req.headers.get(AGENT_HEADER)?.slice(0, 100) || undefined;
   const actor: Actor = isAgent

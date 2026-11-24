@@ -1,3 +1,4 @@
+import { readTextCapped } from "@/lib/http-limits";
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
@@ -33,7 +34,8 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return Response.json({ success: false, error: { code: "UNAUTHENTICATED", message: "Login required." } }, { status: 401 });
   }
-  const text = await req.text();
+  const text = await readTextCapped(req, MAX_BODY_BYTES);
+  if (text instanceof Response) return text;
   if (text.length > MAX_BODY_BYTES) {
     return Response.json({ success: false, error: { code: "INVALID_INPUT", message: "Report too large." } }, { status: 413 });
   }

@@ -33,12 +33,26 @@ function envMs(name: string, fallback: number): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+//
+// A Redis that is CONNECTED BUT NOT ANSWERING (paused, overloaded, a network
+// black hole) is worse than one that's down: nothing errors, every command
+// just waits. Found by scripts/credits-stress.mjs (`docker pause`): every
+// request hung for 20 s+ — the app was unreachable. So, as well:
+//   - every command times out after REDIS_COMMAND_TIMEOUT_MS (default 1000)
+//     and rejects; callers already catch and fall back;
+//   - the client PINGs every second and the socket times out after
+//     REDIS_SOCKET_TIMEOUT_MS (default 3000) without data, so a hung server
+//     is detected, the socket dropped and Redis marked down for the cooldown
+//     — later requests skip it at once instead of each paying the timeout.
 function buildClient(url: string): RedisClientType {
   const c = createClient({
     url,
     disableOfflineQueue: true,
+    pingInterval: envMs("REDIS_PING_INTERVAL_MS", 1000),
+    commandOptions: { timeout: envMs("REDIS_COMMAND_TIMEOUT_MS", 1000) },
     socket: {
       connectTimeout: envMs("REDIS_CONNECT_TIMEOUT_MS", 1500),
+      socketTimeout: envMs("REDIS_SOCKET_TIMEOUT_MS", 3000),
       // Keep trying in the background, backing off to every 5s.
       reconnectStrategy: (retries: number) => Math.min(100 * 2 ** retries, 5000),
     },
@@ -50,6 +64,9 @@ function buildClient(url: string): RedisClientType {
   // per outage, not once per reconnect attempt.
   let reported = false;
   c.on("error", (err) => {
+    // Any connection-level error (including the socket timeout above) skips
+    // Redis for the cooldown, so requests stop waiting on it at once.
+    downUntil = Date.now() + envMs("REDIS_RETRY_COOLDOWN_MS", 30_000);
     if (reported) return;
     reported = true;
     console.warn("[shared-state] redis connection error (falling back to in-process state):", err?.message ?? err);

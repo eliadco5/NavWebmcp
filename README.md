@@ -1589,7 +1589,14 @@ separate calls.
 | Operations under one top-level call | 200 | `FANOUT_LIMIT` |
 | Handler deadline | 15 s | `HANDLER_TIMEOUT` (time still charged) |
 | JSON request body | 64 KB | HTTP 413 |
-| Failed sign-ins per IP | 10 per 5 min | HTTP 429 |
+| Failed sign-ins per IP and username | 10 per 5 min | HTTP 429 |
+| Requests in progress per caller (the request gate) | 8 per agent, 16 per person | `INSUFFICIENT_CREDITS` at once, with a hint |
+| One request holding the instance's state lock | 30 s | lock passed on, event logged |
+| Malformed MCP body | — | HTTP 400, JSON-RPC `-32700` |
+
+Callers that are already out of credits, or over the gate, are turned away **at the door**:
+before the request queues for the instance, and before the MCP transport builds a server for
+it. A refusal costs about what any request costs the framework.
 
 ### Configuration and limits
 
@@ -1601,16 +1608,42 @@ separate calls.
 | `OP_DEADLINE_MS` | `15000` | Handler deadline |
 | `MAX_BODY_BYTES` | `65536` | JSON body cap |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S` | `10`, `300` | Sign-in throttle |
+| `CREDITS_MAX_INFLIGHT_AGENT`, `_HUMAN` | `8`, `16` | The request gate |
+| `STATE_LOCK_MAX_MS` | `30000` | State-lock watchdog |
+| `REDIS_COMMAND_TIMEOUT_MS`, `REDIS_SOCKET_TIMEOUT_MS` | `1000`, `3000` | A hung Redis is detected and skipped, never waited on |
 
 **Storage:**
 - **With Redis,** all instances share one ledger per caller, updated by compare-and-set
   (`npm run test:redis` checks it).
 - **Without Redis,** limits apply per instance instead of switching off.
 
+### Tested to destruction
+
+Credits sit in front of every call, so if they break, the app is unreachable. They are tested
+at four levels:
+- **property-based fuzzing:** 480,000 random steps checked against six safety invariants;
+- **failure injection:** Redis hung, throwing, returning garbage or losing every race;
+  corrupt ledgers; never-ending requests;
+- **unit and integration** tests;
+- **a "Mad Max" stress harness** against real servers (`npm run test:stress`): floods,
+  fan-out bombs, long calls, slow clients, malformed bodies, many agents, two instances
+  sharing Redis, and Redis stopped and **frozen** mid-run.
+
+Testing found and fixed four ways to take the app down or starve every caller. Three were
+pre-existing:
+- **a 10-byte malformed MCP request** wedged the whole instance;
+- **a frozen Redis** hung every request;
+- **reservations leaked** by killed instances;
+- **a corrupt stored ledger.**
+
+Final run: **184 / 184** end-to-end checks, plus 979 automated tests (975 in the suite and 4 against a live Redis). While one agent
+floods at 40-way concurrency, other agents and people keep **100 %** success, and the flooder
+gets 93 of its 2,870 calls through. Full report: [`docs/credits-test-report.md`](docs/credits-test-report.md).
+
 **Known limits:**
-- **Bursts are queued on one instance, not refused.** One instance already runs
-  state-touching requests one at a time, so the window matters most across instances and
-  for long calls.
+- **A raw request flood still costs CPU.** A refusal is as cheap as any request the framework
+  serves, but not free. Put a per-IP request limit at the edge (Vercel Firewall, a WAF or the
+  load balancer) in front of production.
 - **Proxies must overwrite the client IP header.** The sign-in throttle trusts
   `x-forwarded-for`; Vercel overwrites it, other proxies must too.
 

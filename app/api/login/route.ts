@@ -9,7 +9,12 @@ import { readJsonCapped } from "@/lib/http-limits";
 
 export async function POST(req: NextRequest) {
   const info = requestInfo(req.headers);
-  const blockedMs = await loginBlockedFor(info.ip);
+  const body = await readJsonCapped(req, 4096);
+  if (body instanceof Response) return body;
+  const { username: rawUser, password } = (body ?? {}) as { username?: unknown; password?: unknown };
+  const username = String(rawUser ?? "");
+
+  const blockedMs = await loginBlockedFor(info.ip, username);
   if (blockedMs !== null) {
     await auditAuth({
       action: "auth.login",
@@ -17,6 +22,7 @@ export async function POST(req: NextRequest) {
       errorCode: "TOO_MANY_ATTEMPTS",
       actor: { type: "human", userId: "anonymous", role: "customer", assurance: "asserted" },
       ...info,
+      detail: { username: username.slice(0, 64) },
     });
     const retryS = Math.max(1, Math.ceil(blockedMs / 1000));
     return Response.json(
@@ -25,12 +31,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await readJsonCapped(req, 4096);
-  if (body instanceof Response) return body;
-  const { username, password } = (body ?? {}) as { username?: unknown; password?: unknown };
-  const user = verifyCredentials(String(username ?? ""), String(password ?? ""));
+  const user = verifyCredentials(username, String(password ?? ""));
   if (!user) {
-    await noteLoginFailure(info.ip);
+    await noteLoginFailure(info.ip, username);
     // Failed sign-ins are what brute-force monitoring looks for (SOC2 CC7.2).
     await auditAuth({
       action: "auth.login",

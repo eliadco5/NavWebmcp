@@ -29,6 +29,19 @@ export function isStateLockHeld(): boolean {
   return mine !== undefined && mine === current;
 }
 
+/**
+ * Watchdog: the longest one request may hold the lock (STATE_LOCK_MAX_MS,
+ * default 30 s — above the 15 s handler deadline). Without it, a single
+ * request whose handler never settles wedges every later state-touching
+ * request on the instance forever: the whole app becomes unreachable. Past the
+ * limit the lock is handed to the next waiter (the stuck request keeps running
+ * unlocked), which trades a rare consistency risk for staying up.
+ */
+function lockMaxMs(): number {
+  const n = Number(process.env.STATE_LOCK_MAX_MS);
+  return Number.isFinite(n) && n > 0 ? n : 30_000;
+}
+
 export function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
   // Re-entrant: a nested call (there are none today, but a future one composing
   // withSharedState inside itself must not deadlock against its own queue).
@@ -41,11 +54,22 @@ export function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
       if (current === token) current = undefined;
     });
   });
-  // The chain must keep advancing even if `run` rejects, or every request after
-  // a single failure would wait on a permanently-rejected promise forever.
-  chain = run.then(
-    () => undefined,
-    () => undefined
-  );
+  // The chain advances when `run` settles (either way: a rejection must not
+  // block everyone after it) — or when the watchdog fires, whichever is first.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const watchdog = new Promise<void>((resolve) => {
+    const start = () => {
+      timer = setTimeout(() => {
+        if (current === token) current = undefined;
+        console.error(`[shared-state] a request held the state lock for over ${lockMaxMs()} ms; releasing it so other requests can proceed`);
+        resolve();
+      }, lockMaxMs());
+      // Never keep the process alive just for the watchdog.
+      (timer as { unref?: () => void }).unref?.();
+    };
+    // Start timing only once this run actually holds the lock.
+    chain.then(start, start);
+  });
+  chain = Promise.race([run.then(() => undefined, () => undefined), watchdog]).finally(() => clearTimeout(timer));
   return run;
 }
