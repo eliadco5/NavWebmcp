@@ -23,7 +23,9 @@ function readSkill(): string {
   return readFileSync(SKILL_PATH, "utf8");
 }
 
-function parseFrontmatter(md: string): Record<string, string> {
+function parseFrontmatter(raw: string): Record<string, string> {
+  // Windows checkouts (core.autocrlf) give CRLF; the frontmatter is the same either way.
+  const md = raw.replace(/\r\n/g, "\n");
   const match = md.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return {};
   const fm: Record<string, string> = {};

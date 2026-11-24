@@ -177,6 +177,14 @@ async function timedPlaywrightIteration(username, interact) {
   }
 }
 
+// Same selector rules as scripts/bench.mjs: the app is tabbed (components/AppShell.tsx),
+// so each flow selects its own tab first, and every name match is exact — a loose
+// "Party Size" also hits the walk-in WaitTimeCard's "Party size" input on the same tab,
+// and "Search" hits Activity Log rows such as "searchAvailability".
+async function openTab(page, label) {
+  await page.getByRole("tab", { name: label, exact: true }).click();
+}
+
 async function runPlaywrightBook(n) {
   const perRun = [];
   for (let i = 0; i < n; i++) {
@@ -184,17 +192,18 @@ async function runPlaywrightBook(n) {
     const time = BOOKING_TIMES[i % BOOKING_TIMES.length];
     const guestName = `Speedbase UI Guest ${i + 1}`;
     const result = await timedPlaywrightIteration("alice", async (page) => {
-      await page.getByLabel("Date").fill(date);
-      await page.getByLabel("Party Size").fill("2");
-      await page.getByRole("button", { name: "Search" }).click();
-      const row = page.locator("div", { hasText: time }).filter({ has: page.getByRole("button", { name: "Book" }) }).last();
-      const bookInRow = row.getByRole("button", { name: "Book" });
+      await openTab(page, "Reservations");
+      await page.getByLabel("Date", { exact: true }).fill(date);
+      await page.getByLabel("Party Size", { exact: true }).fill("2");
+      await page.getByRole("button", { name: "Search", exact: true }).click();
+      const row = page.locator("div", { hasText: time }).filter({ has: page.getByRole("button", { name: "Book", exact: true }) }).last();
+      const bookInRow = row.getByRole("button", { name: "Book", exact: true });
       const rowVisible = await bookInRow.waitFor({ state: "visible", timeout: 5000 }).then(() => true).catch(() => false);
       if (!rowVisible) return false;
       await bookInRow.click();
-      await page.getByLabel("Guest Name").fill(guestName);
-      await page.getByRole("button", { name: "Confirm Booking" }).click();
-      await page.getByLabel("Guest Name").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+      await page.getByLabel("Guest Name", { exact: true }).fill(guestName);
+      await page.getByRole("button", { name: "Confirm Booking", exact: true }).click();
+      await page.getByLabel("Guest Name", { exact: true }).waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
       return true;
     });
     perRun.push(result);
@@ -210,6 +219,7 @@ async function runPlaywrightSeatGuest(n, adminCookie) {
     // iteration already uses a distinct, never-before-booked slot.
     await resetFrontOffice(adminCookie);
     const result = await timedPlaywrightIteration("bob", async (page) => {
+      await openTab(page, "Front Desk");
       const checkInBtn = page.getByRole("button", { name: /Check in Carol Diaz/i });
       const checkInVisible = await checkInBtn.waitFor({ state: "visible", timeout: 10000 }).then(() => true).catch(() => false);
       if (!checkInVisible) return false;
@@ -220,7 +230,7 @@ async function runPlaywrightSeatGuest(n, adminCookie) {
       const checkOutBtn = page.getByRole("button", { name: /Check out Carol Diaz/i });
       await checkOutBtn.waitFor({ state: "visible", timeout: 5000 });
       await checkOutBtn.click();
-      const confirmBtn = page.getByRole("button", { name: "Confirm" });
+      const confirmBtn = page.getByRole("button", { name: "Confirm", exact: true });
       await confirmBtn.waitFor({ state: "visible", timeout: 5000 });
       await confirmBtn.click();
       await checkOutBtn.waitFor({ state: "hidden", timeout: 5000 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { BookingStore } from "@/lib/store";
+// BookingStore is not exported; its type is the type of the exported singleton.
+type BookingStore = typeof import("@/lib/store")["store"];
 
 // setup.ts deletes globalThis.__bookingStore + calls vi.resetModules() before each test,
 // so each dynamic import gets a freshly seeded BookingStore.

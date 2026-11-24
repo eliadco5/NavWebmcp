@@ -148,7 +148,8 @@ describe('hostVipGuestOp in registry', () => {
     const { search } = await import('@/lib/operations/search')
     const result = await search.handler({ pattern: 'hostVipGuest' }, supportCtx)
     expect(result.success).toBe(true)
-    const names = result.data.functions.map((f: { name: string }) => f.name)
+    if (!result.success) throw new Error(result.error.message)
+    const names = result.data.functions!.map((f: { name: string }) => f.name)
     expect(names).toContain('hostVipGuest')
   })
 
@@ -156,7 +157,8 @@ describe('hostVipGuestOp in registry', () => {
     const { describeTool } = await import('@/lib/operations/describeTool')
     const result = await describeTool.handler({ name: 'hostVipGuest' }, supportCtx)
     expect(result.success).toBe(true)
-    const schema = result.data.inputSchema
+    if (!result.success) throw new Error(result.error.message)
+    const schema = result.data.inputSchema!
     expect(schema.properties).toHaveProperty('reservationId')
     expect(schema.properties).toHaveProperty('guestId')
     expect(schema.properties).toHaveProperty('pointsToAward')
@@ -167,6 +169,7 @@ describe('hostVipGuestOp in registry', () => {
     const { invoke } = await import('@/lib/operations/invoke')
     const result = await invoke.handler({ name: 'hostVipGuest', args: INPUT }, adminCtx)
     expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error.message)
     const inner = result.data as { success: boolean; data: { validated: boolean } }
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)

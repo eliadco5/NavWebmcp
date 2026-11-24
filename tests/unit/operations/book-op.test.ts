@@ -265,7 +265,8 @@ describe('bookOp in registry', () => {
     const { explore } = await import('@/lib/operations/explore')
     const result = await explore.handler({ path: 'reservation.booking' }, customerCtx)
     expect(result.success).toBe(true)
-    const names = result.data.functions.map((f: any) => f.name)
+    if (!result.success) throw new Error(result.error.message)
+    const names = result.data.functions!.map((f: any) => f.name)
     expect(names).toContain('book')
   })
 
@@ -273,7 +274,8 @@ describe('bookOp in registry', () => {
     const { search } = await import('@/lib/operations/search')
     const result = await search.handler({ pattern: 'book' }, customerCtx)
     expect(result.success).toBe(true)
-    const names = result.data.functions.map((f: any) => f.name)
+    if (!result.success) throw new Error(result.error.message)
+    const names = result.data.functions!.map((f: any) => f.name)
     expect(names).toContain('book')
   })
 
@@ -281,7 +283,8 @@ describe('bookOp in registry', () => {
     const { describeTool } = await import('@/lib/operations/describeTool')
     const result = await describeTool.handler({ name: 'book' }, customerCtx)
     expect(result.success).toBe(true)
-    const schema = result.data.inputSchema
+    if (!result.success) throw new Error(result.error.message)
+    const schema = result.data.inputSchema!
     expect(schema.properties).toHaveProperty('date')
     expect(schema.properties).toHaveProperty('time')
     expect(schema.properties).toHaveProperty('partySize')
@@ -297,6 +300,7 @@ describe('bookOp in registry', () => {
       customerCtx
     )
     expect(result.success).toBe(true)
+    if (!result.success) throw new Error(result.error.message)
     const inner = result.data as any
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)
