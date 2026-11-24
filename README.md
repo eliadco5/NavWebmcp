@@ -1508,6 +1508,31 @@ flowchart LR
     G --> OUT["Result<br/>(+ credits hint only if the agent<br/>should change course)"]
 ```
 
+### Every function shows its cost
+
+Agents see the price before they call. Every function returned by `explore`, `search`,
+`describe_tool` and `getCapabilities` carries a `credits` attribute. On MCP, every tool in
+`tools/list` carries `_meta["navwebmcp/credits"] = { cost }`. The attribute is the cost of
+one call on its own, before size and run time:
+
+```jsonc
+// search({ pattern: "book" }) → one of functions[]
+{ "name": "book", "permission": "write", "module": "reservation.booking", "credits": 5 }
+```
+
+| Function | `credits` |
+|---|---|
+| any read (`getGuest`, `explore`, …) | 2 |
+| any write (`createTask`, …) | 3 |
+| `book`, `seatGuest` | 5 |
+| `hostVipGuest` | 8 |
+| `ui_list`, `ui_get_state` | 3 |
+| `ui_set_state`, `ui_action` | 4 |
+| `invoke` | 1, plus the weights of what it runs |
+
+A small, quick call is charged exactly the published number. The cost is part of the
+`capabilityHash`, so a cost change invalidates cached manifests.
+
 ### Agents don't need to know any of this
 
 The server does the accounting. It tells the agent what it needs to know **inside the

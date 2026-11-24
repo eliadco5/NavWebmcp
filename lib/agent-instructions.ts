@@ -55,7 +55,7 @@ Business operations return data to YOU; the screen does not change. When the use
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 
 ## Credits (pacing)
-Calls cost credits by type, size and run time; credits come back with each response and refill over time. When a result carries credits.hint (or a "[credits]" note), follow it before your next call. Batch independent reads with invoke({ calls }) — it costs less than separate calls.
+Calls cost credits by type, size and run time; credits come back with each response and refill over time. explore, search, describe_tool and getCapabilities show each function's base cost as \`credits\`. When a result carries credits.hint (or a "[credits]" note), follow it before your next call. Batch independent reads with invoke({ calls }) — it costs less than separate calls.
 
 ## Error codes
 UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_ARGS/INVALID_INPUT (describe_tool, fix, retry once) · UNKNOWN_TOOL (search instead of guessing) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once) · HANDLER_TIMEOUT (check whether it took effect before retrying) · INSUFFICIENT_CREDITS (wait retryAfterMs, then retry) · FANOUT_LIMIT (flatten or split the request).

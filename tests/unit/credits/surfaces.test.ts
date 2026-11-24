@@ -84,6 +84,32 @@ describe('MCP surface', () => {
     expect((res._meta as Record<string, unknown>)?.['navwebmcp/credits']).toBeTruthy()
   })
 
+  it('discovery publishes each function\'s credit cost, and it matches what a call is charged', async () => {
+    const c = await connect('c_disc')
+    const data = async (name: string, args: Record<string, unknown>) =>
+      (await c.callTool({ name, arguments: args })).structuredContent as Record<string, unknown>
+
+    const searched = (await data('search', { pattern: 'book' })).functions as { name: string; credits: number }[]
+    expect(searched.find((f) => f.name === 'book')?.credits).toBe(5) // 1 + weight 4
+
+    const node = await data('explore', { path: 'reservation.booking' })
+    for (const f of node.functions as { credits: number }[]) expect(f.credits).toBeGreaterThanOrEqual(2)
+
+    expect((await data('describe_tool', { name: 'getWaitTime' })).credits).toBe(2) // 1 + read 1
+    expect((await data('describe_tool', { name: 'invoke' })).credits).toBe(1) // plus what it runs
+
+    const caps = (await data('getCapabilities', {})).tools as { name: string; credits: number }[]
+    expect(caps.every((t) => typeof t.credits === 'number')).toBe(true)
+
+    const { tools } = await c.listTools()
+    const explore = tools.find((t) => t.name === 'explore')!
+    expect(explore._meta?.['navwebmcp/credits']).toEqual({ cost: 2 })
+
+    // The published cost is what a small, quick call is actually charged.
+    const called = await c.callTool({ name: 'explore', arguments: {} })
+    expect((called._meta as Record<string, { charged: number }>)['navwebmcp/credits'].charged).toBe(2)
+  })
+
   it('the client may send a CreditRequest in _meta', async () => {
     const c = await connect('c_req')
     const res = await c.callTool({ name: 'explore', arguments: {}, _meta: { 'navwebmcp/credits': { request: 100 } } })

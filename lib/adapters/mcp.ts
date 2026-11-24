@@ -18,6 +18,7 @@ import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { executeDetailed, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
 import type { CreditInfo } from "@/lib/result";
+import { creditCost } from "@/lib/credits/policy";
 import { noteAgentSoftware } from "@/lib/management/sessions";
 // Also turns on the SOC2 audit trail for every call execute() runs.
 import { auditOperation } from "@/lib/audit";
@@ -136,6 +137,9 @@ export function registerMcpTools(server: McpServer) {
         // The SDK requires structuredContent matching this on every non-error result.
         outputSchema: inlineSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>)),
         annotations: mcpAnnotations(op),
+        // The tool's credit cost on its own, for protocol-aware clients; the
+        // same number explore/search/describe_tool/getCapabilities report.
+        _meta: { [CREDITS_META_KEY]: { cost: creditCost(op) } },
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (input: Record<string, unknown>, extra: any) => {

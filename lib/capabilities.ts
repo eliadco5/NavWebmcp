@@ -2,6 +2,7 @@ import type { Operation } from "@/lib/operations/types";
 import type { Role } from "@/lib/auth";
 import { roleSatisfies } from "@/lib/auth";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
+import { creditCost } from "@/lib/credits/policy";
 
 /** DJB2 hash over a string → 8-char hex. Stable across calls for the same input. */
 function djb2(s: string): string {
@@ -13,13 +14,15 @@ function djb2(s: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Stable canonical string for an operation (name + permission + sorted roles + sorted input/output schema keys). */
+/** Stable canonical string for an operation (name + permission + sorted roles +
+ *  sorted input/output schema keys + credit cost — a cost change is drift an
+ *  agent that planned its pacing on the cached manifest should see). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function opFingerprint(op: Operation<any, any>): string {
   const schemaKeys = Object.keys(op.inputSchema).sort().join(",");
   const outputKeys = Object.keys(op.outputSchema ?? {}).sort().join(",");
   const roles = [...op.roles].sort().join(",");
-  return `${op.name}|${op.permission}|${roles}|${schemaKeys}|${outputKeys}|${op.module ?? ""}|${op.parallelSafe ?? ""}`;
+  return `${op.name}|${op.permission}|${roles}|${schemaKeys}|${outputKeys}|${op.module ?? ""}|${op.parallelSafe ?? ""}|${creditCost(op)}`;
 }
 
 /**
@@ -46,6 +49,8 @@ export interface CapabilityManifestTool {
   permission: "read" | "write";
   roles: Role[];
   requiresConfirmation: boolean;
+  /** Credit cost of one call on its own (lib/credits/policy.ts creditCost). */
+  credits: number;
 }
 
 /** The manifest shape returned by getCapabilities. This is the observable protocol
@@ -73,6 +78,7 @@ export function capabilityManifest(role: Role, registry: Operation<any, any>[]):
       permission: op.permission,
       roles: op.roles,
       requiresConfirmation: op.requiresConfirmation ?? false,
+      credits: creditCost(op),
     })),
   };
 }

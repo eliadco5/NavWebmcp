@@ -156,6 +156,23 @@ export function chargeFor(
 /** Fixed per-request overhead, paid once per top-level call. */
 export const REQUEST_COST = 1;
 
+/**
+ * The credit cost an agent sees for an operation in explore, search,
+ * describe_tool, getCapabilities and MCP tools/list: what one call costs on
+ * its own, before size and run time. For a dispatching op (invoke) it's only
+ * the per-request cost; the operations it runs add their own costs on top.
+ * Client-safe: imported by lib/modules.ts and lib/capabilities.ts.
+ */
+export function creditCost(op: AnyOp): number {
+  return op.dispatchesOps ? REQUEST_COST : REQUEST_COST + weightOf(op);
+}
+
+/** How the cost is described wherever it's published. */
+export const CREDIT_COST_DESCRIPTION =
+  "Credits one call costs on its own (1 per request + the operation's weight). Large arguments or results " +
+  "and each full second of run time add more. Inside one invoke batch, the per-request 1 is paid once for " +
+  "the whole batch. For invoke itself: 1 plus the costs of the operations it runs, without their per-request 1.";
+
 /** Cost found only after the call ran: response size, run time, unplanned nested ops. */
 export function extraFor(
   outcome: { durationMs: number; responseBytes: number; nestedOps: number },

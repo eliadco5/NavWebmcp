@@ -264,6 +264,11 @@ track anything: the server does the accounting and tells you when to change cour
   write 2, composites the number of operations they run), plus size (large arguments or
   results), plus run time (each full second a call runs). Nested calls inside `invoke` or
   a composite are paid for by the top-level call.
+- **Seeing the cost before you call.** Every function listed by `explore`, `search`,
+  `describe_tool` and `getCapabilities` carries `credits`: what one call costs on its own,
+  before size and run time. For example, a read is 2 and `book` is 5. For `invoke` it is 1,
+  plus what it runs. Use it to choose between a composite and hand-sequenced calls, and to
+  size a batch to your balance.
 - **How credits come back.** Each response hands credits back, usually what the call
   cost. A slow trickle also refills over time. Under heavy server load the server hands
   back less, and a long or expensive call shrinks how many credits you may hold.

@@ -50,6 +50,12 @@ heard of credits is still paced correctly, and it is told what to do in plain la
   - optional `X-NavWebMcp-Credit-Request` request header;
   - a refusal is `429` with `Retry-After`.
 - **`getContext` gains an optional `credits` snapshot.**
+- **Every function shows its credit cost before it is called.** The function entries of
+  `explore`, `search` and `describe_tool`, and the tools in the `getCapabilities` manifest,
+  carry `credits`. That is the cost of one call on its own: 1 per request plus the
+  operation's weight. On MCP, each tool in `tools/list` carries
+  `_meta["navwebmcp/credits"] = { cost }`. The cost is part of the `capabilityHash`
+  fingerprint, so a change in an operation's cost invalidates cached manifests.
 - **New error codes:**
   - `INSUFFICIENT_CREDITS`: refused, nothing ran;
   - `FANOUT_LIMIT`: nesting deeper than 3 levels, or more than 200 operations under one call;

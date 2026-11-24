@@ -1,6 +1,7 @@
 import type { Role } from "@/lib/auth";
 import { roleSatisfies } from "@/lib/auth";
 import type { Operation } from "@/lib/operations/types";
+import { creditCost } from "@/lib/credits/policy";
 
 export interface ModuleNode {
   path: string;
@@ -14,6 +15,8 @@ export interface FnSummary {
   permission: "read" | "write";
   parallelSafe: boolean;
   requiresConfirmation?: boolean;
+  /** Credit cost of one call on its own (lib/credits/policy.ts creditCost). */
+  credits: number;
 }
 export interface ExploreNode {
   path: string;
@@ -94,6 +97,7 @@ function fnSummary(op: Operation<any, any>): FnSummary {
     name: op.name, title: op.title, description: op.description,
     permission: op.permission, parallelSafe: effectiveParallelSafe(op),
     requiresConfirmation: op.requiresConfirmation,
+    credits: creditCost(op),
   };
 }
 

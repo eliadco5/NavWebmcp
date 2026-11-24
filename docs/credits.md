@@ -179,6 +179,34 @@ extra of 8.
 **Batch vs separate calls.** Three reads sent separately cost `3 × (1 + 1) = 6`. The same
 three in one `invoke({ calls })` cost `1 + 3 = 4`.
 
+**Every function publishes its cost.** An agent sees the price before it calls. Every
+function in discovery carries a `credits` attribute: the cost of one call on its own,
+`1 + weight`, before size and run time.
+
+| Where | How the cost appears |
+|---|---|
+| `explore`, on each entry of `functions` | `{ "name": "book", "permission": "write", …, "credits": 5 }` |
+| `search`, on each entry of `functions` | same |
+| `describe_tool` | `"credits": 5` beside `permission`, `parallelSafe` and the schemas |
+| `getCapabilities`, on each tool in the manifest | same |
+| MCP `tools/list`, on each loaded tool | `_meta["navwebmcp/credits"] = { "cost": 5 }` |
+
+For `invoke` the published cost is `1`, the per-request cost: the operations it runs add
+their own weights on top. The number is the same one `chargeFor` charges, so a small, quick
+call is charged exactly what was published. The cost is also part of the
+`capabilityHash` fingerprint, so if an operation's cost changes, an agent's cached manifest
+is invalidated.
+
+```jsonc
+// search({ pattern: "book" }) → functions[0]
+{
+  "name": "book", "title": "Book a Table", "description": "Book a table in ONE step: …", "permission": "write",
+  "parallelSafe": false, "module": "reservation.booking",
+  "path": "reservation/booking/book",
+  "credits": 5
+}
+```
+
 ## 6. How credits come back
 
 **The grant**, SMB's `CreditResponse`:
@@ -289,6 +317,8 @@ reads error messages.
   `invoke`.
 - **`getContext()`** returns a `credits` snapshot:
   `{ balance, window, maxWindow, refillPerSec, frozen }`.
+- **Each function's cost** is shown wherever functions are discovered: `explore`, `search`,
+  `describe_tool`, `getCapabilities` and MCP `tools/list` (§5).
 - **The `invoke` description** says a batch costs fewer credits than separate calls.
 
 ## 9. Each surface, side by side
