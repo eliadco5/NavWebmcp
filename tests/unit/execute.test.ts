@@ -25,6 +25,33 @@ beforeEach(async () => {
 })
 
 describe('execute()', () => {
+  it('a failure relayed by invoke keeps the inner call id, so it points at the call that failed', async () => {
+    const { execute } = await import('@/lib/operations/execute')
+    const res = await execute('invoke', { name: 'getGuest', args: { guestId: 'missing' } }, customerCtx) as any
+    expect(res.success).toBe(false)
+    expect(res.error.code).toBe('FORBIDDEN')
+    const log = await entries()
+    const inner = log.find((e) => e.operation === 'getGuest')!
+    const outer = log.find((e) => e.operation === 'invoke')!
+    expect(res.error.callId).toBe(inner.callId)
+    expect(inner.parentCallId).toBe(outer.callId)
+    expect(res.error.requestId).toBeTruthy()
+  })
+
+  it('every failure gets the full error shape, whatever stage it stopped at', async () => {
+    const { execute } = await import('@/lib/operations/execute')
+    const unknown = await execute('nope', {}, customerCtx) as any
+    const invalid = await execute('searchAvailability', { date: 'x', partySize: 2 }, customerCtx) as any
+    const handler = await execute('getReservation', { reservationId: 'res_missing' }, customerCtx) as any
+    for (const r of [unknown, invalid, handler]) {
+      expect(r.success).toBe(false)
+      expect(typeof r.error.retryable).toBe('boolean')
+      expect(typeof r.error.callId).toBe('string')
+      expect(typeof r.error.hint).toBe('string')
+    }
+    expect(invalid.error.details).toEqual([{ path: 'date', message: expect.any(String) }])
+  })
+
   it('labels an unlabelled context as a system actor on the internal channel', async () => {
     const { execute } = await import('@/lib/operations/execute')
     await execute('getWaitTime', {}, customerCtx)
@@ -57,7 +84,7 @@ describe('execute()', () => {
     await execute('nope', {}, customerCtx)
     await execute('searchAvailability', { date: '07/07/2026', partySize: 2 }, customerCtx)
     const codes = (await entries()).map((e) => e.errorCode)
-    expect(codes).toEqual(['INVALID_ARGS', 'UNKNOWN_TOOL', 'FORBIDDEN'])
+    expect(codes).toEqual(['INVALID_INPUT', 'UNKNOWN_TOOL', 'FORBIDDEN'])
   })
 })
 
@@ -91,7 +118,8 @@ describe('POST /api/call actor classification', () => {
   it('keeps 404 for unknown ops and 403 for RBAC, both audited', async () => {
     expect((await post({ name: 'nope', params: {} })).status).toBe(404)
     expect((await post({ name: 'issueRefund', params: { paymentId: 'pay_001', reason: 'x', confirm: true } })).status).toBe(403)
-    expect((await entries()).slice(0, 2).map((e) => e.errorCode)).toEqual(['FORBIDDEN', 'NOT_FOUND'])
+    // Protocol ≥ 2.0.0: an unknown op is UNKNOWN_TOOL on every surface (was NOT_FOUND here).
+    expect((await entries()).slice(0, 2).map((e) => e.errorCode)).toEqual(['FORBIDDEN', 'UNKNOWN_TOOL'])
   })
 
   it("a handler's own NOT_FOUND stays a 200 Result", async () => {

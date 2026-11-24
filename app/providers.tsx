@@ -3,6 +3,7 @@
 import { useEffect, useRef, createContext, useContext, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { AuditEntry } from "@/lib/auditlog";
+import { fail } from "@/lib/result";
 import { getModelContext } from "@/lib/webmcp-polyfill";
 import { initAgentBridge } from "@/lib/adapters/webmcp";
 import { book } from "@/lib/ui-tools/book";
@@ -250,7 +251,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     if (op?.requiresConfirmation) {
       const approved = await handleConfirmation(name, params);
       if (!approved) {
-        return { success: false, error: { code: "CONFIRMATION_DENIED", message: "User denied the action." } };
+        return fail("CONFIRMATION_DENIED", "User denied the action.");
       }
     }
     const result = await serverCall(name, params);

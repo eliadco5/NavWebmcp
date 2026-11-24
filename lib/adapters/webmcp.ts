@@ -69,6 +69,7 @@ export function initAgentBridge(
       requiresConfirmation: op.requiresConfirmation,
       untrustedOutput: op.untrustedOutput,
       dispatchesOps: op.dispatchesOps,
+      openOutput: op.openOutput,
       tags: op.tags,
       // ui_* ops act on this page's own components, so they never go to the server.
       handler: op.runsInPage

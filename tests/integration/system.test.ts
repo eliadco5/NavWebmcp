@@ -238,7 +238,7 @@ describe('Flow 3 — Progressive discovery via search', () => {
     const date = futureDate(1)
     const result = await invoke.handler({ name: fn.name, args: { date, partySize: 2 } }, customerCtx)
     expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
   })
 })

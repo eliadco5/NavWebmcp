@@ -758,7 +758,7 @@ describe("register — outputSchema and annotations", () => {
     expect(variants[0].properties.success).toEqual({ type: "boolean", const: true });
     expect(variants[0].properties.data).toMatchObject({ type: "object", properties: { result: { type: "string" } } });
     expect(variants[1].properties.success).toEqual({ type: "boolean", const: false });
-    expect(variants[1].properties.error).toMatchObject({ required: ["code", "message"] });
+    expect(variants[1].properties.error).toMatchObject({ required: ["code", "message", "retryable"] });
   });
 
   it("omits outputSchema when the registration has none", async () => {

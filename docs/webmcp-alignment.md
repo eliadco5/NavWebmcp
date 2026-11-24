@@ -10,7 +10,7 @@ which was added on 2 Nov 2026 in
   native implementation
 - `lib/agentbridge.ts`, which registers our operations into whichever `modelContext` is
   present
-- NavWebMcp protocol **1.2.0** (`lib/protocol.ts`, `CHANGELOG.md`)
+- NavWebMcp protocol **2.0.0** (`lib/protocol.ts`, `CHANGELOG.md`)
 
 **The goal is alignment, not a clone.** Tools that AgentBridge registers must work on a
 native `modelContext` exactly as the spec describes. The polyfill is a development
@@ -39,7 +39,7 @@ either an **extension** (we add something the spec doesn't define) or a **diverg
 
 ### What our `outputSchema` describes
 
-`execute()` returns our `Result` envelope, `{success: true, data} | {success: false, error: {code, message}}`,
+`execute()` returns our `Result` envelope, `{success: true, data} | {success: false, error: {code, message, retryable, …}}`,
 so the WebMCP `outputSchema` is an `anyOf` over those two variants, with the operation's
 data schema inside `data`.
 
@@ -87,7 +87,7 @@ data schema inside `data`.
 | `outputSchema` is an object schema | ✅ Every op has one |
 | Server returns `structuredContent` that conforms when an `outputSchema` is declared | ✅ Enforced by `tests/unit/output-contract.test.ts`. The SDK also rejects mismatches at runtime |
 | The serialized JSON is also returned in a text block | ✅ Kept for older clients and `scripts/bench.mjs` |
-| Tool execution errors are reported with `isError: true` | ✅ Always as `{code, message}` |
+| Tool execution errors are reported with `isError: true` | ✅ Always as the `ProtocolError` object (`{code, message, retryable, details?, hint?, suggestions?, requestId?, callId?}`) |
 | Annotations | ✅ `readOnlyHint`, `destructiveHint`, `title`. We don't claim `idempotentHint` or `openWorldHint` |
 
 ## Keeping this page current

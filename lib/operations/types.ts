@@ -86,6 +86,9 @@ export interface Operation<
   /** Runs other operations by name (invoke). Its annotations must not claim read-only,
    *  whatever `permission` says, since it can reach any write or destructive op. */
   dispatchesOps?: boolean;
+  /** The success `data` may carry keys beyond `outputSchema` (invoke relays another
+   *  op's data verbatim). Published as `additionalProperties: true`. */
+  openOutput?: boolean;
   tags?: string[];
   module?: string;                // dot-path of owning leaf module (e.g. "reservation.booking")
   parallelSafe?: boolean;         // defaults: read=true, write=false

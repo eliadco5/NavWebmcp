@@ -10,6 +10,7 @@ import { withSharedState } from "@/lib/shared-state";
 import { declaredTooLarge, readTextCapped } from "@/lib/http-limits";
 import { gateHint, withResponseGate } from "@/lib/credits/gate";
 import { quickRefusal } from "@/lib/credits";
+import { fail } from "@/lib/result";
 
 // mcp-handler needs the Node runtime (lib/adapters/mcp.ts uses AsyncLocalStorage
 // from async_hooks) — don't let this get inferred to edge.
@@ -120,7 +121,7 @@ function refusal(messages: RpcMessage[], message: string, retryAfterMs?: number)
         jsonrpc: "2.0",
         id: msg.id,
         result: {
-          content: [{ type: "text", text: JSON.stringify({ code: "INSUFFICIENT_CREDITS", message }, null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(fail("INSUFFICIENT_CREDITS", message).error, null, 2) }],
           isError: true,
           _meta: { "navwebmcp/credits": { ...(retryAfterMs !== undefined && { retryAfterMs }), hint: message } },
         },

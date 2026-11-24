@@ -203,10 +203,9 @@ describe('search', () => {
   it('pattern: "" (empty) fails validation at invoke layer', async () => {
     // The search inputSchema has z.string().min(1), which is validated by invoke
     const result = await invoke.handler({ name: 'search', args: { pattern: '' } }, adminCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
   it('pattern: "crm/**" with support returns non-empty functions', async () => {
@@ -300,12 +299,56 @@ describe('describe_tool', () => {
 // ── invoke ────────────────────────────────────────────────────────────────────
 
 describe('invoke', () => {
-  it('single call {name:"getContext"} returns success with booking page data', async () => {
+  it("single call {name:'getContext'} returns the op's data directly, with no second envelope", async () => {
     const result = await invoke.handler({ name: 'getContext', args: {} }, customerCtx)
     expect(result.success).toBe(true)
-    const inner = result.data as any
-    expect(inner.success).toBe(true)
-    expect(inner.data.page).toBe('booking')
+    expect(result.data).not.toHaveProperty('success')
+    expect(result.data.user).toEqual({ id: 'u_alice', displayName: 'Alice' })
+  })
+
+  it('both name and calls is rejected rather than silently ignoring calls', async () => {
+    const result = await invoke.handler({ name: 'getContext', calls: [{ name: 'getContext', args: {} }] }, adminCtx)
+    expect(result.success).toBe(false)
+    expect((result as any).error.code).toBe('INVALID_INPUT')
+  })
+
+  it('UNKNOWN_TOOL suggests similar, role-visible names', async () => {
+    const result = await invoke.handler({ name: 'searchAvailabilty' }, customerCtx) as any
+    expect(result.error.code).toBe('UNKNOWN_TOOL')
+    expect(result.error.suggestions).toContain('searchAvailability')
+    expect(result.error.retryable).toBe(false)
+    expect(result.error.hint).toMatch(/search\(\)/)
+  })
+
+  it("UNKNOWN_TOOL never suggests an op the caller's role cannot see", async () => {
+    const result = await invoke.handler({ name: 'listAllReservation' }, customerCtx) as any
+    expect(result.error.code).toBe('UNKNOWN_TOOL')
+    expect(result.error.suggestions ?? []).not.toContain('listAllReservations')
+  })
+
+  it('INVALID_INPUT carries one details entry per bad field, plus request and call ids', async () => {
+    const result = await invoke.handler({ name: 'searchAvailability', args: { date: 'bad', partySize: 0 } }, customerCtx) as any
+    expect(result.error.code).toBe('INVALID_INPUT')
+    const paths = result.error.details.map((d: any) => d.path).sort()
+    expect(paths).toEqual(['date', 'partySize'])
+    expect(result.error.hint).toMatch(/describe_tool/)
+    expect(typeof result.error.requestId).toBe('string')
+    expect(typeof result.error.callId).toBe('string')
+  })
+
+  it('batch items carry the full error shape', async () => {
+    const result = await invoke.handler({ calls: [{ name: 'nope', args: {} }] }, adminCtx) as any
+    expect(result.success).toBe(true)
+    const [item] = result.data.results
+    expect(item.success).toBe(false)
+    expect(item.error).toMatchObject({ code: 'UNKNOWN_TOOL', retryable: false })
+    expect(typeof item.error.callId).toBe('string')
+  })
+
+  it('a single call to an op whose own data has `results` (load_tools) passes the output check', async () => {
+    const result = await invoke.handler({ name: 'load_tools', args: { names: ['getWaitTime'] } }, customerCtx) as any
+    expect(result.success).toBe(true)
+    expect(result.data.results[0].status).toBe('LOADED')
   })
 
   it('batch {calls:[getContext, getCapabilities]} returns {results} of length 2', async () => {
@@ -320,34 +363,31 @@ describe('invoke', () => {
     expect(result.data.results.length).toBe(2)
   })
 
-  it('neither name nor calls provided returns INVALID_ARGS', async () => {
+  it('neither name nor calls provided returns INVALID_INPUT', async () => {
     const result = await invoke.handler({}, adminCtx)
     expect(result.success).toBe(false)
-    expect((result as any).error.code).toBe('INVALID_ARGS')
+    expect((result as any).error.code).toBe('INVALID_INPUT')
   })
 
-  it('{name:"nonexistent"} returns UNKNOWN_TOOL inside data', async () => {
+  it('{name:"nonexistent"} returns UNKNOWN_TOOL as the call result', async () => {
     const result = await invoke.handler({ name: 'nonexistent' }, adminCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
     expect(inner.error.code).toBe('UNKNOWN_TOOL')
   })
 
-  it('{name:"listAllReservations"} with customer role returns FORBIDDEN inside data', async () => {
+  it('{name:"listAllReservations"} with customer role returns FORBIDDEN as the call result', async () => {
     const result = await invoke.handler({ name: 'listAllReservations', args: {} }, customerCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
     expect(inner.error.code).toBe('FORBIDDEN')
   })
 
-  it('invalid args wrong type returns INVALID_ARGS inside data', async () => {
+  it('invalid args wrong type returns INVALID_INPUT as the call result', async () => {
     const result = await invoke.handler({ name: 'searchAvailability', args: { date: 123, partySize: 'bad' } }, adminCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
   it('batch with only reads — all run successfully', async () => {
@@ -368,25 +408,22 @@ describe('invoke', () => {
     tomorrow.setDate(tomorrow.getDate() + 1)
     const date = tomorrow.toISOString().split('T')[0]
     const result = await invoke.handler({ name: 'searchAvailability', args: { date, partySize: 2 } }, customerCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(true)
   })
 
-  it('searchAvailability bad date format returns INVALID_ARGS', async () => {
+  it('searchAvailability bad date format returns INVALID_INPUT', async () => {
     const result = await invoke.handler({ name: 'searchAvailability', args: { date: 'bad-date', partySize: 2 } }, customerCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
-  it('searchAvailability partySize 0 returns INVALID_ARGS', async () => {
+  it('searchAvailability partySize 0 returns INVALID_INPUT', async () => {
     const result = await invoke.handler({ name: 'searchAvailability', args: { date: '2026-07-15', partySize: 0 } }, customerCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
   it('batch result array length matches calls array length', async () => {
@@ -402,8 +439,7 @@ describe('invoke', () => {
 
   it('getCapabilities with admin returns 8-char hex capabilityHash', async () => {
     const result = await invoke.handler({ name: 'getCapabilities', args: {} }, adminCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(true)
     expect(inner.data.capabilityHash).toMatch(/^[0-9a-f]{8}$/)
   })
@@ -453,10 +489,9 @@ describe('load_tools and unload_tools', () => {
 
   it('load_tools with empty names array fails Zod validation via invoke', async () => {
     const result = await invoke.handler({ name: 'load_tools', args: { names: [] } }, adminCtx)
-    expect(result.success).toBe(true)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: invoke returns the op's own Result
     expect(inner.success).toBe(false)
-    expect(inner.error.code).toBe('INVALID_ARGS')
+    expect(inner.error.code).toBe('INVALID_INPUT')
   })
 
   it('load then unload round trip: loaded then unloaded', async () => {
@@ -470,12 +505,23 @@ describe('load_tools and unload_tools', () => {
 // ── getContext ────────────────────────────────────────────────────────────────
 
 describe('getContext', () => {
-  it('returns page:"booking", authenticated:true, locale:"en-US"', async () => {
+  it('returns page:null (server cannot see the page), authenticated:true, locale:"en-US"', async () => {
     const result = await getContext.handler({}, customerCtx)
     expect(result.success).toBe(true)
-    expect(result.data.page).toBe('booking')
+    expect(result.data.page).toBeNull()
     expect(result.data.authenticated).toBe(true)
     expect(result.data.locale).toBe('en-US')
+  })
+
+  it('returns role, now, today and timezone so agents can resolve relative dates', async () => {
+    const before = Date.now()
+    const result = await getContext.handler({}, supportCtx)
+    expect(result.data.role).toBe('support')
+    expect(result.data.timezone).toBe('UTC')
+    const now = Date.parse(result.data.now)
+    expect(now).toBeGreaterThanOrEqual(before - 1000)
+    expect(now).toBeLessThanOrEqual(Date.now() + 1000)
+    expect(result.data.today).toBe(result.data.now.slice(0, 10))
   })
 
   it('user field is {id:"u_alice", displayName:"Alice"} for customerCtx', async () => {

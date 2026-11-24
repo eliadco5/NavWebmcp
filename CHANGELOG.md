@@ -23,6 +23,63 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.0.0
+
+Fixes the contract traps that cost agents the most: the double envelope on `invoke`,
+two spellings each for "bad input" and "no such operation", errors with nothing to act
+on, a cache key that missed real schema changes, and no notion of "today". **Breaking**;
+the migration notes are at the end. Credits (1.4.0) and UI components (1.3.0) are
+unchanged.
+
+- **`invoke` single call has no second envelope.** `invoke({ name, args })` now returns
+  exactly what the operation returns: its data on success, its own error on failure.
+  `success` always means "the operation succeeded".
+  - MCP: a failed operation makes the `invoke` call `isError: true` with that
+    operation's error. Success data is `structuredContent`, as for a native tool.
+    Credits still travel in `_meta` and, when hinted, on the Result.
+  - Batch (`{ calls }`) is unchanged: `{ results: [{ success, data | error }, …] }`, in
+    request order.
+  - Passing both `name` and `calls` is now `INVALID_INPUT`. Before, `calls` was ignored.
+- **One set of codes on every surface.** `execute()` no longer takes per-surface codes:
+  - Bad input is `INVALID_INPUT` everywhere. `INVALID_ARGS` (invoke, composites,
+    `admin.setCreditPolicy`) and the domain code `INVALID_DATE` (`getWeeklyRevenueSummary`)
+    are removed.
+  - An unknown operation is `UNKNOWN_TOOL` everywhere. `POST /api/call` used to say
+    `NOT_FOUND` (still HTTP 404). `NOT_FOUND` now only means a missing entity.
+- **Structured errors.** Every operation error now has `{ code, message, retryable }`,
+  plus optional fields:
+  - `details`: one `{ path, message }` per invalid field (`INVALID_INPUT`)
+  - `hint`: a one-line next step
+  - `suggestions`: did-you-mean names for `UNKNOWN_TOOL`, only from operations the
+    caller's role can see (also on `describe_tool`'s `UNKNOWN_TOOL` entries)
+  - `requestId` / `callId`: the request and the call that failed, as recorded in the
+    audit trail. When `invoke` relays a failure, `callId` is the inner call's.
+  - `retryable` is `true` for `HANDLER_ERROR` and `INSUFFICIENT_CREDITS` (after
+    `credits.retryAfterMs`), and `false` for `HANDLER_TIMEOUT`, whose write may have
+    landed. The catalogue is `PROTOCOL_ERROR_CODES` in `lib/result.ts`.
+  - `execute()` normalises every failure (gates, handlers, credit refusals, timeouts), so
+    no operation can return a bare `{code, message}`. The `/api/call` and MCP pre-execute
+    refusals (unauthenticated, out of credits, body too large) use the same shape.
+- **`getContext` gives agents the platform clock.** New fields: `role`, `now` (ISO 8601),
+  `today` (`YYYY-MM-DD`) and `timezone` (`UTC`). Resolve "tomorrow" against these,
+  not the agent's own clock. `page` is now `null` on the server. It used to be a
+  hardcoded `"booking"` that misled MCP agents.
+- **`capabilityHash` covers the full contract.** It hashes each operation's complete
+  published input and output JSON Schemas (types, required fields, enums, bounds,
+  descriptions), its credit cost, and its `requiresConfirmation` / `untrustedOutput` /
+  `alwaysOn` / `runsInPage` flags. Before, it hashed only the schema key names, so
+  changing a field's type or making it required left agents on a stale cached schema.
+  Expect every hash to change once.
+
+**Migrating from 1.x**
+- Drop any `result.data.success` / `result.data.data` unwrapping after a single
+  `invoke`: read `result.success` and `result.data` directly.
+- Match `INVALID_INPUT` wherever you matched `INVALID_ARGS` or `INVALID_DATE`, and
+  `UNKNOWN_TOOL` wherever you matched `NOT_FOUND` for an unknown operation on `/api/call`.
+- Errors carry new fields (`retryable` always, the others when they apply). If you
+  compare whole error objects, compare `code` instead.
+- `getContext().page` is `null` on the server. Use `today` / `timezone` for dates.
+
 ## 1.4.0
 
 **Credits: SMB-style flow control.** Every top-level call is metered with credits, so one

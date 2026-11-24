@@ -83,18 +83,38 @@ describe('tools/call', () => {
     expect(JSON.parse(text)).toEqual(res.structuredContent)
   })
 
-  it('handler failures are isError with a {code, message} text block and no structuredContent', async () => {
+  it('handler failures are isError with a ProtocolError text block and no structuredContent', async () => {
     const res = await client.callTool({ name: 'getGuest', arguments: { guestId: 'nope' } })
     expect(res.isError).toBe(true)
     expect(res.structuredContent).toBeUndefined()
     const err = JSON.parse((res.content as { text: string }[])[0].text)
-    expect(err).toEqual({ code: 'NOT_FOUND', message: expect.any(String) })
+    expect(err).toEqual({
+      code: 'NOT_FOUND', message: expect.any(String), retryable: false,
+      hint: expect.any(String), requestId: expect.any(String), callId: expect.any(String),
+    })
   })
 
   it('rejects unknown input keys instead of silently dropping them', async () => {
     const res = await client.callTool({ name: 'getGuest', arguments: { guestId: 'g_001', guestID: 'typo' } })
     expect(res.isError).toBe(true)
     expect((res.content as { text: string }[])[0].text).toMatch(/unrecognized/i)
+  })
+
+  it("invoke returns the op's data flat, and a failed op is isError with that op's error", async () => {
+    const okRes = await client.callTool({ name: 'invoke', arguments: { name: 'getGuest', args: { guestId: 'g_001' } } })
+    expect(okRes.isError).toBeFalsy()
+    expect(okRes.structuredContent).toMatchObject({ guest: { guestId: 'g_001' } })
+    expect(okRes.structuredContent).not.toHaveProperty('success')
+
+    const badRes = await client.callTool({ name: 'invoke', arguments: { name: 'getGuest', args: { guestId: 'nope' } } })
+    expect(badRes.isError).toBe(true)
+    expect(JSON.parse((badRes.content as { text: string }[])[0].text)).toMatchObject({ code: 'NOT_FOUND', retryable: false })
+  })
+
+  it('invoke relaying an op whose own data has `results` passes the SDK output validation', async () => {
+    const res = await client.callTool({ name: 'invoke', arguments: { name: 'load_tools', args: { names: ['getOccupancy'] } } })
+    expect(res.isError).toBeFalsy()
+    expect((res.structuredContent as { results: { status: string }[] }).results[0].status).toBe('LOADED')
   })
 
   it('always-on meta ops return structuredContent too', async () => {

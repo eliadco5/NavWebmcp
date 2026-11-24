@@ -43,6 +43,6 @@ describe("searchTasks sorting", () => {
     await import("@/lib/operations/index");
     const { runOne } = await import("@/lib/operations/dispatch");
     const r = await runOne("searchTasks", { sortBy: "assigneeId" }, adminCtx);
-    expect(!r.success && r.error.code).toBe("INVALID_ARGS");
+    expect(!r.success && r.error.code).toBe("INVALID_INPUT");
   });
 });

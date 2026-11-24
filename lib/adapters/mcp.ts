@@ -16,8 +16,8 @@ import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
 import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
-import { executeDetailed, requestMeta, SURFACE_CODES } from "@/lib/operations/execute";
-import type { CreditInfo } from "@/lib/result";
+import { executeDetailed, requestMeta } from "@/lib/operations/execute";
+import type { CreditInfo, ProtocolError } from "@/lib/result";
 import { creditCost } from "@/lib/credits/policy";
 import { noteAgentSoftware } from "@/lib/management/sessions";
 // Also turns on the SOC2 audit trail for every call execute() runs.
@@ -40,8 +40,8 @@ export function mcpAnnotations(op: AnyOp) {
   };
 }
 
-/** Every failure, whatever its origin, goes out as the same `{code, message}` shape. */
-function errorResult(error: { code: string; message: string }, credits?: CreditInfo, hinted = false) {
+/** Every failure, whatever its origin, goes out as the same ProtocolError shape. */
+function errorResult(error: ProtocolError, credits?: CreditInfo, hinted = false) {
   const content = [{ type: "text" as const, text: JSON.stringify(error, null, 2) }];
   // A refusal's guidance is already its message; any other error gets the hint as its own block.
   if (hinted && credits?.hint && error.code !== "INSUFFICIENT_CREDITS") content.push(hintBlock(credits));
@@ -135,7 +135,7 @@ export function registerMcpTools(server: McpServer) {
         // Strict object, so the SDK's own input validation rejects unknown keys too.
         inputSchema: inlineSchema(inputObject(op.inputSchema as Record<string, z.ZodTypeAny>)),
         // The SDK requires structuredContent matching this on every non-error result.
-        outputSchema: inlineSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>)),
+        outputSchema: inlineSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>, op.openOutput)),
         annotations: mcpAnnotations(op),
         // The tool's credit cost on its own, for protocol-aware clients; the
         // same number explore/search/describe_tool/getCapabilities report.
@@ -199,8 +199,7 @@ export function registerMcpTools(server: McpServer) {
           const { result, credits } = await executeDetailed(
             op.name,
             input,
-            { userId, role, token: bearerToken, actor, meta },
-            { codes: SURFACE_CODES }
+            { userId, role, token: bearerToken, actor, meta }
           );
           const hinted = Boolean(result.credits?.hint);
           if (!result.success) return errorResult(result.error, credits, hinted);

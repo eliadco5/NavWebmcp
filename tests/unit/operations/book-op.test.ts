@@ -301,7 +301,7 @@ describe('bookOp in registry', () => {
     )
     expect(result.success).toBe(true)
     if (!result.success) throw new Error(result.error.message)
-    const inner = result.data as any
+    const inner = result as any  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)
   })

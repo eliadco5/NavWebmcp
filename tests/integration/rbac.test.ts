@@ -11,12 +11,10 @@ beforeEach(async () => {
   invoke = mod.invoke
 })
 
-/** Run an op via invoke and extract the inner result from result.data */
+/** Run an op via invoke. Protocol ≥ 2.0.0: a single invoke returns the op's own
+ *  Result, with no second envelope around it. */
 async function run(name: string, args: Record<string, unknown>, ctx: typeof adminCtx) {
-  const outer = await invoke.handler({ name, args }, ctx)
-  // outer.success is always true when invoke wraps the inner call
-  // outer.data is the inner result
-  return outer.data as any
+  return (await invoke.handler({ name, args }, ctx)) as any
 }
 
 // ── Customer restrictions ──────────────────────────────────────────────────────
@@ -114,7 +112,7 @@ describe('customer allowed operations', () => {
   it('getContext → success', async () => {
     const inner = await run('getContext', {}, customerCtx)
     expect(inner.success).toBe(true)
-    expect(inner.data.page).toBe('booking')
+    expect(inner.data.user).toEqual({ id: 'u_alice', displayName: 'Alice' })
   })
 
   it('getWaitTime → NOT FORBIDDEN', async () => {

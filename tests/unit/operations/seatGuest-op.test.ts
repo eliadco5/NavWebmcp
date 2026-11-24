@@ -189,7 +189,7 @@ describe('seatGuestOp in registry', () => {
     )
     expect(result.success).toBe(true)
     if (!result.success) throw new Error(result.error.message)
-    const inner = result.data as { success: boolean; data: { validated: boolean } }
+    const inner = result as { success: boolean; data: { validated: boolean } }  // protocol ≥ 2.0.0: no second envelope
     expect(inner.success).toBe(true)
     expect(inner.data.validated).toBe(true)
   })
