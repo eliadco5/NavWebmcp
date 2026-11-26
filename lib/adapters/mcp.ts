@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { fromJsonSchema, type McpServer, type JsonSchemaValidator, type jsonSchemaValidator } from "@modelcontextprotocol/server";
 import { z } from "zod";
 // Import from the index, not "./registry" directly — the index is what runs
 // registry.push(...) as a side effect. Importing the bare module here would read
@@ -11,7 +11,7 @@ import { fail } from "@/lib/result";
 import { roleSatisfies } from "@/lib/auth";
 import { getLoaded } from "@/lib/loadedTools";
 import { flushCurrentSharedState } from "@/lib/shared-state";
-import { inputObject, outputObject, inlineSchema } from "@/lib/schema";
+import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
 // Installs the UI relay the ui_* ops reach through lib/ui-relay/port.ts.
 import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
@@ -100,8 +100,8 @@ function hintBlock(credits: CreditInfo) {
 
 /** The client's optional CreditRequest: params._meta["navwebmcp/credits"].request. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function creditRequestOf(extra: any): number | undefined {
-  const n = Number(extra?._meta?.[CREDITS_META_KEY]?.request);
+function creditRequestOf(meta: any): number | undefined {
+  const n = Number(meta?.[CREDITS_META_KEY]?.request);
   return Number.isFinite(n) && n >= 0 ? Math.min(n, 1024) : undefined;
 }
 
@@ -138,16 +138,59 @@ export function withMcpAuthRole(
   };
 }
 
-/** Request-level meta from the SDK's per-call `extra` (headers when the
- *  transport supplies them; absent in unit tests). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mcpRequestMeta(extra: any): CallMeta {
-  const raw: Record<string, string | string[] | undefined> | undefined = extra?.requestInfo?.headers;
-  const headers = new Headers();
-  for (const [k, v] of Object.entries(raw ?? {})) {
-    if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(", ") : v);
+/** Request-level meta from the SDK's per-call context: the HTTP request's
+ *  headers when there is one (absent on the in-memory transport in tests). */
+function mcpRequestMeta(headers: Headers | undefined): CallMeta {
+  return requestMeta("mcp", headers ?? new Headers());
+}
+
+/** What the SDK v2 hands a tool callback, as far as this adapter reads it. */
+interface ToolCallContext {
+  http?: { authInfo?: { token?: string; clientId?: string; extra?: Record<string, unknown> }; req?: Request };
+  mcpReq?: { _meta?: Record<string, unknown> };
+}
+
+type JsonSchema = Parameters<typeof fromJsonSchema>[0];
+
+/** Accepts any arguments, so execute() is what validates them. It runs the
+ *  operation's own strict Zod schema and answers a NavWebMcp INVALID_INPUT with
+ *  per-field details, the same error as on invoke and /api/call. The SDK's own
+ *  check would answer a bare text line instead ("data must NOT have additional
+ *  properties"), without saying which field. */
+const deferToExecute: jsonSchemaValidator = {
+  getValidator<T>(): JsonSchemaValidator<T> {
+    return (input) => ({ valid: true, data: input as T, errorMessage: undefined });
+  },
+};
+
+/** The tool's JSON Schema, built by our own converter (lib/schema.ts) and
+ *  handed to the SDK as-is. The SDK v2 only converts Zod 4 itself; ours is Zod 3,
+ *  and this way tools/list publishes exactly what describe_tool and WebMCP do. */
+function sdkSchema(json: Record<string, unknown>, kind: "input" | "output") {
+  const { $schema: _dialect, ...rest } = json;
+  // Output keeps the SDK's check: it's a second guard on top of execute()'s.
+  return kind === "input"
+    ? fromJsonSchema<Record<string, unknown>>(rest as JsonSchema, deferToExecute)
+    : fromJsonSchema<Record<string, unknown>>(rest as JsonSchema);
+}
+
+/** An operation's two SDK schemas, built once per process. A server is built
+ *  per request (stateless), and both the JSON Schema conversion and the SDK's
+ *  validator compilation are too slow to repeat for every tool on every call:
+ *  done per request they cut throughput roughly ninefold. Operations are
+ *  static, so the cache never goes stale. */
+const schemaCache = new WeakMap<AnyOp, { input: ReturnType<typeof sdkSchema>; output: ReturnType<typeof sdkSchema> }>();
+
+function sdkSchemasOf(op: AnyOp) {
+  let cached = schemaCache.get(op);
+  if (!cached) {
+    cached = {
+      input: sdkSchema(toJsonSchema(inputObject(op.inputSchema as Record<string, z.ZodTypeAny>)), "input"),
+      output: sdkSchema(toJsonSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>, op.openOutput)), "output"),
+    };
+    schemaCache.set(op, cached);
   }
-  return requestMeta("mcp", headers);
+  return cached;
 }
 
 export function registerMcpTools(server: McpServer) {
@@ -171,17 +214,16 @@ export function registerMcpTools(server: McpServer) {
       {
         title: op.title,
         description: op.description,
-        // Strict object, so the SDK's own input validation rejects unknown keys too.
-        inputSchema: inlineSchema(inputObject(op.inputSchema as Record<string, z.ZodTypeAny>)),
+        // Strict object (additionalProperties: false), as execute() enforces it.
+        inputSchema: sdkSchemasOf(op).input,
         // The SDK requires structuredContent matching this on every non-error result.
-        outputSchema: inlineSchema(outputObject(op.outputSchema as Record<string, z.ZodTypeAny>, op.openOutput)),
+        outputSchema: sdkSchemasOf(op).output,
         annotations: mcpAnnotations(op),
         // The tool's credit cost on its own, for protocol-aware clients; the
         // same number explore/search/describe_tool/getCapabilities report.
         _meta: { [CREDITS_META_KEY]: { cost: creditCost(op) } },
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (input: Record<string, unknown>, extra: any) => {
+      async (input: Record<string, unknown>, sdkCtx: ToolCallContext) => {
         // mcp-handler's Streamable HTTP transport resolves the route's own
         // Response before this callback finishes running (the body is a
         // stream, and the tool call executes as part of writing to it) — so
@@ -191,10 +233,12 @@ export function registerMcpTools(server: McpServer) {
         // AsyncLocalStorage baseline that survives this same async boundary
         // (mcpContext, right below, already relies on the same guarantee).
         try {
-          const userId: string | undefined = extra?.authInfo?.extra?.userId;
-          const role: Role | undefined = extra?.authInfo?.extra?.role;
-          const meta: CallMeta = { ...mcpRequestMeta(extra), creditRequest: creditRequestOf(extra) };
-          const format: TextFormat = asFormat(extra?._meta?.[FORMAT_META_KEY]) ?? connectionFormat;
+          const authInfo = sdkCtx?.http?.authInfo;
+          const reqMeta = sdkCtx?.mcpReq?._meta;
+          const userId = authInfo?.extra?.userId as string | undefined;
+          const role = authInfo?.extra?.role as Role | undefined;
+          const meta: CallMeta = { ...mcpRequestMeta(sdkCtx?.http?.req?.headers), creditRequest: creditRequestOf(reqMeta) };
+          const format: TextFormat = asFormat(reqMeta?.[FORMAT_META_KEY]) ?? connectionFormat;
 
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
@@ -215,25 +259,25 @@ export function registerMcpTools(server: McpServer) {
             return errorResult(err.error, undefined, false, format);
           }
 
-          // clientInfo from `initialize`, when this server instance saw it
-          // (stateless transports may not: then it's just unknown).
+          // The client's name and version: from the request's own envelope on
+          // 2026-07-28, or from `initialize` on 2025-era clients (the SDK fills
+          // this accessor in either way). Unknown when neither carried it.
           const client = server.server?.getClientVersion?.();
-          const clientId: string = extra?.authInfo?.clientId ?? userId;
+          const clientId: string = authInfo?.clientId ?? userId;
           await noteAgentSoftware(clientId, client?.name, client?.version);
           const actor: Actor = {
             type: "agent",
             userId,
             role,
             assurance: "verified",
-            sessionId: extra?.authInfo?.extra?.sid,
+            sessionId: authInfo?.extra?.sid as string | undefined,
             agent: {
               clientId,
               name: client?.name,
               version: client?.version,
-              sessionId: extra?.sessionId,
             },
           };
-          const bearerToken: string = extra?.authInfo?.token ?? "";
+          const bearerToken: string = authInfo?.token ?? "";
           // execute() re-checks the role on every call (defense-in-depth on
           // top of the registration-time gate above) and audits the outcome.
           const { result, credits } = await executeDetailed(

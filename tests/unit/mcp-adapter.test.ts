@@ -2,9 +2,8 @@
 // lib/adapters/mcp.ts end-to-end through the real MCP SDK (in-memory transport):
 // what tools/list publishes and what tools/call returns.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server'
+import { Client } from '@modelcontextprotocol/client'
 import type { Role } from '@/lib/auth'
 
 const TOKEN = 'tok_test'
@@ -97,10 +96,32 @@ describe('tools/call', () => {
     })
   })
 
-  it('rejects unknown input keys instead of silently dropping them', async () => {
+  it('rejects unknown input keys with a NavWebMcp INVALID_INPUT naming the field', async () => {
     const res = await client.callTool({ name: 'getGuest', arguments: { guestId: 'g_001', guestID: 'typo' } })
     expect(res.isError).toBe(true)
-    expect((res.content as { text: string }[])[0].text).toMatch(/unrecognized/i)
+    const err = JSON.parse((res.content as { text: string }[])[0].text)
+    expect(err).toMatchObject({ code: 'INVALID_INPUT', retryable: false, hint: expect.any(String) })
+    expect(JSON.stringify(err.details)).toMatch(/guestID/)
+  })
+
+  it('bad values on a native tool get per-field INVALID_INPUT details, as on invoke', async () => {
+    const res = await client.callTool({ name: 'getGuest', arguments: { guestId: '' } })
+    expect(res.isError).toBe(true)
+    const err = JSON.parse((res.content as { text: string }[])[0].text)
+    expect(err.code).toBe('INVALID_INPUT')
+    expect(err.details).toEqual([expect.objectContaining({ path: 'guestId' })])
+  })
+
+  it('tools/list publishes exactly the JSON Schemas describe_tool and WebMCP publish', async () => {
+    const { tools } = await client.listTools()
+    const { registry } = await import('@/lib/operations/registry')
+    const { inputObject, outputObject, toJsonSchema } = await import('@/lib/schema')
+    const strip = ({ $schema: _d, ...rest }: Record<string, unknown>) => rest
+    for (const t of tools) {
+      const op = registry.find((o) => o.name === t.name)!
+      expect(t.inputSchema, `${t.name} input`).toEqual(strip(toJsonSchema(inputObject(op.inputSchema))))
+      expect(t.outputSchema, `${t.name} output`).toEqual(strip(toJsonSchema(outputObject(op.outputSchema, op.openOutput))))
+    }
   })
 
   it("invoke returns the op's data flat, and a failed op is isError with that op's error", async () => {

@@ -2,7 +2,11 @@
 // End-to-end check of the NavWebMcp protocol over real MCP Streamable HTTP and
 // POST /api/call, against a running server (npm run build && npm start).
 //
-//   node scripts/e2e.mjs [--base=http://localhost:3000]
+//   node scripts/e2e.mjs [--base=http://localhost:3000] [--era=modern|legacy]
+//
+// --era picks the MCP protocol generation the client speaks: "modern" is the
+// 2026-07-28 revision (stateless, per-request _meta envelope, server/discover),
+// "legacy" the 2025-era initialize handshake. The server serves both; run both.
 //
 // Exit code 0 = every check passed. One section per protocol feature; add the
 // day's checks when a protocol version adds a feature (docs/plans/agent-protocol-roadmap.md).
@@ -10,11 +14,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 const req = createRequire(pathToFileURL(process.cwd() + "/package.json"));
-const { Client } = await import(pathToFileURL(req.resolve("@modelcontextprotocol/sdk/client/index.js")));
-const { StreamableHTTPClientTransport } = await import(pathToFileURL(req.resolve("@modelcontextprotocol/sdk/client/streamableHttp.js")));
+const { Client, StreamableHTTPClientTransport } = await import(pathToFileURL(req.resolve("@modelcontextprotocol/client")));
 
 const argv = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, v] = a.replace(/^--/, "").split("="); return [k, v ?? true]; }));
 const BASE = argv.base ?? "http://localhost:3000";
+const ERA = argv.era === "legacy" ? "legacy" : "modern";
+const MODERN = "2026-07-28";
+console.log(`MCP era: ${ERA}${ERA === "modern" ? ` (${MODERN})` : " (2025 initialize handshake)"}`);
 const VERSION = readFileSync("lib/protocol.ts", "utf8").match(/PROTOCOL_VERSION = "([^"]+)"/)[1];
 let pass = 0, failCount = 0;
 function check(name, cond, extra) {
@@ -30,7 +36,7 @@ async function login(username) {
 }
 async function mcp(token, { query = "", headers = {} } = {}) {
   const t = new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp${query}`), { requestInit: { headers: { Authorization: `Bearer ${token}`, ...headers } } });
-  const c = new Client({ name: "e2e", version: "1.0.0" });
+  const c = new Client({ name: "e2e", version: "1.0.0" }, ERA === "modern" ? { versionNegotiation: { mode: { pin: MODERN } } } : {});
   await c.connect(t);
   return c;
 }
@@ -41,6 +47,7 @@ const bob = await login("bob");
 const c = await mcp(alice.token);
 
 console.log("handshake");
+check(`negotiated the ${ERA} era`, ERA === "modern" ? c.getNegotiatedProtocolVersion() === MODERN : c.getNegotiatedProtocolVersion() !== MODERN, c.getNegotiatedProtocolVersion());
 check(`serverInfo.version is ${VERSION}`, c.getServerVersion()?.version === VERSION, c.getServerVersion());
 check("instructions mention today/timezone", /today/.test(c.getInstructions() ?? ""));
 const { tools } = await c.listTools();
@@ -86,7 +93,8 @@ check("getWaitTime promoted into tools/list", tools2.some((t) => t.name === "get
 const wt = await c2.callTool({ name: "getWaitTime", arguments: { partySize: 2 } });
 check("native call succeeds with structuredContent", !wt.isError && wt.structuredContent && typeof wt.structuredContent === "object", wt);
 const wtBad = await c2.callTool({ name: "getWaitTime", arguments: { partySize: 2, typo: 1 } });
-check("native call: unknown key rejected", wtBad.isError === true, wtBad.content?.[0]?.text);
+const wtErr = wtBad.isError ? text(wtBad) : {};
+check("native call: unknown key → NavWebMcp INVALID_INPUT naming the key", wtErr.code === "INVALID_INPUT" && JSON.stringify(wtErr.details).includes("typo"), wtBad.content?.[0]?.text);
 await c2.close();
 
 console.log("describe_tool / capabilities");
@@ -185,6 +193,21 @@ const hR = await ch.callTool(fmtArgs);
 check("the header wins over the URL", hR.content[0].text === JSON.stringify(hR.structuredContent, null, 2));
 await ch.close();
 await c.close();
+
+console.log("MCP transport (2026-07-28 upgrade)");
+const rpc = (body, headers = {}) => fetch(`${BASE}/api/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${alice.token}`, "Mcp-Method": body.method, ...headers }, body: JSON.stringify(body) });
+const parseRpc = async (res) => { const t = await res.text(); const line = t.split("\n").find((l) => l.startsWith("data:")); return JSON.parse(line ? line.slice(5) : t); };
+const envelope = (v) => ({ "io.modelcontextprotocol/protocolVersion": v, "io.modelcontextprotocol/clientInfo": { name: "e2e-raw", version: "1.0.0" }, "io.modelcontextprotocol/clientCapabilities": {} });
+let dres = await rpc({ jsonrpc: "2.0", id: 1, method: "server/discover", params: { _meta: envelope(MODERN) } }, { "MCP-Protocol-Version": MODERN });
+let disc = await parseRpc(dres);
+check("server/discover lists 2026-07-28 and carries our instructions", JSON.stringify(disc.result ?? {}).includes(MODERN) && /today/.test(JSON.stringify(disc.result ?? {})), disc);
+dres = await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list", params: { _meta: envelope("2099-01-01") } }, { "MCP-Protocol-Version": "2099-01-01" });
+disc = await parseRpc(dres).catch(() => ({}));
+check("an unsupported protocol version is refused, naming the supported ones", Boolean(disc.error) && JSON.stringify(disc.error).includes(MODERN), { status: dres.status, disc });
+for (const gone of ["sse", "message"]) {
+  const g = await fetch(`${BASE}/api/${gone}`, { headers: { Authorization: `Bearer ${alice.token}` } });
+  check(`/api/${gone} (old HTTP+SSE transport) → 404`, g.status === 404, g.status);
+}
 
 console.log("/api/call (UI + in-page surface)");
 const call = (cookie, name, params) => fetch(`${BASE}/api/call`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name, params }) });

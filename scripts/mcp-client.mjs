@@ -1,7 +1,6 @@
 // Ad-hoc MCP client for manual benchmark testing. Not part of the app.
 // Usage: node scripts/mcp-client.mjs <token> '<json-array-of-{method,params}>'
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 const token = process.argv[2];
 const calls = process.argv[3] === "--list" ? null : JSON.parse(process.argv[3]);

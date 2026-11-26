@@ -2,9 +2,8 @@
 // How each surface carries credits (docs/credits.md): the hint wording, MCP
 // _meta + the [credits] text block, the request-size cap and the sign-in throttle.
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server'
+import { Client } from '@modelcontextprotocol/client'
 import { hintFor, needsHint } from '@/lib/credits/hint'
 
 describe('hint wording', () => {

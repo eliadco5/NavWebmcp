@@ -1,5 +1,5 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import type { AuthInfo } from "@modelcontextprotocol/server";
 import { formatFromRequest, formatText, registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
 import { scopesForRole } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
@@ -15,10 +15,14 @@ import { fail } from "@/lib/result";
 // mcp-handler needs the Node runtime (lib/adapters/mcp.ts uses AsyncLocalStorage
 // from async_hooks) — don't let this get inferred to edge.
 export const runtime = "nodejs";
-// Vercel's own function timeout. NOT the same as the `maxDuration` in the 3rd
-// config object below, which is mcp-handler's internal SSE poll timer.
+// Vercel's own function timeout.
 export const maxDuration = 60;
 
+// mcp-handler 2.x on the MCP SDK v2: serves the 2026-07-28 revision natively
+// (stateless; per-request `_meta` envelope; `server/discover`) and 2025-era
+// Streamable HTTP clients from the same handler, through the SDK's stateless
+// fallback. A new server is built per request, so registerMcpTools sees this
+// request's caller and loaded tools. The old HTTP+SSE transport is gone.
 const mcpHandler = createMcpHandler(
   (server) => {
     registerMcpTools(server);
@@ -29,15 +33,9 @@ const mcpHandler = createMcpHandler(
       version: PROTOCOL_VERSION,
     },
     instructions: AGENT_INSTRUCTIONS,
-  },
-  {
-    basePath: "/api",
-    maxDuration: 60,
-    // Passing this config object at all replaces mcp-handler's own default
-    // (which would fall back to REDIS_URL/KV_URL and disableSse:false) — so
-    // without this flag, GET /api/sse throws "redisUrl is required" (500).
-    // Streamable HTTP (POST /api/mcp) doesn't use Redis and is unaffected.
-    disableSse: true,
+    // No subscriptions/listen streams: nothing here pushes yet (Events is Day 7),
+    // and a held-open stream would pin a serverless function for its lifetime.
+    maxSubscriptions: 0,
   }
 );
 
@@ -159,7 +157,15 @@ function parseError(): Response {
   return Response.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: the body must be valid JSON-RPC." } }, { status: 400 });
 }
 
-async function handler(req: Request): Promise<Response> {
+// mcp-handler 2.x serves every request it is given, whatever the path, so this
+// dynamic route checks it: only /api/mcp is MCP. The 1.x HTTP+SSE endpoints
+// (/api/sse, /api/message) are gone in 2.x; they answer 404 instead.
+const MCP_TRANSPORT = "mcp";
+
+async function handler(req: Request, route: { params: Promise<{ transport: string }> }): Promise<Response> {
+  if ((await route.params).transport !== MCP_TRANSPORT) {
+    return Response.json({ error: "Not found. The MCP endpoint is /api/mcp (Streamable HTTP)." }, { status: 404 });
+  }
   if (req.method === "POST") {
     const declared = declaredTooLarge(req);
     if (declared) return declared;

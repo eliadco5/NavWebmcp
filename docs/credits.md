@@ -321,7 +321,8 @@ reads error messages.
 
 **Discovery, up front and cheap:**
 
-- **Server instructions.** These are sent to every MCP client on `initialize`, and to the
+- **Server instructions.** These are sent to every MCP client (in `server/discover` on the
+  2026-07-28 revision, on `initialize` before it), and to the
   in-page bridge. They carry two sentences: calls cost credits by type, size and run time;
   if a result carries `credits.hint` or a `[credits]` note, follow it; and batch reads with
   `invoke`.
