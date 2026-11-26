@@ -29,7 +29,7 @@ instead of inventing our own versions of them.
 | [Events](https://modelcontextprotocol.io/extensions/events/overview) (`io.modelcontextprotocol/events`, SEP-3415) | Beta | Day 7, replaces our own push plan |
 | [Skills over MCP](https://modelcontextprotocol.io/extensions/skills/overview) (`io.modelcontextprotocol/skills`, SEP-2640) | Spec final; SDK and app support still being built | Day 7, serves `skills/navwebmcp-agent` |
 | Token binding to the client ([#1932](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932)), agent identity for cloud agents ([#1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)) | Drafts | Day 8 aligns with them |
-| Enterprise-Managed Authorization | Stable | Not scheduled (see open questions) |
+| Enterprise-Managed Authorization | Stable | Day 8b, option C |
 | File uploads | Prototype | Not relevant to this app |
 | Next spec release | March 2027 | Re-check this table then |
 
@@ -71,10 +71,11 @@ unplanned features, and Day 6 moved ahead of Day 3 so confirmation can use MCP e
 | 6 | 2.4.0 | Shipped (PR #28) | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks elicitation and Day 7 |
 | — | 2.5.0 | Shipped (PR #29) | Slim always-on tools (not in the plan) | Connect cost ~6,600 → ~2,000 tokens |
 | 3 | 2.6.0 | Shipped (PR #30) | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
-| 4 | 2.7.0 | This PR | Optional pagination, filters, field selection | Lists stop eating the context window |
+| 4 | 2.7.0 | Shipped (PR #31) | Optional pagination, filters, field selection | Lists stop eating the context window |
 | 5 | 2.8.0 | Next | Discovery quality | Find the right operation, and call it right, first time |
 | 7 | 2.9.0 | | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
 | 8 | 2.10.0 | | Least-privilege agent tokens | Safe to hand an agent a token |
+| 8b | 2.11.0 | | Organisation sign-in (SSO / IdP) | Companies with an IdP connect agents under their own identity and permissions |
 | 9–10 | — | | Spec, conformance kit, package | NavWebMcp usable outside this repo |
 | Later | — | | Code mode, second implementation, real-LLM benchmark | Proof the protocol carries the claim |
 
@@ -355,8 +356,10 @@ change.
   - `operations: [...]`
   - `limits: { maxRefundAmount, maxCallsPerHour }`
   - `expiresIn`
-- `execute()` checks the token's scope after RBAC. `getCapabilities` and `search` show only
-  what the token can call, and `capabilityHash` follows. A refusal is `FORBIDDEN` with
+- `execute()` checks the token's scope after RBAC. Discovery is already filtered by role
+  (`visibleOps`); it now also applies the token's scope, so `getCapabilities` and `search`
+  show only what the token can call, and `capabilityHash` follows. A token without a scope
+  sees exactly what it sees today. A refusal is `FORBIDDEN` with
   `details: [{ path: "scope" }]`.
 - Refresh tokens: short access tokens plus a refresh token that the management layer can
   revoke.
@@ -372,6 +375,76 @@ change.
 
 **Tests:** every scope dimension; amount limits on `issueRefund`; refresh after revocation
 fails; `getCapabilities` is filtered by scope.
+
+## Day 8b: Organisation sign-in, SSO and an IdP (2.11.0)
+
+**Problem:** an organisation signs its people in through its own identity provider (OIDC
+or SAML), and decides what each person may do in its own user-management platform. Today
+the app only knows its own users and passwords, and one role per user. Agreed: after
+Day 8, since it builds on Day 8's token scopes.
+
+**Principle:** the protocol is identity-agnostic. Everything after sign-in (`execute()`,
+RBAC, discovery, confirmation, credits, audit) runs on a resolved principal and never asks
+how the user signed in. This day changes how that principal is built and how an agent
+gets a token, not the tools, results or error codes.
+
+**Two modes, one setting**
+- `AUTH_MODE=local` (default): a "regular" platform without an IdP. Users, passwords and
+  roles live in the app, exactly as today. Nothing changes for these deployments.
+- `AUTH_MODE=idp`: people sign in with SSO. Settings: `IDP_ISSUER`, `IDP_CLIENT_ID`,
+  `IDP_CLIENT_SECRET`, and where permissions come from:
+  - `IDP_PERMISSIONS_SOURCE=claims` (default): roles or permissions are read from claims
+    in the IdP token (`IDP_ROLES_CLAIM`, default `groups`), mapped to app roles by
+    `IDP_ROLE_MAP` (e.g. `{"hotel-front-desk":"support","hotel-managers":"admin"}`). Simple,
+    no extra dependency; only as fresh as the IdP token.
+  - `IDP_PERMISSIONS_SOURCE=platform`: the server asks the organisation's user-management
+    platform (`IDP_PERMISSIONS_URL`) for the person's roles and permissions, with a short
+    cache (`IDP_PERMISSIONS_CACHE_SECONDS`, default 60). Fresh; adds a dependency and some
+    latency. If the platform is down: refuse with `UNAUTHENTICATED` (retryable), never
+    fall back to wider access.
+
+**Design**
+- **A pluggable principal resolver** (`lib/access/`, the `Principal` and `authorize()`
+  design in `docs/authorization-implementation-guide.md`, built here if not before): `local`
+  reads the app's user store; `idp` maps the IdP identity (issuer, subject, email, groups)
+  through the chosen source. `authorize()` replaces `roleSatisfies` at its call sites.
+- **Agent tokens carry identity, not permissions.** The principal is re-resolved per
+  request (cached as above), so access removed in the organisation's platform takes
+  effect within the cache time, not when the token expires. A user deprovisioned in the
+  IdP (SCIM, or a failed IdP session check) has their agent tokens revoked.
+- **What an agent can call** = the principal's permissions ∩ the token's scope (Day 8).
+  Discovery shows exactly that, and `capabilityHash` is per permission set, not per role:
+  two people with the same role can see different tools. Agents already refresh on a
+  changed hash, so no client change.
+- **How an agent gets a token**, all three supported:
+  - **A. The "Connect an AI Agent" card:** the person signs in with SSO in the app; the
+    card issues an app token for the resolved principal. Works in both modes.
+  - **B. Standard MCP OAuth:** `.well-known/oauth-protected-resource` names the app's
+    authorization server, which hands sign-in to the IdP (PKCE, consent screen).
+  - **C. Enterprise-Managed Authorization** (stable MCP extension): the organisation's
+    IdP issues an identity assertion for an approved MCP client, and the server exchanges
+    it for an access token. No per-user consent; IT decides in the IdP which agents may
+    connect. Re-read the extension and the IETF identity-assertion grant draft at the
+    start of the day.
+- **`getContext`** returns the effective roles or permissions and the sign-in mode
+  (`local` / `idp`), not just one role name.
+- **Audit:** every event records the IdP issuer, subject and the groups or permissions in
+  force at the time, so a SOC 2 review ties each agent action to the organisation's
+  identity. `local` events are unchanged.
+- **Errors:** no new codes. An expired IdP session or an unreachable permissions platform
+  is `UNAUTHENTICATED` (sign in again / retry); a missing permission is `FORBIDDEN`.
+- **MINOR bump:** `local` is the default and behaves exactly as before.
+
+**Tests:** both modes on the same suite (local stays green unchanged); claim mapping
+(unknown group → no access, several groups → union); the platform source with a fake
+platform (cache hit, permission removed takes effect after the cache, platform down →
+`UNAUTHENTICATED`, never wider access); token scope ∩ permissions in `execute()` and in
+discovery; `capabilityHash` differs for two users with different permissions; options A,
+B and C against a mock IdP; deprovisioning revokes agent tokens; audit carries the IdP
+identity.
+
+**Measure:** the latency the platform source adds per call (cold and cached), and how long
+a removed permission takes to stop an agent, against the cache setting.
 
 ## Days 9–10: Make it a protocol, not just this app
 
@@ -408,5 +481,7 @@ fails; `getCapabilities` is filtered by scope.
    new SDK, with elicitation.
 7. **Events retention:** how far back may a cursor resume (planned: 24 h, like
    idempotency records)? Longer means more Redis memory.
-8. **Enterprise-Managed Authorization:** now a stable extension. Worth a day after Day 8,
-   or not needed for this app?
+8. **Enterprise-Managed Authorization:** answered. Part of Day 8b (option C), after Day 8.
+9. **Where an IdP user's permissions come from:** answered. A server setting
+   (`IDP_PERMISSIONS_SOURCE`); the default is claims in the IdP token. Platforms without
+   an IdP keep the built-in users (`AUTH_MODE=local`, the default).
