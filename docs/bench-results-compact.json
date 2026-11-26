@@ -1,0 +1,177 @@
+{
+  "generatedAt": null,
+  "tokenModel": "chars/4",
+  "buildMode": "prod",
+  "n": 5,
+  "format": "compact",
+  "results": {
+    "booking": [
+      {
+        "lane": "A-native",
+        "successRate": "5/5",
+        "avgMs": 13,
+        "httpCalls": 19,
+        "toolSchemaTaxTokens": 58,
+        "avgInputTokens": 65,
+        "avgOutputTokens": 381,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke",
+        "successRate": "5/5",
+        "avgMs": 12,
+        "httpCalls": 18,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 61,
+        "avgOutputTokens": 381,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke-chained",
+        "successRate": "5/5",
+        "avgMs": 6,
+        "httpCalls": 8,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 75,
+        "avgOutputTokens": 308,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "B",
+        "successRate": "5/5",
+        "avgMs": 6,
+        "httpCalls": 9,
+        "toolSchemaTaxTokens": 31,
+        "avgInputTokens": 26,
+        "avgOutputTokens": 129,
+        "avgObservationTokens": 0
+      }
+    ],
+    "checkin": [
+      {
+        "lane": "A-native",
+        "successRate": "5/5",
+        "avgMs": 11,
+        "httpCalls": 19,
+        "toolSchemaTaxTokens": 55,
+        "avgInputTokens": 43,
+        "avgOutputTokens": 275,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke",
+        "successRate": "5/5",
+        "avgMs": 14,
+        "httpCalls": 18,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 40,
+        "avgOutputTokens": 275,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke-chained",
+        "successRate": "5/5",
+        "avgMs": 5,
+        "httpCalls": 8,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 48,
+        "avgOutputTokens": 296,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "B",
+        "successRate": "5/5",
+        "avgMs": 5,
+        "httpCalls": 9,
+        "toolSchemaTaxTokens": 33,
+        "avgInputTokens": 15,
+        "avgOutputTokens": 38,
+        "avgObservationTokens": 0
+      }
+    ],
+    "journey": [
+      {
+        "lane": "A-native",
+        "successRate": "5/5",
+        "avgMs": 29,
+        "httpCalls": 34,
+        "toolSchemaTaxTokens": 90,
+        "avgInputTokens": 109,
+        "avgOutputTokens": 654,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke",
+        "successRate": "5/5",
+        "avgMs": 33,
+        "httpCalls": 33,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 101,
+        "avgOutputTokens": 654,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke-chained",
+        "successRate": "5/5",
+        "avgMs": 11,
+        "httpCalls": 8,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 120,
+        "avgOutputTokens": 598,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "B",
+        "successRate": "5/5",
+        "avgMs": 16,
+        "httpCalls": 14,
+        "toolSchemaTaxTokens": 41,
+        "avgInputTokens": 41,
+        "avgOutputTokens": 165,
+        "avgObservationTokens": 0
+      }
+    ],
+    "vip": [
+      {
+        "lane": "A-native",
+        "successRate": "5/5",
+        "avgMs": 32,
+        "httpCalls": 39,
+        "toolSchemaTaxTokens": 102,
+        "avgInputTokens": 131,
+        "avgOutputTokens": 639,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke",
+        "successRate": "5/5",
+        "avgMs": 25,
+        "httpCalls": 38,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 124,
+        "avgOutputTokens": 639,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "A-invoke-chained",
+        "successRate": "5/5",
+        "avgMs": 6,
+        "httpCalls": 8,
+        "toolSchemaTaxTokens": 0,
+        "avgInputTokens": 131,
+        "avgOutputTokens": 684,
+        "avgObservationTokens": 0
+      },
+      {
+        "lane": "B",
+        "successRate": "5/5",
+        "avgMs": 6,
+        "httpCalls": 9,
+        "toolSchemaTaxTokens": 33,
+        "avgInputTokens": 33,
+        "avgOutputTokens": 237,
+        "avgObservationTokens": 0
+      }
+    ]
+  }
+}

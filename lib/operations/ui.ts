@@ -29,7 +29,7 @@ const ALL_ROLES = ["customer", "support", "admin"] as const;
 const noPage = () =>
   fail(UI_ERROR.NO_PAGE, "The user has no open app tab to operate. Ask them to open the app, then retry.");
 
-const tabIdField = () => TabRef().optional().describe("Target a specific browser tab (from ui_list). Omit for the tab the user is looking at");
+const tabIdField = () => TabRef().optional().describe("A browser tab from ui_list; omit for the one in view");
 
 /** The relay, or a failure when this process has no relay installed (it is
  *  installed by server entry points; see lib/ui-relay/port.ts). */
@@ -57,8 +57,8 @@ export const uiList = defineOperation({
   name: "ui_list",
   title: "List UI Components",
   description:
-    "List the agent-operable UI components mounted in the user's open app tab — tables, tab bars — with each one's current state, stateSchema and actions. " +
-    "Use the ui_* ops when the USER should see the result on screen; use business operations when you only need the data yourself.",
+    "The UI components on the user's screen (tables, the tab bar) with state, stateSchema and actions. " +
+    "Use ui_* when the user should see the result; business operations when only you need the data.",
   permission: "read",
   roles: [...ALL_ROLES],
   alwaysOn: true,
@@ -67,7 +67,7 @@ export const uiList = defineOperation({
   credits: { weight: 2 },
   tags: ["ui"],
   inputSchema: {
-    kind: z.enum(UI_KINDS).optional().describe("Only components of this kind"),
+    kind: z.enum(UI_KINDS).optional().describe("Only this kind"),
     tabId: tabIdField(),
   },
   outputSchema: {
@@ -94,7 +94,7 @@ export const uiList = defineOperation({
 export const uiGetState = defineOperation({
   name: "ui_get_state",
   title: "Get UI Component State",
-  description: "Read one UI component's current state and what it shows (row counts). Cheaper than ui_list when you know the id.",
+  description: "One component's current state and row counts.",
   permission: "read",
   roles: [...ALL_ROLES],
   alwaysOn: true,
@@ -103,7 +103,7 @@ export const uiGetState = defineOperation({
   credits: { weight: 2 },
   tags: ["ui"],
   inputSchema: {
-    componentId: ComponentId().describe("Component id from ui_list, e.g. tasks.table"),
+    componentId: ComponentId().describe("From ui_list, e.g. tasks.table"),
     tabId: tabIdField(),
   },
   outputSchema: {
@@ -131,9 +131,8 @@ export const uiSetState = defineOperation({
   name: "ui_set_state",
   title: "Set UI Component State",
   description:
-    "Change what a UI component shows — e.g. a table's filters or sort, or the active app tab — exactly as if the user used its controls. " +
-    "`patch` is merged into the current state: objects merge, arrays replace, null clears a key. The component validates the result against its stateSchema. " +
-    "Changes only the view, never business data, so it needs no user confirmation.",
+    "Change what a component shows (filters, sort, active tab) as the user would. " +
+    "patch merges: objects merge, arrays replace, null clears. View only; no confirmation needed.",
   permission: "write",
   roles: [...ALL_ROLES],
   alwaysOn: true,
@@ -143,9 +142,9 @@ export const uiSetState = defineOperation({
   parallelSafe: false,
   tags: ["ui"],
   inputSchema: {
-    componentId: ComponentId().describe("Component id from ui_list, e.g. tasks.table or app.nav"),
-    patch: z.record(z.unknown()).describe('Partial state, e.g. { "filters": { "status": "open" }, "sort": [{ "column": "priority", "direction": "desc" }] }'),
-    expectedVersion: z.number().int().min(0).optional().describe("Fail with UI_STALE_STATE if the component changed since you read this version"),
+    componentId: ComponentId().describe("From ui_list, e.g. tasks.table or app.nav"),
+    patch: z.record(z.unknown()).describe('e.g. { "filters": { "status": "open" } }'),
+    expectedVersion: z.number().int().min(0).optional().describe("Fail with UI_STALE_STATE if it changed since this version"),
     tabId: tabIdField(),
   },
   outputSchema: UiSetStateResultSchema,
@@ -160,7 +159,7 @@ export const uiSetState = defineOperation({
 export const uiAction = defineOperation({
   name: "ui_action",
   title: "Run UI Component Action",
-  description: "Run one of a UI component's declared actions (listed per component by ui_list), e.g. reset or refresh. Changes only the view.",
+  description: "Run a component's action from ui_list, e.g. reset or refresh. View only.",
   permission: "write",
   roles: [...ALL_ROLES],
   alwaysOn: true,
@@ -170,9 +169,9 @@ export const uiAction = defineOperation({
   parallelSafe: false,
   tags: ["ui"],
   inputSchema: {
-    componentId: ComponentId().describe("Component id from ui_list"),
-    action: z.string().min(1).max(64).describe("Action name from the component's actions list"),
-    args: z.record(z.unknown()).optional().describe("Action arguments, if the action takes any"),
+    componentId: ComponentId().describe("From ui_list"),
+    action: z.string().min(1).max(64).describe("An action name from ui_list"),
+    args: z.record(z.unknown()).optional().describe("Its arguments, if any"),
     tabId: tabIdField(),
   },
   outputSchema: UiActionResultSchema,

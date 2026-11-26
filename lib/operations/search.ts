@@ -9,22 +9,15 @@ export const search = defineOperation({
   name: "search",
   title: "Search",
   description:
-    "Find functions and modules by Linux-style path glob. " +
-    "Patterns match against synthesized 'module/path/functionName' strings. " +
-    "'**' crosses segment boundaries; '*' matches within one segment; '?' matches one char. " +
-    "A bare keyword (no metachar, no slash) is treated as '**/*keyword*'. " +
-    "Use search() when you know *what* you need but not *where* in the tree it lives. " +
-    "Use explore() when you want to navigate a known module path.",
+    "Find functions and modules by glob over 'module/path/function' ('**' any depth, '*' one segment, '?' one char). " +
+    "A bare word means '**/*word*'.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
     pattern: ShortText(200)
       .min(1)
-      .describe(
-        "Linux-style glob matched against module/function paths. " +
-        "Examples: \"**/*reservation*\", \"finance/**\", \"*refund*\", or a bare keyword like \"reservation\"."
-      ),
+      .describe('e.g. "*refund*", "finance/**", or "reservation"'),
   },
   outputSchema: {
     functions: z.array(SearchFnSchema),

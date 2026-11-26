@@ -190,7 +190,7 @@ everything. Response size costs credits and context. Only one admin operation ha
   - `filter` is equality and range on declared fields only
 - Shared output: `{ items, nextCursor?, total }`. Item schemas don't change; `fields`
   makes item properties optional in the published schema.
-- Applied to every list or search operation. The README catalogue gets a "paged" column.
+- Applied to every list or search operation. The operations reference (`docs/operations.md`) gets a "paged" column.
 - `capabilityHash` changes for those operations (expected and intended).
 
 **Tests:** cursor round-trips, tampered cursors (`INVALID_INPUT`), projections pass the

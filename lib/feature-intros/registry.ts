@@ -1,5 +1,5 @@
-// Every user-facing feature ships with an entry here. See README, "Shipping a
-// new feature". Pure and isomorphic: imported by the client (IntroProvider),
+// Every user-facing feature ships with an entry here. See docs/development.md,
+// "Shipping a new UI feature". Pure and isomorphic: imported by the client (IntroProvider),
 // the /api/intros route, and the tests.
 import type { Role } from "@/lib/auth";
 import type { FeatureIntro } from "./types";

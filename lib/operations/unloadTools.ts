@@ -7,12 +7,12 @@ import { ShortText } from "./schemas";
 export const unloadTools = defineOperation({
   name: "unload_tools",
   title: "Unload Tools",
-  description: "Remove previously promoted functions from the native tool list. After calling, re-fetch tools/list to confirm removal.",
+  description: "Remove functions added by load_tools. Re-fetch tools/list after.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    names: z.array(ShortText(128).min(1)).min(1).max(50).describe("Function names to remove from native tools"),
+    names: z.array(ShortText(128).min(1)).min(1).max(50).describe("Function names"),
   },
   outputSchema: {
     removed: z.array(z.string()),

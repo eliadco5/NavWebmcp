@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.4.0
+version: 2.5.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.4.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.5.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -73,7 +73,9 @@ the top level — typically around 8: `explore`, `search`, `describe_tool`, `inv
 `load_tools`, `unload_tools`, `getContext`, `getCapabilities` (plus, since 1.3.0, the four
 UI ops `ui_list`, `ui_get_state`, `ui_set_state`, `ui_action`, see §11). This is the design, not a
 bug: the full operation catalogue can be large, and shipping every schema on every
-connection is wasted context. The real catalogue is reachable through discovery (§4),
+connection is wasted context. Since 2.5.0 the always-on tools also publish no
+`outputSchema` in `tools/list` (their results are self-describing); `describe_tool`
+returns it if you need it. The real catalogue is reachable through discovery (§4),
 not through `tools/list`. Never guess operation names from what `tools/list` shows.
 
 ## 4. Discovery ladder
@@ -216,7 +218,8 @@ the operation itself is the same either way.
 
 On MCP (protocol ≥ 1.1.0), a successful native call also returns `structuredContent`:
 the same `data` as the JSON text block, already parsed and matching the tool's
-`outputSchema`. Prefer it over re-parsing the text.
+`outputSchema`. Prefer it over re-parsing the text. (The always-on tools return
+`structuredContent` too, without publishing an `outputSchema`, since 2.5.0.)
 
 Input is validated strictly (≥ 1.1.0): an unknown or misspelt parameter fails with
 `INVALID_INPUT` rather than being silently ignored. Copy parameter names

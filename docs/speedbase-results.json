@@ -4,23 +4,23 @@
   "rows": [
     {
       "scenario": "book",
-      "functionMs": 0.89,
+      "functionMs": 1.41,
       "functionSuccess": "5/5",
-      "playwrightMs": 388,
+      "playwrightMs": 435,
       "playwrightSuccess": "5/5",
-      "speedup": "437x"
+      "speedup": "308x"
     },
     {
       "scenario": "seatGuest",
-      "functionMs": 0.35,
+      "functionMs": 0.52,
       "functionSuccess": "5/5",
-      "playwrightMs": 459,
+      "playwrightMs": 646,
       "playwrightSuccess": "5/5",
-      "speedup": "1314x"
+      "speedup": "1252x"
     },
     {
       "scenario": "hostVipGuest",
-      "functionMs": 0.18,
+      "functionMs": 1.4,
       "functionSuccess": "5/5",
       "playwrightMs": "—",
       "playwrightSuccess": "no UI exists",

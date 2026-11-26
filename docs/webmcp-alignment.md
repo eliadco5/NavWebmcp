@@ -10,7 +10,7 @@ which was added on 2 Nov 2026 in
   native implementation
 - `lib/agentbridge.ts`, which registers our operations into whichever `modelContext` is
   present
-- NavWebMcp protocol **2.4.0** (`lib/protocol.ts`, `CHANGELOG.md`)
+- NavWebMcp protocol **2.5.0** (`lib/protocol.ts`, `CHANGELOG.md`)
 
 **The goal is alignment, not a clone.** Tools that AgentBridge registers must work on a
 native `modelContext` exactly as the spec describes. The polyfill is a development
@@ -84,7 +84,7 @@ data schema inside `data`.
 
 | Rule | Status |
 |---|---|
-| `outputSchema` is an object schema | ✅ Every op has one |
+| `outputSchema` is an object schema | ✅ Every op has one. On MCP, `tools/list` publishes it for business operations only; the 12 always-on tools omit it (≥ 2.5.0) to keep the connect cost down, and `describe_tool` returns it |
 | Server returns `structuredContent` that conforms when an `outputSchema` is declared | ✅ Enforced by `tests/unit/output-contract.test.ts`. The SDK also rejects mismatches at runtime |
 | The serialized JSON is also returned in a text block | ✅ Kept for older clients and `scripts/bench.mjs` |
 | Tool execution errors are reported with `isError: true` | ✅ Always as the `ProtocolError` object (`{code, message, retryable, details?, hint?, suggestions?, requestId?, callId?}`) |

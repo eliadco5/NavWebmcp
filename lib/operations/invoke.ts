@@ -8,24 +8,21 @@ import { findRefs, formatAt, parseRef, resolveRef, substitute, type ParsedRef } 
 import type { OperationContext } from "./types";
 
 const CallSchema = z.object({
-  name: ShortText(128).min(1).describe("Operation name"),
+  name: ShortText(128).min(1).describe("Function name"),
   args: z.record(z.unknown()).default({}).describe(
-    "Arguments for the operation. Any value may be { \"$ref\": \"<i>.data.<path>\" }: a value from earlier call i's result, e.g. \"0.data.slots[0].id\""
+    "Its arguments; a value may be { \"$ref\": \"<i>.data.<path>\" }, e.g. \"0.data.slots[0].id\""
   ),
-  parallelSafe: z.boolean().optional().describe("Override parallel-safety for this call"),
+  parallelSafe: z.boolean().optional().describe("Override parallel-safety"),
 }).strict();
 
 export const invoke = defineOperation({
   name: "invoke",
   title: "Invoke",
   description:
-    "Call a function without loading it (stateless, Path B). " +
-    "Single call: { name, args } returns exactly what the function returns — its data on success, its error on failure. " +
-    "Batch: { calls: [{name, args}] } returns { results }, one { success, data | error } per call in request order; " +
-    "reads run in parallel, writes run in order. " +
-    "A call can use an earlier call's result: pass { \"$ref\": \"<i>.data.<path>\" } as an argument value " +
-    "(keys and [n] indexes only); it then waits for call i, and is skipped with DEPENDENCY_FAILED if call i failed or the path is missing. " +
-    "A batch costs fewer credits than the same calls made one by one.",
+    "Call any function by name, without loading it. { name, args } returns its own result. " +
+    "{ calls: [...] } returns { results } in order: reads run in parallel, writes in order, and it costs fewer credits. " +
+    "In a batch, an argument { \"$ref\": \"<i>.data.<path>\" } (keys and [n] only) uses earlier call i's result; " +
+    "if that fails, the call gets DEPENDENCY_FAILED.",
   permission: "read",
   dispatchesOps: true,
   // Single call relays the called op's data verbatim, so its keys are not known here.
@@ -33,9 +30,9 @@ export const invoke = defineOperation({
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    name: ShortText(128).min(1).optional().describe("Function name (single-call form)"),
-    args: z.record(z.unknown()).optional().describe("Arguments (single-call form)"),
-    calls: z.array(CallSchema).max(50).optional().describe("Batch calls (use this or name+args, not both)"),
+    name: ShortText(128).min(1).optional().describe("Function name (single call)"),
+    args: z.record(z.unknown()).optional().describe("Its arguments (single call)"),
+    calls: z.array(CallSchema).max(50).optional().describe("A batch, instead of name/args"),
   },
   // Single call: the called function's own success data (see its outputSchema via
   // describe_tool); any key may appear. Batch: { results }.
