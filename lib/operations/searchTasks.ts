@@ -29,6 +29,7 @@ export const searchTasks = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "tasks.management",
+  list: { key: "tasks", id: "taskId" },
   inputSchema: {
     department: ShortText(100).optional().describe("Filter by department"),
     status: TaskStatus.optional().describe("Filter by task status"),

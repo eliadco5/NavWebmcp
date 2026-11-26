@@ -11,6 +11,7 @@ export const listShiftNotes = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "frontoffice.shifts",
+  list: { key: "notes", id: "id" },
   inputSchema: {
     date: IsoDate().optional().describe("ISO date (YYYY-MM-DD) to filter notes; defaults to today"),
   },

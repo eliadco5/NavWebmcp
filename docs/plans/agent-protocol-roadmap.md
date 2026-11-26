@@ -70,9 +70,9 @@ unplanned features, and Day 6 moved ahead of Day 3 so confirmation can use MCP e
 | — | 2.3.0 | Shipped (PR #27) | Compact JSON in MCP text blocks (not in the plan) | Fewer tokens per result |
 | 6 | 2.4.0 | Shipped (PR #28) | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks elicitation and Day 7 |
 | — | 2.5.0 | Shipped (PR #29) | Slim always-on tools (not in the plan) | Connect cost ~6,600 → ~2,000 tokens |
-| 3 | 2.6.0 | This PR | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
-| 4 | 2.7.0 | Next | Pagination, filters, field selection | Lists stop eating the context window |
-| 5 | 2.8.0 | | Discovery quality | Find the right operation, and call it right, first time |
+| 3 | 2.6.0 | Shipped (PR #30) | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
+| 4 | 2.7.0 | This PR | Optional pagination, filters, field selection | Lists stop eating the context window |
+| 5 | 2.8.0 | Next | Discovery quality | Find the right operation, and call it right, first time |
 | 7 | 2.9.0 | | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
 | 8 | 2.10.0 | | Least-privilege agent tokens | Safe to hand an agent a token |
 | 9–10 | — | | Spec, conformance kit, package | NavWebMcp usable outside this repo |
@@ -183,23 +183,46 @@ which tokens are forged or replayed.
 everything. Response size costs credits and context. Only one admin operation has a
 `limit` today.
 
-**Design**
-- Shared input helper: `{ limit?, cursor?, fields?, filter? }`.
-  - `limit` defaults to 25, max 200
-  - `cursor` is opaque, an HMAC'd offset plus a sort key
-  - `fields` is a projection on the item schema
-  - `filter` is equality and range on declared fields only
-- Shared output: `{ items, nextCursor?, total }`. Item schemas don't change; `fields`
-  makes item properties optional in the published schema.
-- Applied to every list or search operation. The operations reference (`docs/operations.md`) gets a "paged" column.
+**Design (as built)**
+- **Optional, by decision:** a call without the new fields gets the full list, exactly as
+  before, so 2.7.0 is a MINOR bump. (The first draft defaulted `limit` to 25.)
+- An operation opts in with `list: { key, id, defaultLimit? }`; `defineOperation`
+  publishes `limit` (1–200), `cursor` and `fields`, and `execute()` pages the handler's
+  full result after the output check (`lib/operations/paging.ts`). 17 operations.
+- `cursor` is signed with the confirmation key (`p1.` prefix) and bound to the user, the
+  agent client, the operation and the other arguments. It records the last item's id
+  and its position, so the next page starts right after that item even if the list
+  changed; it also remembers the page size.
+- `fields` is a projection on the item properties (the id is always kept). In the
+  published schema item properties become optional; handlers are still checked against
+  the complete item.
+- Output keeps each list's own key (no rename to `items`, which would break callers);
+  `count` / `total` stays the count before paging, and `nextCursor` is added.
+- No generic `filter` object: each operation keeps its own declared filter fields, and
+  the missing ones were added (`status` / `from` / `to` on `listAllReservations`,
+  `status` on `listReservations`). This keeps each list tool's schema small.
+- `getCreditLedgers` keeps its default of 50; `queryAudit` keeps its own `beforeSeq`
+  paging.
 - `capabilityHash` changes for those operations (expected and intended).
 
-**Tests:** cursor round-trips, tampered cursors (`INVALID_INPUT`), projections pass the
-output check, filters on undeclared fields are rejected, and the output-contract test gets
-a paged case per operation.
+**Tests:** cursor round-trips (every page = the full list), tampered, foreign and
+mismatched cursors (`INVALID_INPUT`), items added or removed between pages, projections
+pass the output check, unknown `fields` rejected, a paged case per operation in the
+output-contract test, and MCP's own output check on a projected page.
 
 **Measure:** response tokens for the list operations at the current seed size and at
 10× seed size.
+
+| Operation (items at 10×) | Full | `fields` | `limit: 25` | `limit: 25` + `fields` |
+|---|---|---|---|---|
+| `searchTasks` (50) | 2,735 | 1,197 | 1,431 | 662 |
+| `searchGuests` (50) | 1,690 | 977 | 908 | 552 |
+| `listAllReservations` (30) | 1,030 | 455 | 929 | 447 |
+| `listCommunications` (20) | 1,179 | 387 | 1,179 | 387 |
+
+At seed size (2–5 items) `limit` changes nothing and `fields` saves 40–65 %. The cost:
+each list op's `describe_tool` grows by about 330–400 B (all 17 stay under the 4 KB
+credit size unit, pinned by a test); calls that don't use the fields are unchanged.
 
 ## Day 5: Discovery quality (2.8.0)
 

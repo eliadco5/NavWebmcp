@@ -13,6 +13,7 @@ export const getMyTasks = defineOperation({
   permission: "read",
   roles: ["customer", "support", "admin"],
   module: "tasks.assignments",
+  list: { key: "tasks", id: "taskId" },
   inputSchema: {},
   outputSchema: {
     tasks: z.array(TaskSchema),

@@ -134,6 +134,7 @@ export const queryAuditOp = defineOperation({
 
 export const getEntityHistory = defineOperation({
   name: "getEntityHistory",
+  list: { key: "events", id: "id" },
   title: "Get Record History",
   description:
     "Everything that happened to one record (e.g. type 'reservation', id 'res_…'), oldest first, and who created " +
@@ -273,6 +274,7 @@ export const getUsageMetrics = defineOperation({
 
 export const listUserSessions = defineOperation({
   name: "listUserSessions",
+  list: { key: "sessions", id: "sid" },
   title: "List Sign-in Sessions",
   description:
     "Human sign-in sessions with when they started, last activity, IP / user agent, and whether they're " +
@@ -296,6 +298,7 @@ export const listUserSessions = defineOperation({
 
 export const listAgentClients = defineOperation({
   name: "listAgentClients",
+  list: { key: "clients", id: "clientId" },
   title: "List Agent Clients",
   description:
     "Every agent connection users have authorised (MCP clients), with the agent software it reports, last " +
@@ -410,24 +413,25 @@ const CreditLedgerOut = () => z.object({
 
 export const getCreditLedgers = defineOperation({
   name: "getCreditLedgers",
+  list: { key: "ledgers", id: "principal", defaultLimit: 50 },
   title: "Get Credit Ledgers",
   description:
     "Credit state of every metered caller — agent clients and people: balance, window, credits spent, calls " +
-    "refused, and any admin override. Use it to spot an agent hammering the server. Admin only.",
+    "refused, and any admin override. Use it to spot an agent hammering the server. Most recently active first, 50 per page " +
+    "unless limit says otherwise. Admin only.",
   permission: "read",
   roles: ["admin"],
   module: "admin.access",
   inputSchema: {
     kind: z.enum(["agent", "human"]).optional().describe("Only agents, or only people"),
-    limit: z.number().int().min(1).max(200).optional().describe("Most rows returned (default 50), most recently active first"),
   },
   outputSchema: { count: z.number().int(), ledgers: z.array(CreditLedgerOut()) },
   audit: { target: () => null },
-  async handler({ kind, limit }, _ctx) {
+  async handler({ kind }, _ctx) {
     const s = svc();
     if (!s) return UNAVAILABLE();
     const all = await s.listCreditLedgers({ kind });
-    return ok(clean({ count: all.length, ledgers: all.slice(0, limit ?? 50) }) as never);
+    return ok(clean({ count: all.length, ledgers: all }) as never);
   },
 });
 

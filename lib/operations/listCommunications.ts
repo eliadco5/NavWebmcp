@@ -13,6 +13,7 @@ export const listCommunications = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "crm.communications",
+  list: { key: "communications", id: "commId" },
   inputSchema: {
     guestId: Id().describe("The unique guest identifier"),
     type: z.enum(["call", "email", "note"]).optional().describe("Filter by communication type"),

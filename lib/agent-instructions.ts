@@ -57,6 +57,7 @@ Business operations return data to YOU; the screen does not change. When the use
 - Unknown parameters are rejected (INVALID_INPUT), not ignored: use the exact names from the input schema.
 - Write operations (permission: "write") require all parameters confirmed by the user before executing — except the view-only ui_* ops.
 - requiresConfirmation: true marks a destructive operation. Call it without confirm first: it runs nothing and returns CONFIRMATION_REQUIRED with confirmation.preview.summary (what it would do) and confirmation.token. Show the user the summary; if they approve, re-call with the same arguments plus confirmationToken. Changed arguments, an expired (5 min) or used token: CONFIRMATION_STALE, with a new preview and token. confirm: true still works unless the server requires tokens. If your client can show forms (MCP elicitation), the server asks the user itself.
+- Long lists: list operations take optional limit (page size), fields (only these item properties) and cursor (the previous nextCursor, with the same filters). Omit them for the whole list.
 - dryRun: true on any write validates it and returns { dryRun: true, preview } (plus a confirmation token on destructive ones) without writing anything, at read cost: use it to check a plan before asking.
 
 ## Safe retries (idempotencyKey)

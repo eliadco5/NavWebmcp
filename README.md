@@ -46,6 +46,7 @@ Measured on the booking flow over real MCP HTTP, the composite uses **67 % fewer
 | Structured errors | `{ code, message, retryable, details, hint, suggestions, requestId, callId }` on every surface | [Protocol § 8](docs/protocol.md#8-errors) |
 | Safe retries (≥ 2.1.0) | `idempotencyKey` on every write: a retry never writes twice, across instances | [Protocol § 5](docs/protocol.md#5-execute) |
 | Dependent batches (≥ 2.2.0) | `{ "$ref": "0.data.slots[0].id" }` threads one call's result into the next | [Protocol § 5](docs/protocol.md#5-execute) |
+| Paged lists (≥ 2.7.0) | Optional `limit`, `cursor` and `fields` on the 17 list operations; without them, the whole list as before | [Protocol § 5](docs/protocol.md#5-execute) |
 | Compact results (≥ 2.3.0) | `?format=compact` on the MCP URL: 16–40 % fewer tokens per flow | [Protocol § 6](docs/protocol.md#6-compact-text-results--230) |
 | RBAC and confirmation gates | Per-operation roles; destructive operations show a preview and need a one-use token, `confirm: true` or the user's answer to an MCP elicitation; `dryRun` on any write | [Protocol § 7](docs/protocol.md#7-rbac-and-confirmation-gates) |
 | Agent-operable UI (≥ 1.3.0) | Agents change what the user *sees* (filters, sort, tabs) through `ui_*` operations, not the DOM | [Build guide](docs/ui-components-guide.md) · [Spec](docs/ui-components.md) |

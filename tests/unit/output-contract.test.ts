@@ -238,11 +238,33 @@ describe('success data matches outputSchema exactly', () => {
         const op = registry.find((o) => o.name === name)
         const wire = JSON.parse(JSON.stringify(result.data))
         // openOutput ops (invoke) relay another op's data, which that op's own case checks.
-        const parsed = schema.outputObject(op.outputSchema, op.openOutput).safeParse(wire)
+        // A list op's published items are partial (fields); the handler's are complete.
+        const parsed = schema.outputObject(op.listInfo?.strictOutput ?? op.outputSchema, op.openOutput).safeParse(wire)
         expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
         // Zod strips undeclared keys, so any difference here is a field the schema doesn't declare.
         expect(parsed.data).toEqual(wire)
       })
+    })
+  }
+})
+
+// 2.7.0: a list op asked for one page of one property still matches the
+// published outputSchema exactly (items partial, nextCursor declared).
+describe('a paged, projected list matches the published outputSchema', () => {
+  for (const [name, cases] of Object.entries(CASES)) {
+    it(`${name} paged`, async () => {
+      const op = registry.find((o) => o.name === name)
+      if (!op.listInfo) return
+      const { execute } = await import('@/lib/operations/execute')
+      const r = await execute(name, { ...cases[0].args(), limit: 1, fields: [op.listInfo.id] }, adminCtx) as any
+      expect(r.success, JSON.stringify(r.error)).toBe(true)
+      const wire = JSON.parse(JSON.stringify(r.data))
+      const items = wire[op.listInfo.key]
+      expect(items.length).toBeLessThanOrEqual(1)
+      for (const it of items) expect(Object.keys(it)).toEqual([op.listInfo.id])
+      const parsed = schema.outputObject(op.outputSchema, op.openOutput).safeParse(wire)
+      expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true)
+      expect(parsed.data).toEqual(wire)
     })
   }
 })

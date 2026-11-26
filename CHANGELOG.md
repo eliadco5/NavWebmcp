@@ -23,6 +23,35 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.7.0
+
+Optional pagination and field selection on list operations, so a long list no longer has
+to fill the agent's context. **Everything is opt-in**: a call that passes none of the new
+fields gets exactly the answer it got before.
+
+- **17 list operations** (`listAllReservations`, `listPayments`, `searchTasks`,
+  `listUserSessions`, …; the "Paged" column in `docs/operations.md`) accept three new
+  optional fields:
+  - `limit` (1–200): answer one page. Without it, the full list, as before.
+  - `cursor`: the previous page's `nextCursor`. It remembers the page size, so `limit`
+    may be left out on later pages. It is signed and bound to the caller, the agent
+    client, the operation and the other arguments: a tampered cursor, or one sent with
+    other filters, is `INVALID_INPUT` (`details[0].path: "cursor"`).
+  - `fields`: only these item properties (the item's id is always kept). An unknown name
+    is `INVALID_INPUT`.
+- **Output:** the list keeps its name (`reservations`, `tasks`, …), and the existing
+  `count` / `total` still counts every match, not the page. `nextCursor` is added when
+  another page exists. In the published `outputSchema`, item properties other than the id
+  become optional (a projection leaves them out); handlers are still checked against the
+  complete item shape.
+- **Paging follows items, not positions:** the next page starts right after the last item
+  returned, so a booking added or removed meanwhile doesn't make one repeat or go missing.
+- **New filters:** `status`, `from`, `to` on `listAllReservations`; `status` on
+  `listReservations`. `listFrontDeskReservations` gains `count`.
+- `getCreditLedgers` keeps its default of 50 rows; its `limit` is now the shared one and it
+  pages with `cursor`. `queryAudit` keeps its own `limit` / `beforeSeq` paging.
+- `capabilityHash` changes for these operations (new input fields), as intended.
+
 ## 2.6.0
 
 Confirmation that shows what will happen, and can prove it was approved. Until now the

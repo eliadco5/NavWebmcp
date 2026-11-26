@@ -13,6 +13,7 @@ export const getTodaySchedule = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "housekeeping.schedule",
+  list: { key: "scheduleItems", id: "id" },
   inputSchema: {},
   outputSchema: {
     scheduleItems: z.array(ScheduleItemSchema),

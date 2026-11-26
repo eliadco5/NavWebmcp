@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.6.0
+version: 2.7.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.6.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.7.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -224,6 +224,26 @@ the same `data` as the JSON text block, already parsed and matching the tool's
 Input is validated strictly (≥ 1.1.0): an unknown or misspelt parameter fails with
 `INVALID_INPUT` rather than being silently ignored. Copy parameter names
 from the input schema exactly.
+
+## 8a. Long lists: `limit`, `fields`, `cursor` (≥ 2.7.0)
+
+List operations (`listAllReservations`, `listPayments`, `searchTasks`, …) return the whole
+list unless you ask for less. When you only need a few items or a few properties, ask:
+
+```js
+invoke({ name: "listAllReservations", args: { status: "pending", limit: 20, fields: ["name", "date", "time"] } })
+// → { reservations: [{ id, name, date, time }, …], count: 140, nextCursor: "p1.…" }
+invoke({ name: "listAllReservations", args: { status: "pending", cursor: "p1.…" } })
+// → the next 20 (the cursor remembers the page size)
+```
+
+- `count` / `total` counts every match, not the page: answer "how many?" from it, without
+  paging.
+- Send the same filters with a `cursor` as with the first page; other filters, or a cursor
+  you edited, are `INVALID_INPUT` on `cursor`. Drop the cursor to start over.
+- No `nextCursor` means you have the last page.
+- The id is always kept by `fields`. Fetch the full item (`getReservation`, …) when you
+  need more than you projected.
 
 ## 9. Gather-first, ask-once
 

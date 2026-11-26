@@ -14,6 +14,7 @@ export const searchAvailability = defineOperation({
   roles: ["customer", "support", "admin"],
   module: "reservation.availability",
   tags: ["booking", "availability"],
+  list: { key: "slots", id: "id" },
   inputSchema: {
     date: IsoDate().describe("Date to search in YYYY-MM-DD format"),
     partySize: z

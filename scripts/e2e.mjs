@@ -302,6 +302,51 @@ console.log("confirmation previews, tokens and dry-run (2.6.0)");
   await Promise.all([a.close(), b.close(), cc.close()]);
 }
 
+console.log("2.7.0: optional paging and field selection");
+{
+  const cb = await mcp(bob.token);
+  const inv = async (client, name, args) => { const r = await client.callTool({ name: "invoke", arguments: { name, args } }); return r.structuredContent ?? text(r); };
+  const full = await inv(cb, "listAllReservations", {});
+  check("no paging fields: the whole list, no nextCursor", full.success !== false && full.reservations.length === full.count && full.nextCursor === undefined, { n: full.reservations?.length, count: full.count });
+  const p1 = await inv(cb, "listAllReservations", { limit: 2, fields: ["name"] });
+  check("limit 2 + fields: two items with only id and name, a cursor, count of all",
+    p1.reservations.length === 2 && p1.reservations.every((x) => Object.keys(x).sort().join() === "id,name") && typeof p1.nextCursor === "string" && p1.count === full.count, p1);
+  const ids = [];
+  let cur, pages = 0;
+  do {
+    const p = await inv(cb, "listAllReservations", cur ? { cursor: cur } : { limit: 3 });
+    ids.push(...p.reservations.map((x) => x.id));
+    cur = p.nextCursor;
+    pages++;
+  } while (cur && pages < 200);
+  check("walking every page (limit 3, then cursor only) gives the full list once", ids.join() === full.reservations.map((x) => x.id).join(), { pages, got: ids.length, want: full.reservations.length });
+  const other = await inv(cb, "listAllReservations", { cursor: p1.nextCursor, status: "cancelled" });
+  check("a cursor with other filters → INVALID_INPUT on cursor", other.code === "INVALID_INPUT" && other.details?.[0]?.path === "cursor", other);
+  const [v, body, mac] = p1.nextCursor.split(".");
+  const forged = await inv(cb, "listAllReservations", { cursor: `${v}.${body}x.${mac}` });
+  check("a tampered cursor → INVALID_INPUT", forged.code === "INVALID_INPUT", forged);
+  const badField = await inv(cb, "listAllReservations", { fields: ["nope"] });
+  check("an unknown field → INVALID_INPUT", badField.code === "INVALID_INPUT", badField);
+  const ca = await mcp(alice.token);
+  const aSlots = await inv(ca, "searchAvailability", { date, partySize: 2, limit: 1 });
+  const stolen = await inv(cb, "searchAvailability", { date, partySize: 2, cursor: aSlots.nextCursor });
+  check("another user's cursor → INVALID_INPUT", typeof aSlots.nextCursor === "string" && stolen.code === "INVALID_INPUT", { aSlots: aSlots.nextCursor, stolen });
+  const dl = (await cb.callTool({ name: "describe_tool", arguments: { name: "listAllReservations" } })).structuredContent;
+  const props = Object.keys(dl.inputSchema?.properties ?? {});
+  check("describe_tool publishes limit, cursor, fields and nextCursor",
+    ["limit", "cursor", "fields"].every((k) => props.includes(k)) && Boolean(dl.outputSchema?.properties?.nextCursor), { props });
+  await cb.callTool({ name: "invoke", arguments: { name: "load_tools", args: { names: ["searchTasks"] } } });
+  const cn = await mcp(bob.token);
+  const nat = await cn.callTool({ name: "searchTasks", arguments: { limit: 2, fields: ["title"] } });
+  check("a native tool's projected page passes the SDK's output check",
+    !nat.isError && nat.structuredContent?.tasks?.length === 2 && Object.keys(nat.structuredContent.tasks[0]).sort().join() === "taskId,title", nat.isError ? nat.content : nat.structuredContent);
+  const callApi = (cookie, name, params) => fetch(`${BASE}/api/call`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ name, params }) }).then((x) => x.json());
+  const w1 = await callApi(bob.cookie, "listAllReservations", { limit: 1 });
+  const w2 = await callApi(bob.cookie, "listAllReservations", { cursor: w1.data?.nextCursor });
+  check("/api/call pages too", w1.data?.reservations?.length === 1 && w2.data?.reservations?.length === 1 && w2.data.reservations[0].id !== w1.data.reservations[0].id, { w1, w2 });
+  await Promise.all([cb.close(), ca.close(), cn.close()]);
+}
+
 console.log("MCP transport (2026-07-28 upgrade)");
 const rpc = (body, headers = {}) => fetch(`${BASE}/api/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${alice.token}`, "Mcp-Method": body.method, ...headers }, body: JSON.stringify(body) });
 const parseRpc = async (res) => { const t = await res.text(); const line = t.split("\n").find((l) => l.startsWith("data:")); return JSON.parse(line ? line.slice(5) : t); };

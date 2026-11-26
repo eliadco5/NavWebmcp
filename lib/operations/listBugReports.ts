@@ -14,6 +14,7 @@ export const listBugReports = defineOperation({
   permission: "read",
   roles: ["admin"],
   module: "support.bugs",
+  list: { key: "reports", id: "id" },
   inputSchema: {
     status: BugStatus.optional().describe("Only reports with this status"),
   },
