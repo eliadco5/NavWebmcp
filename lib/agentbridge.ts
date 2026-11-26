@@ -3,7 +3,7 @@ import { getModelContext } from "./webmcp-polyfill";
 import type { ModelContextLike, ToolAnnotations } from "./webmcp-polyfill";
 import { inputObject, envelopeSchema, outputObject, toJsonSchema } from "./schema";
 import { auditLog } from "./auditlog";
-import { fail, invalidInput } from "./result";
+import { fail, invalidInput, type ActionPreview, type ConfirmationInfo } from "./result";
 import type { OperationContext } from "./operations/types";
 import type { Role } from "./auth";
 import { roleSatisfies } from "./auth";
@@ -41,8 +41,19 @@ export function webmcpAnnotations(
 
 export type ConfirmationHandler = (
   operationName: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  /** What the server says the action would do (NavWebMcp ≥ 2.6.0). */
+  preview?: ActionPreview
 ) => Promise<boolean>;
+
+/** The approval a result asks for: CONFIRMATION_REQUIRED (or STALE) with a token. */
+function confirmationAsked(result: unknown): ConfirmationInfo | undefined {
+  const r = result as { success?: boolean; error?: { code?: string; confirmation?: ConfirmationInfo } } | null;
+  if (!r || r.success !== false) return undefined;
+  const code = r.error?.code;
+  if (code !== "CONFIRMATION_REQUIRED" && code !== "CONFIRMATION_STALE") return undefined;
+  return r.error?.confirmation?.token ? r.error.confirmation : undefined;
+}
 
 export interface AgentBridgeOptions {
   onConfirmation?: ConfirmationHandler;
@@ -132,53 +143,47 @@ export class AgentBridge {
       return fail("FORBIDDEN", `Role '${role}' is not permitted to call '${name}'.`);
     }
 
-    // Confirmation before validation, not after: some confirmation-requiring ops
-    // (cancelReservation, cancelAnyReservation) have a REQUIRED `confirm: boolean`
-    // in their own schema — validating first meant a caller who hadn't already
-    // included it got INVALID_INPUT before the dialog ever had a chance to show.
-    //
-    // A caller that HAS already self-declared approval (passed confirm: true for
-    // an op whose own schema has that field — all six confirmation ops do) skips
-    // the dialog entirely and is trusted immediately — this is exactly how the real
-    // MCP-over-HTTP surface (lib/adapters/mcp.ts) treats these ops for an external
-    // agent: no interactive block, `confirm: true` IS the approval. A genuinely
-    // autonomous in-page agent has no way to click a browser dialog, so requiring
-    // one on top of an already-self-declared confirm would just hang forever with
-    // no signal. An op without its own confirm field always shows the dialog.
-    let confirmedInput = input;
-    if (reg.requiresConfirmation) {
-      const hasOwnConfirmField = "confirm" in reg.inputSchema;
-      const selfDeclared = hasOwnConfirmField && input.confirm === true;
-      if (!selfDeclared) {
-        const approved = await this.confirmationHandler(name, input);
-        if (!approved) {
-          const denial = fail("CONFIRMATION_DENIED", "User denied the action.");
-          auditLog.record(name, input, false, "ui", denial.error);
-          return denial;
-        }
-        // Only inject the field where the schema declares it; strict input
-        // validation below would reject it anywhere else.
-        if (hasOwnConfirmField) confirmedInput = { ...input, confirm: true };
-      }
-    }
-
-    const parsed = inputObject(reg.inputSchema).safeParse(confirmedInput);
+    const parsed = inputObject(reg.inputSchema).safeParse(input);
     if (!parsed.success) {
       return invalidInput(parsed.error.issues);
     }
-
-    // The caller may have cancelled while the confirmation dialog was open; a
-    // cancelled execution must not reach the server afterwards.
-    if (signal?.aborted) {
-      return fail("CANCELLED", "The caller cancelled this call.");
-    }
-
     const ctx: OperationContext = { userId, role, token: "" };
-    const result = await reg.handler(parsed.data as Record<string, unknown>, ctx, { signal });
+    const args = parsed.data as Record<string, unknown>;
+
+    // Confirmation (NavWebMcp 2.6.0): the server decides, and says what the
+    // action would do. A call it won't run yet answers CONFIRMATION_REQUIRED
+    // with a preview and a token; the dialog shows the preview, and an approval
+    // re-sends the call with that token, which approves exactly these arguments.
+    //
+    // An agent that self-declares confirm: true is trusted as before, unless the
+    // server requires tokens (REQUIRE_CONFIRMATION_TOKEN); then its call comes
+    // back CONFIRMATION_REQUIRED and the user is asked here. A genuinely
+    // autonomous in-page agent never hangs on a dialog nobody asked for.
+    let result = await this.dispatch(reg, args, ctx, signal);
+    const asked = reg.requiresConfirmation ? confirmationAsked(result) : undefined;
+    if (asked) {
+      const approved = await this.confirmationHandler(name, input, asked.preview);
+      if (!approved) {
+        const denial = fail("CONFIRMATION_DENIED", "User denied the action.");
+        auditLog.record(name, input, false, "ui", denial.error);
+        return denial;
+      }
+      // The caller may have cancelled while the dialog was open; a cancelled
+      // execution must not reach the server afterwards.
+      if (signal?.aborted) return fail("CANCELLED", "The caller cancelled this call.");
+      const withToken: Record<string, unknown> = { ...args, confirmationToken: asked.token };
+      delete withToken.confirm;
+      result = await this.dispatch(reg, withToken, ctx, signal);
+    }
     const success = (result as { success?: boolean }).success !== false;
     const output = success ? (result as { data?: unknown }).data : (result as { error?: unknown }).error;
     auditLog.record(name, input, success, "ui", output);
     return result;
+  }
+
+  private dispatch(reg: AgentBridgeRegistration, args: Record<string, unknown>, ctx: OperationContext, signal?: AbortSignal) {
+    if (signal?.aborted) return Promise.resolve(fail("CANCELLED", "The caller cancelled this call."));
+    return reg.handler(args, ctx, { signal });
   }
 
   async executeBatch(

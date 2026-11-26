@@ -1,5 +1,8 @@
 import { AsyncLocalStorage } from "async_hooks";
-import { fromJsonSchema, type McpServer, type JsonSchemaValidator, type jsonSchemaValidator } from "@modelcontextprotocol/server";
+import {
+  fromJsonSchema, inputRequired, inputResponse,
+  type McpServer, type JsonSchemaValidator, type jsonSchemaValidator,
+} from "@modelcontextprotocol/server";
 import { z } from "zod";
 // Import from the index, not "./registry" directly — the index is what runs
 // registry.push(...) as a side effect. Importing the bare module here would read
@@ -17,7 +20,8 @@ import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { executeDetailed, requestMeta } from "@/lib/operations/execute";
-import type { CreditInfo, IdempotencyInfo, ProtocolError } from "@/lib/result";
+import type { ConfirmationInfo, CreditInfo, IdempotencyInfo, ProtocolError, Result } from "@/lib/result";
+import { getOpByName } from "@/lib/operations/execute";
 import { FORMAT_HEADER, TEXT_FORMATS, type TextFormat } from "@/lib/constants";
 import { creditCost } from "@/lib/credits/policy";
 import { isIdempotentOp } from "@/lib/idempotency/port";
@@ -32,6 +36,8 @@ import "@/lib/management/service";
 import "@/lib/credits";
 // ...and the shared idempotency store for keyed writes (lib/idempotency/port.ts).
 import "@/lib/idempotency";
+// ...and the shared key and one-use store for confirmation tokens (lib/confirmation/port.ts).
+import "@/lib/confirmation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -153,7 +159,86 @@ function mcpRequestMeta(headers: Headers | undefined): CallMeta {
 /** What the SDK v2 hands a tool callback, as far as this adapter reads it. */
 interface ToolCallContext {
   http?: { authInfo?: { token?: string; clientId?: string; extra?: Record<string, unknown> }; req?: Request };
-  mcpReq?: { _meta?: Record<string, unknown> };
+  mcpReq?: {
+    _meta?: Record<string, unknown>;
+    /** 2026-07-28 multi round-trip: the client's answers, on the retried call. */
+    inputResponses?: Record<string, unknown>;
+    requestState?: () => unknown;
+  };
+}
+
+// ── Confirmation through MCP elicitation (NavWebMcp 2.6.0) ───────────────────
+//
+// When a destructive call needs approval and the client can elicit, the server
+// asks the user itself: the call answers `input_required` with an elicitation
+// showing the preview, and the confirmation tokens as `requestState`. The client
+// shows the form, then re-sends the same call with the answer; execute() then
+// accepts exactly the calls those tokens were minted for. Nothing is held open
+// between the two requests, so it works on serverless. The tokens are HMAC'd
+// and bound to the caller, the operation and the arguments, so an echoed state
+// can't approve anything else.
+
+/** The key of our one elicitation in inputRequests / inputResponses. */
+export const ELICIT_KEY = "navwebmcp_confirm";
+
+const ELICIT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    approve: { type: "boolean" as const, title: "Approve", description: "Approve this action" },
+  },
+  required: ["approve"],
+};
+
+/** The user's answer carried by a retried call, if any. */
+function elicitationAnswer(mcpReq: ToolCallContext["mcpReq"]): CallMeta["elicitation"] | undefined {
+  let raw: unknown;
+  try { raw = mcpReq?.requestState?.(); } catch { return undefined; }
+  if (typeof raw !== "string" || raw.length > 64_000) return undefined;
+  let tokens: string[];
+  try {
+    const state = JSON.parse(raw) as { v?: unknown; tokens?: unknown };
+    if (state?.v !== 1 || !Array.isArray(state.tokens)) return undefined;
+    tokens = state.tokens.filter((t): t is string => typeof t === "string" && t.length <= 1024).slice(0, 50);
+  } catch {
+    return undefined;
+  }
+  const answer = inputResponse(mcpReq?.inputResponses, ELICIT_KEY);
+  if (answer.kind !== "elicit") return undefined;
+  return { approved: answer.action === "accept" && answer.content?.approve === true, tokens };
+}
+
+/** The approvals a result asks for: its own, or those of an invoke batch's
+ *  items. Undefined when nothing asks, or when re-running the call would
+ *  repeat a write that already succeeded in this round (a batch that also wrote). */
+function pendingConfirmations(op: AnyOp, input: Record<string, unknown>, result: Result<unknown>): ConfirmationInfo[] | undefined {
+  if (!result.success) return result.error.confirmation ? [result.error.confirmation] : undefined;
+  if (!op.dispatchesOps || !Array.isArray(input.calls)) return undefined;
+  const items = (result.data as { results?: unknown })?.results;
+  if (!Array.isArray(items)) return undefined;
+  const calls = input.calls as { name?: unknown }[];
+  const asks: ConfirmationInfo[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const r = items[i] as Result<unknown> | undefined;
+    if (r && !r.success && r.error?.confirmation) asks.push(r.error.confirmation);
+    else if (r?.success) {
+      const called = typeof calls[i]?.name === "string" ? getOpByName().get(calls[i].name as string) : undefined;
+      if (!called || called.permission === "write") return undefined;
+    }
+  }
+  return asks.length > 0 ? asks : undefined;
+}
+
+function elicitationRequest(asks: ConfirmationInfo[]) {
+  const lines = asks.map((a) => `• ${a.preview.summary}`).join("\n");
+  return inputRequired({
+    inputRequests: {
+      [ELICIT_KEY]: inputRequired.elicit({
+        message: `An agent wants to do this on your behalf:\n${lines}\nApprove?`,
+        requestedSchema: ELICIT_SCHEMA,
+      }),
+    },
+    requestState: JSON.stringify({ v: 1, tokens: asks.map((a) => a.token) }),
+  });
 }
 
 type JsonSchema = Parameters<typeof fromJsonSchema>[0];
@@ -177,7 +262,24 @@ function sdkSchema(json: Record<string, unknown>, kind: "input" | "output") {
   // Output keeps the SDK's check: it's a second guard on top of execute()'s.
   return kind === "input"
     ? fromJsonSchema<Record<string, unknown>>(rest as JsonSchema, deferToExecute)
-    : fromJsonSchema<Record<string, unknown>>(rest as JsonSchema);
+    : allowDryRun(fromJsonSchema<Record<string, unknown>>(rest as JsonSchema));
+}
+
+/** A dryRun's data ({ dryRun: true, preview }) is not the op's output shape,
+ *  and nothing ran to check; every other result still gets the SDK's check. */
+function allowDryRun<S extends ReturnType<typeof fromJsonSchema<Record<string, unknown>>>>(schema: S): S {
+  const std = schema["~standard"];
+  return {
+    ...schema,
+    "~standard": {
+      ...std,
+      validate: (data: unknown) => (isDryRunData(data) ? { value: data as Record<string, unknown> } : std.validate(data)),
+    },
+  };
+}
+
+function isDryRunData(data: unknown): boolean {
+  return !!data && typeof data === "object" && (data as { dryRun?: unknown }).dryRun === true && "preview" in data;
 }
 
 /** An operation's two SDK schemas, built once per process. A server is built
@@ -246,7 +348,12 @@ export function registerMcpTools(server: McpServer) {
           const reqMeta = sdkCtx?.mcpReq?._meta;
           const userId = authInfo?.extra?.userId as string | undefined;
           const role = authInfo?.extra?.role as Role | undefined;
-          const meta: CallMeta = { ...mcpRequestMeta(sdkCtx?.http?.req?.headers), creditRequest: creditRequestOf(reqMeta) };
+          const elicitation = elicitationAnswer(sdkCtx?.mcpReq);
+          const meta: CallMeta = {
+            ...mcpRequestMeta(sdkCtx?.http?.req?.headers),
+            creditRequest: creditRequestOf(reqMeta),
+            ...(elicitation && { elicitation }),
+          };
           const format: TextFormat = asFormat(reqMeta?.[FORMAT_META_KEY]) ?? connectionFormat;
 
           if (!userId || !role) {
@@ -294,6 +401,12 @@ export function registerMcpTools(server: McpServer) {
             input,
             { userId, role, token: bearerToken, actor, meta }
           );
+          // A client that can elicit gets the approval question asked of its user
+          // directly, instead of a CONFIRMATION_REQUIRED for the model to relay.
+          if (server.server?.getClientCapabilities?.()?.elicitation) {
+            const asks = pendingConfirmations(op, input, result);
+            if (asks) return elicitationRequest(asks) as never;
+          }
           const hinted = Boolean(result.credits?.hint);
           if (!result.success) return errorResult(result.error, credits, hinted, format);
           // The text block is kept for clients that predate structuredContent

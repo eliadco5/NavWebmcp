@@ -1,6 +1,6 @@
 # NavWebMcp protocol guide
 
-How an agent talks to a NavWebMcp server: connect, discover, call, recover from errors. This is the protocol at **2.5.0** (`lib/protocol.ts`). What changed in each version is in [`CHANGELOG.md`](../CHANGELOG.md), and the consumer-side rules an agent should follow are in the [agent skill](../skills/navwebmcp-agent/SKILL.md).
+How an agent talks to a NavWebMcp server: connect, discover, call, recover from errors. This is the protocol at **2.6.0** (`lib/protocol.ts`). What changed in each version is in [`CHANGELOG.md`](../CHANGELOG.md), and the consumer-side rules an agent should follow are in the [agent skill](../skills/navwebmcp-agent/SKILL.md).
 
 ```
 WebMCP          W3C Web Machine Learning CG draft standard (document.modelContext)
@@ -146,7 +146,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.5.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation, credits }] }
+        Platform-->>Agent: { protocolVersion: "2.6.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation, credits }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -353,7 +353,34 @@ value is ignored. Measured savings: [benchmarks](benchmarks.md#compact-text--230
 
 ## 7. RBAC and confirmation gates
 
-Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops). Destructive operations carry `requiresConfirmation: true`, and all nine of them (`cancelReservation`, `cancelAnyReservation`, `checkOutGuest`, `deleteTask`, `issueRefund`, `applyNoShowFee`, and the admin `revokeSession`, `revokeAgentClient` and `setClientCreditPolicy`) enforce it server-side: the input schema has a `confirm` parameter, and omitting it (or passing `false`) returns `CONFIRMATION_REQUIRED` — no surface (MCP-over-HTTP, in-page WebMCP, or the UI) can complete one of these without it. The UI-side confirmation dialog (`app/providers.tsx`) checks `requiresConfirmation` generically and shows a dialog before sending `confirm: true` itself, once approved. The in-page WebMCP surface (`lib/agentbridge.ts`) additionally skips its own dialog when a caller has *already* self-declared `confirm: true` — the same trust model the MCP-over-HTTP surface always used for these ops — since a genuinely autonomous agent has no way to click a browser dialog.
+Every operation carries a `roles` array checked on every call. Three roles exist: `customer` (own-data read/write), `support` (customer ops + cross-user read), and `admin` (all ops).
+
+### Confirmation: previews and tokens (≥ 2.6.0)
+
+Destructive operations carry `requiresConfirmation: true`: `cancelReservation`, `cancelAnyReservation`, `checkOutGuest`, `deleteTask`, `issueRefund`, `applyNoShowFee`, and the admin `revokeSession`, `revokeAgentClient` and `setClientCreditPolicy`. The gate is in `execute()`, so it holds on every surface (MCP, in-page WebMCP, `/api/call`) and at every depth (inside `invoke` too).
+
+A call without approval runs nothing and answers `CONFIRMATION_REQUIRED` with what it would do and a token that approves exactly that:
+
+```json
+{ "code": "CONFIRMATION_REQUIRED", "retryable": false,
+  "message": "Nothing was done yet. Needs the user's approval: Refund 42 of 42 on payment pay_12 (in full): \"Cold food\".",
+  "confirmation": {
+    "preview": { "summary": "Refund 42 of 42 on payment pay_12 (in full): \"Cold food\".",
+                 "data": { "paymentId": "pay_12", "paymentAmount": 42, "refundAmount": 42, "isPartial": false } },
+    "token": "c1.eyJ1Ijoi….Qm9i…", "expiresAt": "2026-11-26T12:05:00.000Z" } }
+```
+
+- **The preview** comes from the operation's own `preview(input, ctx)`, which reads but never writes. If it fails (`NOT_FOUND`, `ALREADY_REFUNDED`, `FEE_ALREADY_APPLIED`, …), that failure is the answer: nobody is asked to approve an impossible action.
+- **The token** is an HMAC (key `CONFIRMATION_SECRET`, else `AUTH_SECRET`) over the user, the agent client, the operation, a hash of the arguments (without `confirm`, `idempotencyKey` and the control fields), an expiry (5 minutes, `CONFIRMATION_TTL_SECONDS`) and a nonce. Re-calling with `confirmationToken` runs the call. The token works once: its nonce is recorded in shared state (Redis `SET NX` when configured), so two instances can't both accept it.
+- **`CONFIRMATION_STALE`**: the arguments changed, the token expired, was used, or isn't valid for this caller or operation. It carries a new preview and token for the call as sent.
+- **`confirm: true`** still works (the approval is audited as `asserted`). With `REQUIRE_CONFIRMATION_TOKEN=true` an agent's bare `confirm: true` is refused with `CONFIRMATION_REQUIRED`, preview and token; a person in the UI is not affected.
+- **MCP elicitation**: when the client declares the `elicitation` capability, the server asks the user itself. The tool call answers `input_required` with an `elicitation/create` form (the preview text and an *Approve* checkbox) and the tokens as `requestState`; the client re-sends the call with the answer. Nothing is held open between the two requests, so it works on serverless. Declining gives `CONFIRMATION_DENIED`. A batch with several destructive calls asks once, listing each; a batch that has already written something in the same round isn't re-run for this, and gets the tokens back instead.
+- **WebMCP**: the in-page dialog (`app/providers.tsx`) shows the server's preview; approving re-sends the call with the token. An in-page agent that passes `confirm: true` gets no dialog, unless the server requires tokens.
+- **Audit**: each approved destructive call records `approvedBy`: `human` (a person in the UI), `asserted` (`confirm: true` from anyone else), `confirmation-token`, or `user-elicitation`, the one case where the server itself asked the person. That answer is reported by the MCP client that showed the form, so it is as trustworthy as that client.
+
+### `dryRun` (≥ 2.6.0)
+
+Every write that runs on the server accepts `dryRun: true`. The call goes through the same gates (credits, role, strict input), then runs only the preview and returns `{ dryRun: true, preview, confirmation? }`; `confirmation` (a token) is there on destructive operations. Nothing is written, no idempotency key is claimed, it's charged as a read, and the audit trail records `dryRun: true`. Operations without their own `preview` get a generic one listing the arguments. A dry run's data is this shape, not the operation's `outputSchema` (the MCP adapter lets it through the SDK's output check).
 
 ## 8. Errors
 
@@ -368,6 +395,7 @@ Every error has the same shape on every surface (≥ 2.0.0), so an agent can act
 
 - `retryable`: whether re-sending the identical call can help.
 - `details`: one `{ path, message }` per bad field (`INVALID_INPUT`, `DEPENDENCY_FAILED`, `IDEMPOTENCY_CONFLICT`).
+- `confirmation`: the preview and token on `CONFIRMATION_REQUIRED` and `CONFIRMATION_STALE` (≥ 2.6.0).
 - `hint`: the server's one-line next step.
 - `suggestions`: did-you-mean names for `UNKNOWN_TOOL`, only from operations the caller's role can see.
 - `requestId` / `callId`: find the call in the audit trail. When `invoke` relays a failure, `callId` is the inner call's.
@@ -381,7 +409,8 @@ The protocol-level codes (`PROTOCOL_ERROR_CODES` in `lib/result.ts`). Operations
 | `INVALID_INPUT` | no | Arguments failed validation; fix the fields in `details` |
 | `UNKNOWN_TOOL` | no | No operation has this name; try `suggestions` |
 | `NOT_FOUND` | no | A referenced entity doesn't exist |
-| `CONFIRMATION_REQUIRED` | no | Ask the user, then re-call with `confirm: true` |
+| `CONFIRMATION_REQUIRED` | no | Needs the user's approval; carries `confirmation.preview` and `.token` (≥ 2.6.0) |
+| `CONFIRMATION_STALE` | no | The token doesn't match this call; carries a new preview and token (≥ 2.6.0) |
 | `CONFIRMATION_DENIED` | no | The user refused |
 | `CANCELLED` | no | The caller cancelled; nothing was done |
 | `VALIDATION_FAILED` | no | A composite's write couldn't be confirmed afterwards |
@@ -423,6 +452,7 @@ This is deliberately independent of `package.json`'s version, which tracks the d
 | 2.3.0 | Opt-in compact text in MCP results |
 | 2.4.0 | MCP 2026-07-28 (`server/discover`, stateless) alongside 2025-era clients; native tools answer bad arguments with `INVALID_INPUT` |
 | 2.5.0 | Smaller connect cost: no output schemas for the always-on tools in `tools/list`, shorter descriptions |
+| 2.6.0 | Confirmation previews and one-use tokens (`CONFIRMATION_STALE`), MCP elicitation, `dryRun` on every write, opt-in `REQUIRE_CONFIRMATION_TOKEN` |
 
 ## 10. WebMCP standard and polyfill
 

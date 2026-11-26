@@ -1,4 +1,5 @@
 import type { Actor, Channel } from "@/lib/operations/types";
+import type { ApprovedBy } from "@/lib/confirmation/port";
 
 /** Bump when the event shape changes; verifiers and exporters key off it. */
 export const AUDIT_EVENT_VERSION = 1 as const;
@@ -49,6 +50,11 @@ export interface AuditEventBody {
   /** Answered from the stored result of an earlier call with the same key:
    *  nothing ran again, whatever `output` shows. */
   replayed?: true;
+  /** How a destructive call was approved (NavWebMcp 2.6.0): "user-elicitation"
+   *  is the only one where the server itself asked the person. */
+  approvedBy?: ApprovedBy;
+  /** A dryRun: previewed only, nothing written. */
+  dryRun?: true;
 }
 
 /** A stored event: the body plus its link in the tamper-evident chain. */

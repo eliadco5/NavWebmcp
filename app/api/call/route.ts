@@ -17,6 +17,7 @@ import "@/lib/management/service";
 import "@/lib/credits";
 // ...and the shared idempotency store for keyed writes (lib/idempotency/port.ts).
 import "@/lib/idempotency";
+import "@/lib/confirmation";
 import type { Actor } from "@/lib/operations/types";
 import { fail, type CreditInfo } from "@/lib/result";
 import { AGENT_HEADER, CHANNEL_HEADER, CREDIT_HEADERS } from "@/lib/constants";

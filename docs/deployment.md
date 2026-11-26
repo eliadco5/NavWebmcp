@@ -53,6 +53,9 @@ Every environment variable the app reads. All are optional: with none set, the a
 | `OP_DEADLINE_MS` | `15000` | Handler deadline before `HANDLER_TIMEOUT` (an operation may set its own `deadlineMs`) |
 | `MAX_BODY_BYTES` | `65536` | JSON request body cap |
 | `IDEMPOTENCY_TTL_SECONDS` | `86400` | How long an idempotent result is kept for replay |
+| `CONFIRMATION_SECRET` | `AUTH_SECRET`, then an insecure built-in default | Signs confirmation tokens (2.6.0). Must be the same on every instance |
+| `CONFIRMATION_TTL_SECONDS` | `300` | How long a confirmation token stays valid |
+| `REQUIRE_CONFIRMATION_TOKEN` | off | `true`: an agent's bare `confirm: true` is refused; it must use the preview's token (or MCP elicitation) |
 | `IDEMPOTENCY_PENDING_TTL_MS` | `300000` | How long a claim for a call still running blocks its key (covers an instance that died) |
 | `IDEMPOTENCY_REDIS_TIMEOUT_MS` | `500` | Longest an idempotency check waits on Redis before using memory |
 | `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S` | `10`, `300` | Sign-in throttle: failed attempts per IP and username per window |
@@ -88,7 +91,7 @@ Every environment variable the app reads. All are optional: with none set, the a
 | Single execution path | `execute()` — every call from every surface gets the same RBAC, validation, audit and metrics |
 | Input validation | Zod schema on every call |
 | RBAC | Per-operation `roles` array, checked at every call boundary |
-| Destructive confirmations | `requiresConfirmation: true` — UI dialog + agent must pass `confirm: true` |
+| Destructive confirmations | `requiresConfirmation: true` — preview + one-use token, MCP elicitation, UI dialog; `REQUIRE_CONFIRMATION_TOKEN=true` refuses a bare `confirm: true` |
 | Actor attribution | Every call and every created/changed record says whether a person, an agent (which one) or the system acted, and on whose behalf |
 | Audit trail | Append-only, HMAC hash-chained, redacted, 365-day retention, exportable to a SIEM; denials and sign-in events included |
 | Admin access | `/api/admin/*` and `admin.*` operations behind one guard; denied attempts are audited |

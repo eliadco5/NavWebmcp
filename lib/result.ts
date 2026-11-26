@@ -51,6 +51,25 @@ export interface ProtocolError {
   requestId?: string;
   /** The specific operation call that failed (audit `callId`). */
   callId?: string;
+  /** On CONFIRMATION_REQUIRED and CONFIRMATION_STALE (NavWebMcp ≥ 2.6.0): what
+   *  the action would do, and the token that approves exactly this call. */
+  confirmation?: ConfirmationInfo;
+}
+
+/** What a write would do, said before it runs (NavWebMcp ≥ 2.6.0). */
+export interface ActionPreview {
+  /** One sentence to show the user as is. */
+  summary: string;
+  /** The same in data: the record affected, the amount, the fee. */
+  data?: Record<string, unknown>;
+}
+
+/** Approval for one call: the preview the user should see, and a token bound to
+ *  this caller, this operation and these arguments. Valid once, until expiresAt. */
+export interface ConfirmationInfo {
+  preview: ActionPreview;
+  token: string;
+  expiresAt: string;
 }
 
 /** On a Result that was replayed from an earlier call with the same
@@ -72,7 +91,8 @@ export const PROTOCOL_ERROR_CODES = {
   INVALID_INPUT:         { retryable: false, hint: "Fix the fields listed in details (describe_tool shows the exact schema), then retry once." },
   UNKNOWN_TOOL:          { retryable: false, hint: "No operation has this name. Try suggestions, else use search(); don't guess." },
   NOT_FOUND:             { retryable: false, hint: "The referenced entity does not exist. Use a list or search operation to find a valid id." },
-  CONFIRMATION_REQUIRED: { retryable: false, hint: "Ask the user to approve this action, then re-call with confirm: true." },
+  CONFIRMATION_REQUIRED: { retryable: false, hint: "Show the user confirmation.preview.summary. If they approve, re-call with the same arguments plus confirmationToken: confirmation.token." },
+  CONFIRMATION_STALE:    { retryable: false, hint: "The token doesn't match this call: the arguments changed, or it expired or was used. Show the user the new confirmation.preview, then use the new token." },
   CONFIRMATION_DENIED:   { retryable: false, hint: "The user refused. Stop; do not retry." },
   CANCELLED:             { retryable: false, hint: "You cancelled the call; nothing was done." },
   VALIDATION_FAILED:     { retryable: false, hint: "The write could not be confirmed afterwards. Read the current state before retrying, so you don't repeat a write that did land." },
@@ -108,6 +128,7 @@ export function fail(
   if (extra.suggestions?.length) error.suggestions = extra.suggestions;
   if (extra.requestId) error.requestId = extra.requestId;
   if (extra.callId) error.callId = extra.callId;
+  if (extra.confirmation) error.confirmation = extra.confirmation;
   return { success: false, error };
 }
 

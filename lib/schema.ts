@@ -31,6 +31,11 @@ export const ErrorSchema = z.object({
   suggestions: z.array(z.string()).optional().describe("Candidate values, e.g. did-you-mean operation names"),
   requestId: z.string().optional().describe("The top-level request this call belonged to"),
   callId: z.string().optional().describe("The operation call that failed (audit callId)"),
+  confirmation: z.object({
+    preview: z.object({ summary: z.string(), data: z.record(z.unknown()).optional() }),
+    token: z.string(),
+    expiresAt: z.string(),
+  }).optional().describe("CONFIRMATION_REQUIRED / CONFIRMATION_STALE: what it would do, and the token that approves it"),
 });
 
 /** The Result envelope the in-page surface (WebMCP execute) actually returns. */

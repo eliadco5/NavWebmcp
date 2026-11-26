@@ -23,6 +23,47 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.6.0
+
+Confirmation that shows what will happen, and can prove it was approved. Until now the
+gate only proved the agent had read the schema: it could send `confirm: true` on its own,
+and nobody saw what the action would do.
+
+- **Previews.** Destructive operations have a `preview(input, ctx)` that reads but never
+  writes. A call without approval answers `CONFIRMATION_REQUIRED` carrying
+  `confirmation: { preview: { summary, data }, token, expiresAt }`: the reservation being
+  cancelled, the refund amount, the fee. A preview that fails (`NOT_FOUND`,
+  `ALREADY_REFUNDED`, …) is the answer instead.
+- **Confirmation tokens.** Re-calling with `confirmationToken` (a new optional field on
+  every `requiresConfirmation` operation) runs exactly that call. The token is an HMAC over
+  the user, the agent client, the operation, the arguments' hash and a 5-minute expiry, and
+  works once (shared across instances through Redis).
+- **New error code `CONFIRMATION_STALE`**: the arguments changed, or the token expired, was
+  used, or isn't for this caller or operation. It carries a new preview and token.
+- **`confirm` is optional** on the 9 destructive operations. Omitting it now answers
+  `CONFIRMATION_REQUIRED` (it was `INVALID_INPUT`). `confirm: true` keeps
+  working as before.
+- **Opt-in enforcement:** with `REQUIRE_CONFIRMATION_TOKEN=true`, an agent's bare
+  `confirm: true` is refused with `CONFIRMATION_REQUIRED` (preview and token included). A
+  person in the UI is not affected. Off by default, which is why this is MINOR: no call that
+  worked before is refused.
+- **MCP elicitation.** When the client declares `elicitation`, the server asks the user
+  itself: on 2026-07-28 the call answers `input_required` with an `elicitation/create` form
+  showing the preview, and the tokens as `requestState`; the client re-sends the call with
+  the answer. Nothing is held open, so it works on serverless. Declining is
+  `CONFIRMATION_DENIED`. One form covers every destructive call of a batch; a batch that
+  already wrote something in that round gets the tokens back instead of being re-run.
+- **WebMCP:** the in-page confirmation dialog shows the server's preview, and approving
+  re-sends the call with the token.
+- **`dryRun: true`** on every write that runs on the server (a new optional field): the
+  usual gates and the preview, never the handler. Returns `{ dryRun: true, preview,
+  confirmation? }`, charged as a read, claims no idempotency key.
+- **Audit:** approved destructive calls record `approvedBy` (`human`, `asserted`,
+  `confirmation-token` or `user-elicitation`); dry runs record `dryRun: true`.
+- `capabilityHash` changes for every role (new input fields, new descriptions).
+- New settings: `CONFIRMATION_SECRET` (falls back to `AUTH_SECRET`),
+  `CONFIRMATION_TTL_SECONDS` (300), `REQUIRE_CONFIRMATION_TOKEN`.
+
 ## 2.5.0
 
 A smaller connect cost. On MCP, `tools/list` for a new connection (the 12 always-on tools)

@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.5.0
+version: 2.6.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.5.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.6.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -233,21 +233,46 @@ ask for every missing value in a **single message**. Never ask one question, wai
 answer, then ask another — that turns a one-step task into a multi-turn negotiation and
 costs the user far more than it costs you to look ahead.
 
-## 10. Confirmation-gated operations
+## 10. Confirmation-gated operations (previews and tokens, ≥ 2.6.0)
 
-`getCapabilities` and `describe_tool` report `requiresConfirmation` on operations that are
-destructive. **Read the operation's input schema, not just this flag, to know how
-confirmation is actually enforced:**
+`getCapabilities` and `describe_tool` report `requiresConfirmation` on destructive
+operations. On these, the server is the gate, and it tells you what the action would do:
 
-- If the schema has an explicit `confirm: boolean` parameter: omitting it (or passing
-  `false`) returns `CONFIRMATION_REQUIRED`. Ask the user for approval, then re-call the
-  same operation with `confirm: true`.
-- If `requiresConfirmation: true` is set but the schema has **no `confirm` parameter**:
-  the server will not stop you from calling it. You must get explicit user approval
-  yourself, before calling, because the protocol-level gate isn't there — never assume the
-  flag alone means the server will block an unconfirmed call.
+1. Call it **without** `confirm`. Nothing runs. You get `CONFIRMATION_REQUIRED` with
+   `confirmation.preview.summary` (one sentence: the reservation, the amount, the fee),
+   `confirmation.preview.data`, and `confirmation.token`.
+2. Show the user the summary, as is, and ask.
+3. If they approve, re-call with **the same arguments** plus
+   `confirmationToken: confirmation.token`.
+
+```js
+invoke({ name: "issueRefund", args: { paymentId: "pay_12", reason: "Cold food" } })
+// → CONFIRMATION_REQUIRED, confirmation: { preview: { summary: "Refund 42 of 42 on payment pay_12 (in full): …" }, token: "c1.…" }
+invoke({ name: "issueRefund", args: { paymentId: "pay_12", reason: "Cold food", confirmationToken: "c1.…" } })
+```
+
+- The token is bound to you, the operation and these exact arguments. It works once and
+  expires after 5 minutes. Changed arguments, an expired or a used token →
+  `CONFIRMATION_STALE`, with a **new** preview and token: show the new preview, then use
+  the new token.
+- If the preview itself fails (`NOT_FOUND`, `ALREADY_REFUNDED`, …), that error is the
+  answer: there's nothing to ask the user about.
+- `confirm: true` still works on most servers, but proves nothing: prefer the token. A
+  server with `REQUIRE_CONFIRMATION_TOKEN` refuses a bare `confirm: true` with
+  `CONFIRMATION_REQUIRED` (plus the preview and token), so the flow above always works.
+- **MCP elicitation:** if your client supports elicitation, the server asks the user
+  itself, showing the preview, and the call completes (or returns `CONFIRMATION_DENIED`)
+  without you relaying anything.
 - `CONFIRMATION_DENIED` means the user (or a UI-side confirmation dialog) explicitly
   refused. Stop. Do not retry the same call.
+
+### Checking a plan: `dryRun`
+
+Any write the server runs accepts `dryRun: true`. It validates the call, checks your role
+and runs the preview, never the write, and returns
+`{ dryRun: true, preview, confirmation? }` at read cost (`confirmation` on destructive
+operations: the same token as above). Use it to check a step before asking the user, or
+to get the preview and token in one go.
 
 ## 10a. Safe retries with `idempotencyKey` (≥ 2.1.0)
 
@@ -267,7 +292,7 @@ invoke({ name: "book", args: { date, time, partySize, name, idempotencyKey: "3f6
 - The first call is still running → `IDEMPOTENCY_IN_PROGRESS` (`retryable: true`). Wait a
   second and resend the same call.
 - A call that failed frees its key: fix the input and retry with the same key. That
-  includes `CONFIRMATION_REQUIRED`: re-call with `confirm: true` and the same key.
+  includes `CONFIRMATION_REQUIRED`: re-call with the `confirmationToken` and the same key.
 - With a key, `HANDLER_TIMEOUT` is `retryable: true`: the server keeps the key until the
   write really finishes, so resending the same call returns its outcome and never writes twice.
 - A keyed composite (`book`) passes derived keys to the writes it runs, so a retried
@@ -382,7 +407,8 @@ Every error has the same shape (≥ 2.0.0):
 | `INVALID_INPUT` | Arguments failed validation | Fix the fields in `details` (`describe_tool(name)` if unsure), retry once. |
 | `UNKNOWN_TOOL` | You called an operation name that doesn't exist | You likely guessed a name. Check `suggestions`, else use `search()`. |
 | `NOT_FOUND` | A referenced entity or module path doesn't exist | Not retryable with the same identifier. |
-| `CONFIRMATION_REQUIRED` | A `confirm` parameter was omitted on a gated operation | Ask the user, re-call with `confirm: true`. |
+| `CONFIRMATION_REQUIRED` | A destructive call needs the user's approval (≥ 2.6.0: with `confirmation.preview` and `.token`) | Show the preview, ask, re-call with `confirmationToken` (§10). |
+| `CONFIRMATION_STALE` | The token doesn't match: arguments changed, or it expired or was used (≥ 2.6.0) | Show the new `confirmation.preview`, then use the new token. |
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
 | `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
 | `VALIDATION_FAILED` | A composite's write could not be confirmed afterwards | Read the current state before retrying, so you don't repeat a write that landed. |

@@ -3,7 +3,7 @@
 import { useEffect, useRef, createContext, useContext, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { AuditEntry } from "@/lib/auditlog";
-import { fail } from "@/lib/result";
+import { fail, type ActionPreview } from "@/lib/result";
 import { getModelContext } from "@/lib/webmcp-polyfill";
 import { initAgentBridge } from "@/lib/adapters/webmcp";
 import { book } from "@/lib/ui-tools/book";
@@ -56,7 +56,7 @@ interface BridgeContextValue {
   call: (name: string, params?: Record<string, unknown>) => Promise<unknown>;
   storeVersion: number;
   auditEntries: AuditEntry[];
-  confirmPending: { name: string; input: Record<string, unknown>; resolve: (v: boolean) => void } | null;
+  confirmPending: { name: string; input: Record<string, unknown>; preview?: ActionPreview; resolve: (v: boolean) => void } | null;
   user: AuthUser | null;
   agentToken: string | null;
   logout: () => Promise<void>;
@@ -101,10 +101,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // later, alongside resolveConfirm/call) because that effect now needs to
   // pass it to initAgentBridge as onConfirmation.
   const handleConfirmation = useCallback(
-    (name: string, input: Record<string, unknown>): Promise<boolean> => {
+    (name: string, input: Record<string, unknown>, preview?: ActionPreview): Promise<boolean> => {
       return new Promise((resolve) => {
         resolveRef.current = resolve;
-        setConfirmPending({ name, input, resolve });
+        setConfirmPending({ name, input, preview, resolve });
       });
     },
     []
@@ -301,6 +301,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ConfirmationDialog
           name={confirmPending.name}
           input={confirmPending.input}
+          preview={confirmPending.preview}
           onApprove={() => resolveConfirm(true)}
           onDeny={() => resolveConfirm(false)}
         />
@@ -310,10 +311,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 
 function ConfirmationDialog({
-  name, input, onApprove, onDeny,
+  name, input, preview, onApprove, onDeny,
 }: {
   name: string;
   input: Record<string, unknown>;
+  /** The server's own account of what the action would do (NavWebMcp 2.6.0). */
+  preview?: ActionPreview;
   onApprove: () => void;
   onDeny: () => void;
 }) {
@@ -327,6 +330,11 @@ function ConfirmationDialog({
         <p style={{ marginBottom: 8, color: "#555" }}>
           An agent wants to perform: <strong>{name}</strong>
         </p>
+        {preview && (
+          <p data-testid="confirmation-preview" style={{ marginBottom: 8, fontWeight: 500 }}>
+            {preview.summary}
+          </p>
+        )}
         <pre style={{
           background: "#f4f6f8", borderRadius: 6, padding: 12,
           fontSize: 12, marginBottom: 20, overflow: "auto", maxHeight: 160,

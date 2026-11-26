@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { financeAdjustments, type Adjustment } from "@/lib/seed";
-import { Id, Money, LongText } from "./schemas";
+import { Id, Money, LongText, Confirm } from "./schemas";
 
 const adjustments = financeAdjustments();
 
@@ -11,8 +11,8 @@ export const applyNoShowFee = defineOperation({
   name: "applyNoShowFee",
   title: "Apply No-Show Fee",
   description:
-    "Apply a no-show fee to a reservation. Admin only. This is a destructive action — confirmation is required. " +
-    "When calling via MCP, you MUST pass confirm: true to acknowledge the fee.",
+    "Apply a no-show fee to a reservation. Admin only. Destructive: call without confirm first to get a preview " +
+    "and a confirmationToken.",
   permission: "write",
   requiresConfirmation: true,
   roles: ["admin"],
@@ -21,13 +21,20 @@ export const applyNoShowFee = defineOperation({
     reservationId: Id().describe("Reservation ID to charge the no-show fee against"),
     feeAmount: Money().describe("Fee amount to charge in the property currency"),
     reason: LongText().min(5).describe("Reason for the no-show fee (e.g. guest did not call to cancel)"),
-    confirm: z.boolean().describe("Must be true to confirm the fee. Pass confirm: true to proceed."),
+    confirm: Confirm(),
   },
   outputSchema: {
     adjustmentId: z.string(),
     reservationId: z.string(),
     feeAmount: z.number(),
     timestamp: z.string(),
+  },
+  async preview({ reservationId, feeAmount, reason }) {
+    const existing = [...adjustments.values()].find((a) => a.type === "no_show_fee" && a.reservationId === reservationId);
+    if (existing) {
+      return fail("FEE_ALREADY_APPLIED", `A no-show fee has already been applied for reservation ${reservationId} (${existing.adjustmentId})`);
+    }
+    return ok({ summary: `Charge a no-show fee of ${feeAmount} on reservation ${reservationId} ("${reason}").`, data: { reservationId, feeAmount, reason } });
   },
   async handler({ reservationId, feeAmount, reason, confirm }, ctx) {
     if (!confirm) {

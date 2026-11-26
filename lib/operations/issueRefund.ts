@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { financePayments, financeAdjustments, type Adjustment } from "@/lib/seed";
-import { Id, Money, LongText } from "./schemas";
+import { Id, Money, LongText, Confirm } from "./schemas";
 
 const payments = financePayments();
 const adjustments = financeAdjustments();
@@ -12,8 +12,8 @@ export const issueRefund = defineOperation({
   name: "issueRefund",
   title: "Issue Refund",
   description:
-    "Issue a refund for a payment. Admin only. This is a destructive action — confirmation is required. " +
-    "When calling via MCP, you MUST pass confirm: true to acknowledge the refund.",
+    "Issue a refund for a payment. Admin only. Destructive: call without confirm first to get a preview and a " +
+    "confirmationToken.",
   permission: "write",
   requiresConfirmation: true,
   roles: ["admin"],
@@ -24,7 +24,7 @@ export const issueRefund = defineOperation({
     amount: Money()
       .optional()
       .describe("Partial refund amount; omit to refund the full payment amount"),
-    confirm: z.boolean().describe("Must be true to confirm the refund. Pass confirm: true to proceed."),
+    confirm: Confirm(),
   },
   outputSchema: {
     adjustmentId: z.string(),
@@ -32,6 +32,20 @@ export const issueRefund = defineOperation({
     refundAmount: z.number(),
     isPartial: z.boolean(),
     timestamp: z.string(),
+  },
+  async preview({ paymentId, reason, amount }) {
+    const payment = payments.get(paymentId);
+    if (!payment) return fail("NOT_FOUND", `No payment found with ID ${paymentId}`);
+    if (payment.status === "refunded") return fail("ALREADY_REFUNDED", `Payment ${paymentId} has already been fully refunded`);
+    const refundAmount = amount ?? payment.amount;
+    if (refundAmount > payment.amount) {
+      return fail("AMOUNT_EXCEEDS_PAYMENT", `Refund amount ${refundAmount} exceeds original payment amount ${payment.amount}`);
+    }
+    const isPartial = refundAmount < payment.amount;
+    return ok({
+      summary: `Refund ${refundAmount} of ${payment.amount} on payment ${paymentId}${isPartial ? " (partial)" : " (in full)"}: "${reason}".`,
+      data: { paymentId, paymentAmount: payment.amount, refundAmount, isPartial, reason },
+    });
   },
   async handler({ paymentId, reason, amount, confirm }, ctx) {
     if (!confirm) {

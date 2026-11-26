@@ -1,6 +1,6 @@
 # Operations reference
 
-Every operation in the registry (73 at protocol 2.5.0: 8 navigation, 4 `ui_*` and 61 business operations), the module tree they live in, and how to call them from the browser console. How to discover and call them is in the [protocol guide](protocol.md); how to add one is in [development.md](development.md#adding-a-server-side-operation).
+Every operation in the registry (73 at protocol 2.6.0: 8 navigation, 4 `ui_*` and 61 business operations), the module tree they live in, and how to call them from the browser console. How to discover and call them is in the [protocol guide](protocol.md); how to add one is in [development.md](development.md#adding-a-server-side-operation).
 
 ## In-page WebMCP (browser console)
 
@@ -17,7 +17,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.5.0"
+document.modelContext.protocolVersion   // "2.6.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
@@ -223,6 +223,6 @@ See [Management layer](management.md).
                                      getCreditLedgers, setClientCreditPolicy ⚠️
 ```
 
-⚠️ = `requiresConfirmation: true` — agent must pass `confirm: true`; UI shows a dialog. The `ui_*` operations aren't in the tree: they're always on.
+⚠️ = `requiresConfirmation: true` — a call without approval returns `CONFIRMATION_REQUIRED` with a preview and a token ([protocol § 7](protocol.md#confirmation-previews-and-tokens--260)); UI shows a dialog. The `ui_*` operations aren't in the tree: they're always on.
 
 Parent/child relationships are inferred from dot-path prefixes; the tree is defined in `lib/modules.ts` and builds automatically.
