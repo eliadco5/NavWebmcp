@@ -16,7 +16,28 @@ agent runs into today. Each one is measured the same way PR #21 was.
 | One execution path | `execute()` (`lib/operations/execute.ts`) |
 
 Still missing from those areas: a per-write `reason`, and tokens scoped below the role
-(both on Day 7).
+(both on Day 8).
+
+## Upstream MCP (checked 2026-11-26)
+
+The roadmap now follows where MCP itself is going, so we build on its extensions
+instead of inventing our own versions of them.
+
+| Upstream | Status | Where it lands here |
+|---|---|---|
+| Spec **2026-07-28** (stateless; `server/discover`; protocol version in each request's `_meta`) | Current revision | Day 6. We're on `@modelcontextprotocol/sdk` 1.26.0 and `mcp-handler` 1.1.0, which predate it |
+| [Events](https://modelcontextprotocol.io/extensions/events/overview) (`io.modelcontextprotocol/events`, SEP-3415) | Beta | Day 7, replaces our own push plan |
+| [Skills over MCP](https://modelcontextprotocol.io/extensions/skills/overview) (`io.modelcontextprotocol/skills`, SEP-2640) | Spec final; SDK and app support still being built | Day 7, serves `skills/navwebmcp-agent` |
+| Token binding to the client ([#1932](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932)), agent identity for cloud agents ([#1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)) | Drafts | Day 8 aligns with them |
+| Enterprise-Managed Authorization | Stable | Not scheduled (see open questions) |
+| File uploads | Prototype | Not relevant to this app |
+| Next spec release | March 2027 | Re-check this table then |
+
+**Client support is thin.** The [client matrix](https://modelcontextprotocol.io/extensions/client-matrix)
+shows no support for Events or Skills in Claude (web, Desktop or Code). ChatGPT has
+partial support: webhook-only Events, and importing skills. Day 7 therefore pays off
+mostly through other clients, the MCP Inspector and our own conformance kit, and its
+tests can't rely on a real host.
 
 ## How every day runs
 
@@ -46,9 +67,10 @@ stays MINOR too. Making enforcement the default would be 3.0.0 (see open questio
 | 3 | 2.3.0 | Confirmation previews, tokens, dry-run | Real human-in-the-loop; check a plan before asking |
 | 4 | 2.4.0 | Pagination, filters, field selection | Lists stop eating the context window |
 | 5 | 2.5.0 | Discovery quality | Find the right operation, and call it right, first time |
-| 6 | 2.6.0 | Push and safety | No polling; prompt-injection-aware output |
-| 7 | 2.7.0 | Least-privilege agent tokens | Safe to hand an agent a token |
-| 8–9 | — | Spec, conformance kit, package | NavWebMcp usable outside this repo |
+| 6 | 2.5.x | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks Day 7 |
+| 7 | 2.6.0 | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
+| 8 | 2.7.0 | Least-privilege agent tokens | Safe to hand an agent a token |
+| 9–10 | — | Spec, conformance kit, package | NavWebMcp usable outside this repo |
 | Later | — | Code mode, second implementation, real-LLM benchmark | Proof the protocol carries the claim |
 
 ---
@@ -194,26 +216,91 @@ guest"). Agents also get arguments wrong on the first try, which costs a turn.
 
 **Measure:** top-1 and top-3 accuracy on the query set, glob against BM25.
 
-## Day 6: Push notifications and output safety (2.6.0)
+## Day 6: MCP 2026-07-28 upgrade (2.5.x)
+
+**Problem:** our MCP surface speaks the handshake-based revisions (`2025-11-25` and
+earlier). Current clients speak 2026-07-28, and both Events and Skills over MCP require
+it. This is a dependency migration, not a NavWebMcp feature, so it gets its own day and
+its own PR before anything is built on top of it.
 
 **Design**
-- **`notifications/tools/list_changed`** after `load_tools` / `unload_tools`, so agents
-  stop re-fetching `tools/list` blindly. Feasibility depends on `mcp-handler`'s Streamable
-  HTTP mode (open question). If it can't push, `load_tools` returns the new tool list
-  inline as a fallback.
-- **Domain events as MCP resources:** for example `reservation.created` and
-  `table.status_changed`, through resource subscriptions. This covers PRD §7.5. It
-  needs the same push channel; if that's unavailable, it moves into the code-mode bucket.
+- Move from `@modelcontextprotocol/sdk` 1.26 and `mcp-handler` 1.1 to `mcp-handler` 2.x,
+  which now depends on the split `@modelcontextprotocol/server` 2.x package (2.4.0 at the
+  time of writing). Start the day by reading both changelogs; the import paths and the
+  handler API change.
+- Serve **both** generations: 2026-07-28 requests (protocol version in `_meta`,
+  `server/discover`) and handshake clients through the spec's backward-compatibility
+  rules. Dropping the handshake path would cut off today's clients.
+- `server/discover` returns what `initialize` returns today: `serverInfo.version`
+  (the NavWebMcp semver), `AGENT_INSTRUCTIONS` and the capabilities. Agents still use
+  `getContext` + `getCapabilities` for the platform clock and the manifest.
+- Statelessness: confirm that nothing in our MCP layer depends on a session.
+  `load_tools` is already per user in shared state, so it should carry over; the test
+  proves it.
+- Credits, `requestId` / `callId`, auth and the body-size limits keep working on both
+  paths. The e2e and stress scripts run against both.
+
+**Versioning:** if no NavWebMcp surface changes (manifest, meta-ops, envelope, error
+codes), this is a **PATCH**. If `server/discover` adds anything of ours, it's MINOR.
+
+**Tests:** the existing MCP suites on both protocol generations; an unsupported version
+gets `UnsupportedProtocolVersionError` listing ours; `tools/list` matches across the two
+paths; a promoted tool shows up on a later request without any session state.
+
+**Measure:** `bench.mjs` and `credits-stress.mjs` before and after, to show no cost or
+latency regression from the migration.
+
+## Day 7: Events, skills over MCP and output safety (2.6.0)
+
+Builds on Day 6. Both extensions are opt-in: a server advertises them in
+`server/discover`, a client declares them per request, and nothing changes for a client
+that doesn't.
+
+**Design**
+- **Events** (`io.modelcontextprotocol/events`). This replaces the earlier plan for our
+  own push channel, and the open question about whether `mcp-handler` can push.
+  - Event types in `events/list`, each with an `inputSchema` for subscription arguments
+    and a `payloadSchema`: `reservation.created`, `reservation.cancelled`,
+    `table.status_changed`, `task.assigned`. This covers PRD §7.5.
+  - **Poll first** (`events/poll`). It keeps no per-client state on the server, which
+    fits Next.js and our shared state. The cursor is an HMAC'd position in a per-type
+    event log kept in shared state (Redis when configured), with a bounded retention;
+    past it, `truncated: true`. Push (`events/stream`) only if `mcp-handler` 2.x supports
+    long-lived requests; webhooks later.
+  - `eventId` stays stable for deduplication. Payloads are minimal (an id and the fields
+    needed to triage), and the agent fetches the rest with normal operations.
+  - RBAC at subscribe time and again at delivery: a customer only sees their own
+    reservations. A revoked agent's subscriptions end.
+  - Credits: a poll is charged like a read.
+- **Skills over MCP** (`io.modelcontextprotocol/skills`).
+  - `skills/list` and `skills/get` serve `skill://navwebmcp-agent/SKILL.md` with its
+    manifest (every file's SHA-256 and size), and `resources/read` serves the files.
+    Needs the `resources` capability.
+  - The digests are computed from the bytes at build time, and a test fails if the
+    manifest and the file disagree.
+  - Once hosts load the skill from the server, `AGENT_INSTRUCTIONS` can shrink to the
+    rules that must be in every handshake, pointing at the skill for the rest. Measure
+    before shrinking, since today no Claude host loads skills over MCP.
 - **Field-level untrusted content:** outputs mark user-written fields (`specialNotes`,
   `body`, `note`) individually instead of flagging the whole operation with
   `untrustedOutput`. On the wire they become `{ "untrusted": "..." }`, so agents quote
   them as data. A schema helper does it, and a test checks every free-text field is
-  wrapped.
+  wrapped. Event payloads use the same helper, as the Events spec requires.
+- **`load_tools` returns the new tool list inline**, so agents stop re-fetching
+  `tools/list` blindly. Stateless MCP only gets `list_changed` over a `subscriptions/listen`
+  stream, which agents may not hold.
 
-**Tests:** a notification is received in the in-memory transport; untrusted wrapping
-round-trips; existing UI consumers unwrap correctly.
+**Tests:** subscribe, poll and resume from a cursor; `truncated` past retention;
+duplicates share an `eventId`; RBAC at delivery (another user's reservation is never
+delivered); skill digests match the served bytes; `skills/get` for an unknown URI is
+`-32602`; untrusted wrapping round-trips, and existing UI consumers unwrap correctly.
+Use the MCP Inspector (it has partial Skills support) as a second, independent client.
 
-## Day 7: Least-privilege agent tokens (2.7.0)
+**Measure:** an agent loop that waits for `reservation.created` by polling events,
+against one that polls `listAllReservations`: calls, tokens and credits per detected
+change.
+
+## Day 8: Least-privilege agent tokens (2.7.0)
 
 **Problem:** an agent token carries the user's whole role for 8 hours.
 
@@ -230,13 +317,20 @@ round-trips; existing UI consumers unwrap correctly.
   `details: [{ path: "scope" }]`.
 - Refresh tokens: short access tokens plus a refresh token that the management layer can
   revoke.
+- Follow the two MCP auth drafts rather than invent our own versions: bind each token to
+  the client that requested it ([#1932](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932)),
+  and leave room for cloud agents that sign in with their own identity
+  ([#1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)).
+  Re-read both at the start of the day, since they may have changed or merged.
+- Event subscriptions (Day 7) obey the token's scope too, at subscribe time and at
+  delivery.
 - A per-write `reason` (optional, ≤ 200 chars), stored in the SOC2 audit trail, so an
   audit can answer "why did the agent refund this?".
 
 **Tests:** every scope dimension; amount limits on `issueRefund`; refresh after revocation
 fails; `getCapabilities` is filtered by scope.
 
-## Days 8–9: Make it a protocol, not just this app
+## Days 9–10: Make it a protocol, not just this app
 
 - **`SPEC.md`:** numbered MUST/SHOULD rules extracted from the PRD, README, changelog and
   skill, plus JSON Schemas for the 12 always-on operations, the `Result` envelope, the
@@ -264,8 +358,13 @@ fails; `getCapabilities` is filtered by scope.
    (`[?available==true]`)?
 3. **Ranked search:** BM25 only, or also embeddings (needs a model call or a bundled
    model)?
-4. **Push channel:** OK to spend part of Day 6 checking whether `mcp-handler` can push
-   notifications, with the inline fallback if it can't?
+4. **Handshake clients:** keep serving the pre-2026-07-28 handshake after Day 6
+   (planned), and if so, for how long?
 5. **Second implementation:** which stack, if any?
-6. **Order:** this plan puts safety first (Days 1, 3, 7). If token savings matter more for
-   a demo, Days 2 and 4 could move first.
+6. **Order:** this plan puts safety first (Days 1, 3, 8). If token savings matter more for
+   a demo, Days 2 and 4 could move first. Day 6 could also move earlier, since every MCP
+   change after it lands on the new SDK anyway.
+7. **Events retention:** how far back may a cursor resume (planned: 24 h, like
+   idempotency records)? Longer means more Redis memory.
+8. **Enterprise-Managed Authorization:** now a stable extension. Worth a day after Day 8,
+   or not needed for this app?
