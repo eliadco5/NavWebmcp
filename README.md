@@ -201,7 +201,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.2.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "2.3.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -1857,6 +1857,22 @@ npx @modelcontextprotocol/inspector http://localhost:3000/api/mcp
 
 Pass `Authorization: Bearer <token>` (your agent token is shown in the UI after login).
 
+**Compact text (protocol ≥ 2.3.0).** Tool results carry their JSON twice: as
+`structuredContent` and as a text block, which is what most hosts show the model. The text
+block is indented by default, as it always was. To save tokens, ask for compact JSON on
+the connection, with `?format=compact` on the URL or an `X-NavWebMcp-Format: compact`
+header (the header wins):
+
+```bash
+claude mcp add --transport http booking "http://localhost:3000/api/mcp?format=compact" \
+  --header "Authorization: Bearer <your-agent-token>"
+```
+
+A protocol-aware client can also choose per call with `_meta["navwebmcp/format"]`
+(`"compact"` or `"pretty"`). Only whitespace changes: `structuredContent`, `_meta`, the
+`[credits]` / `[idempotency]` notes and credit charges are the same either way. An unknown
+value is ignored.
+
 **One token per agent.** The token in the Agent tab identifies a default agent client
 for your current session. To connect several agents and tell them apart (and revoke
 them separately), create a token per agent:
@@ -1903,7 +1919,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.2.0"
+document.modelContext.protocolVersion   // "2.3.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool

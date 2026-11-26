@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.2.0
+version: 2.3.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.2.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.3.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -342,6 +342,10 @@ track anything: the server does the accounting and tells you when to change cour
   the state on every result. Send `_meta["navwebmcp/credits"] = { request: n }` to ask for
   more credits back. Over HTTP, use the `X-NavWebMcp-Credits-*` and
   `X-NavWebMcp-Credit-Request` headers.
+- **Compact results (≥ 2.3.0).** A result's text block is indented JSON unless the
+  connection asks for compact (`?format=compact` on the MCP URL, or an
+  `X-NavWebMcp-Format: compact` header). Send `_meta["navwebmcp/format"] = "compact"` to
+  choose per call. Same data either way, fewer tokens compact; read it the same way.
 
 ## 13. Error codes and how to react
 

@@ -18,6 +18,7 @@ import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { executeDetailed, requestMeta } from "@/lib/operations/execute";
 import type { CreditInfo, IdempotencyInfo, ProtocolError } from "@/lib/result";
+import { FORMAT_HEADER, TEXT_FORMATS, type TextFormat } from "@/lib/constants";
 import { creditCost } from "@/lib/credits/policy";
 import { isIdempotentOp } from "@/lib/idempotency/port";
 import { noteAgentSoftware } from "@/lib/management/sessions";
@@ -45,9 +46,33 @@ export function mcpAnnotations(op: AnyOp) {
   };
 }
 
+/** The JSON in a result's text block: indented (the default) or compact. Only
+ *  whitespace differs; structuredContent and _meta are identical either way. */
+export function formatText(value: unknown, format: TextFormat = "pretty"): string {
+  return format === "compact" ? JSON.stringify(value) : JSON.stringify(value, null, 2);
+}
+
+function asFormat(v: unknown): TextFormat | undefined {
+  const s = typeof v === "string" ? v.trim().toLowerCase() : undefined;
+  return (TEXT_FORMATS as readonly string[]).includes(s ?? "") ? (s as TextFormat) : undefined;
+}
+
+/** A connection's format: the X-NavWebMcp-Format header, else `?format=` on the
+ *  MCP URL, else "pretty". An unknown value is ignored, never an error. */
+export function formatFromRequest(req: Request): TextFormat {
+  let fromUrl: string | null = null;
+  try {
+    fromUrl = new URL(req.url).searchParams.get("format");
+  } catch { /* relative URL in a test: no query */ }
+  return asFormat(req.headers.get(FORMAT_HEADER)) ?? asFormat(fromUrl) ?? "pretty";
+}
+
+/** Per call: params._meta["navwebmcp/format"] overrides the connection's format. */
+export const FORMAT_META_KEY = "navwebmcp/format";
+
 /** Every failure, whatever its origin, goes out as the same ProtocolError shape. */
-function errorResult(error: ProtocolError, credits?: CreditInfo, hinted = false) {
-  const content = [{ type: "text" as const, text: JSON.stringify(error, null, 2) }];
+function errorResult(error: ProtocolError, credits?: CreditInfo, hinted = false, format: TextFormat = "pretty") {
+  const content = [{ type: "text" as const, text: formatText(error, format) }];
   // A refusal's guidance is already its message; any other error gets the hint as its own block.
   if (hinted && credits?.hint && error.code !== "INSUFFICIENT_CREDITS") content.push(hintBlock(credits));
   return { content, isError: true, ...creditsMeta(credits) };
@@ -83,6 +108,8 @@ function creditRequestOf(extra: any): number | undefined {
 interface McpContext {
   role: Role;
   token: string;
+  /** How this connection wants text blocks written (formatFromRequest). */
+  format?: TextFormat;
 }
 
 // Per-request ALS holding the caller's role and bearer token.
@@ -107,7 +134,7 @@ export function withMcpAuthRole(
   return (req: Request) => {
     const role = getRole(req) ?? ("customer" as Role);
     const token = getToken(req) ?? "";
-    return mcpContext.run({ role, token }, () => handler(req));
+    return mcpContext.run({ role, token, format: formatFromRequest(req) }, () => handler(req));
   };
 }
 
@@ -127,6 +154,7 @@ export function registerMcpTools(server: McpServer) {
   const ctx = mcpContext.getStore();
   const callerRole: Role = ctx?.role ?? "customer";
   const token: string = ctx?.token ?? "";
+  const connectionFormat: TextFormat = ctx?.format ?? "pretty";
 
   // Determine which non-alwaysOn ops are currently loaded for this token
   const loaded = getLoaded(token);
@@ -166,6 +194,7 @@ export function registerMcpTools(server: McpServer) {
           const userId: string | undefined = extra?.authInfo?.extra?.userId;
           const role: Role | undefined = extra?.authInfo?.extra?.role;
           const meta: CallMeta = { ...mcpRequestMeta(extra), creditRequest: creditRequestOf(extra) };
+          const format: TextFormat = asFormat(extra?._meta?.[FORMAT_META_KEY]) ?? connectionFormat;
 
           if (!userId || !role) {
             const err = fail("UNAUTHENTICATED", "A valid user token is required.");
@@ -183,7 +212,7 @@ export function registerMcpTools(server: McpServer) {
               auditOperation({ ...denied, op }),
               observeCall({ ...denied, permission: op.permission, durationMs: 0, startedAt: Date.now() }),
             ]);
-            return errorResult(err.error);
+            return errorResult(err.error, undefined, false, format);
           }
 
           // clientInfo from `initialize`, when this server instance saw it
@@ -213,10 +242,10 @@ export function registerMcpTools(server: McpServer) {
             { userId, role, token: bearerToken, actor, meta }
           );
           const hinted = Boolean(result.credits?.hint);
-          if (!result.success) return errorResult(result.error, credits, hinted);
+          if (!result.success) return errorResult(result.error, credits, hinted, format);
           // The text block is kept for clients that predate structuredContent
           // (and for scripts/bench.mjs, which parses content[0].text).
-          const content = [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }];
+          const content = [{ type: "text" as const, text: formatText(result.data, format) }];
           if (hinted && credits) content.push(hintBlock(credits));
           // A replay says so in a block the model reads; structuredContent stays the op's own data.
           if (result.idempotency) {
