@@ -3,6 +3,8 @@
  *
  *   Lane A-native — real MCP: load_tools([...]) once, then N native tools/call.
  *   Lane A-invoke — real MCP: N x invoke({name,args}), no load step.
+ *   Lane A-invoke-chained — real MCP: the same primitive ops as ONE dependent batch,
+ *                   invoke({ calls }) with $ref (NavWebMcp >= 2.2.0).
  *   Lane B        — real MCP: load_tools([...composite]) then 1 (or a few) tools/call.
  *   Lane C-raw    — real browser: primitive ops called one at a time via /api/call —
  *                   the in-page WebMCP surface here only registers composite tools
@@ -221,6 +223,27 @@ async function checkinPrimitiveSteps(input, callTool, acc) {
   return status;
 }
 
+// Lane A-invoke-chained (NavWebMcp >= 2.2.0): the primitive ops as ONE dependent
+// batch. $ref threads ids between calls; it also orders a read after the write it
+// reads back (a plain batch would run that read first).
+function bookingChain(input, offset = 0) {
+  const i = (n) => String(offset + n);
+  return [
+    { name: "searchAvailability", args: { date: input.date, partySize: input.partySize, time: input.time } },
+    { name: "createReservation", args: { slotId: { $ref: `${i(0)}.data.slots[0].id` }, name: input.name, partySize: input.partySize } },
+    { name: "getReservation", args: { reservationId: { $ref: `${i(1)}.data.reservation.id` } } },
+  ];
+}
+
+function checkinChain(input, offset = 0) {
+  const i = (n) => String(offset + n);
+  return [
+    { name: "getOccupancy", args: {} },
+    { name: "checkInGuest", args: { reservationId: input.reservationId } },
+    { name: "getCheckinStatus", args: { reservationId: { $ref: `${i(1)}.data.reservationId` } } },
+  ];
+}
+
 const FLOW_DEFS = {
   booking: {
     label: "Book a table",
@@ -232,6 +255,8 @@ const FLOW_DEFS = {
       return { date: futureDate(i), time: BOOKING_TIMES[i % BOOKING_TIMES.length], partySize: 2, name: `Bench Guest ${i + 1}` };
     },
     primitiveSteps: bookingPrimitiveSteps,
+    chain: (input) => bookingChain(input),
+    chainOk: (results, input) => results[2]?.success === true && results[0]?.data?.slots?.[0]?.time === input.time,
   },
   checkin: {
     label: "Seat a guest (front desk)",
@@ -247,6 +272,8 @@ const FLOW_DEFS = {
       return { reservationId: "res_003" };
     },
     primitiveSteps: checkinPrimitiveSteps,
+    chain: (input) => checkinChain(input),
+    chainOk: (results) => results[2]?.data?.status === "checked-in",
   },
   // Two independent receptionist actions in one session: book a phone-in reservation,
   // then separately seat the walk-in already waiting at the desk. NOT "seat the guest
@@ -274,6 +301,8 @@ const FLOW_DEFS = {
       await callComposite("book", input.booking);
       await callComposite("seatGuest", input.checkin);
     },
+    chain: (input) => [...bookingChain(input.booking), ...checkinChain(input.checkin, 3)],
+    chainOk: (results) => results[2]?.success === true && results[5]?.data?.status === "checked-in",
   },
   // Seven calls across two domains (CRM + front desk) contrasted against one op. No
   // lane D — CRM has no UI screens in this app, and building one is out of scope.
@@ -306,6 +335,16 @@ const FLOW_DEFS = {
       acc.push(log);
       return log;
     },
+    chain: (input) => [
+      { name: "getGuestPreferences", args: { guestId: input.guestId } },
+      { name: "getLoyaltyStatus", args: { guestId: input.guestId } },
+      { name: "getOccupancy", args: {} },
+      { name: "checkInGuest", args: { reservationId: input.reservationId } },
+      { name: "getCheckinStatus", args: { reservationId: { $ref: "3.data.reservationId" } } },
+      { name: "addLoyaltyPoints", args: { guestId: input.guestId, points: input.pointsToAward, reason: input.visitNote } },
+      { name: "logCommunication", args: { guestId: input.guestId, type: "note", subject: "VIP visit hosted", body: input.visitNote } },
+    ],
+    chainOk: (results) => results[4]?.data?.status === "checked-in" && results[6]?.success === true,
   },
 };
 
@@ -381,6 +420,31 @@ async function laneAInvoke(flow, bearerToken, n, adminCookie) {
 
   await client.close();
   return { lane: "A-invoke", toolSchemaTaxTokens: 0, httpCalls: stats.calls, runs: perRun };
+}
+
+// ── Lane A-invoke-chained: one dependent batch per iteration ──────────────────
+
+async function laneAInvokeChained(flow, bearerToken, n, adminCookie) {
+  const def = FLOW_DEFS[flow];
+  const { client, stats } = await connectMcpClient(bearerToken);
+
+  const perRun = [];
+  for (let i = 0; i < n; i++) {
+    if (i > 0 && def.resetBetweenIterations) await resetFrontOffice(adminCookie);
+    const input = def.iterationInput(i);
+    const calls = def.chain(input);
+    const invokeArgs = { calls };
+    const start = performance.now();
+    const res = await client.callTool({ name: "invoke", arguments: invokeArgs });
+    const ms = performance.now() - start;
+    let results = [];
+    try { results = JSON.parse(res.content?.[0]?.text ?? "{}").results ?? []; } catch { /* */ }
+    const success = !res.isError && results.length === calls.length && results.every((r) => r.success) && def.chainOk(results, input);
+    perRun.push({ ms, calls: 1, inputTokens: estimateTokens(invokeArgs), outputTokens: mcpResultTokens(res), success });
+  }
+
+  await client.close();
+  return { lane: "A-invoke-chained", toolSchemaTaxTokens: 0, httpCalls: stats.calls, runs: perRun };
 }
 
 // ── Lane B: load_tools([composite]) then one tools/call ────────────────────────
@@ -798,6 +862,11 @@ async function main() {
         const invokeResult = await laneAInvoke(flow, bearerToken, N, bob.cookie);
         rows.push(summarize(invokeResult));
         await resetStores(bob.cookie);
+        if (def.chain) {
+          const chainedResult = await laneAInvokeChained(flow, bearerToken, N, bob.cookie);
+          rows.push(summarize(chainedResult));
+          await resetStores(bob.cookie);
+        }
       } else if (lane === "b") {
         result = await laneB(flow, bearerToken, N, bob.cookie);
         rows.push(summarize(result));

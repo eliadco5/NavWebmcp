@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.1.0
+version: 2.2.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.1.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.2.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -99,7 +99,8 @@ protocol features, not just syntax variants:
 |---|---|---|
 | **Single** | `invoke({ name, args })` | One operation, stateless. Returns exactly the operation's own `Result` (see §8). |
 | **Bulk / parallel** | `invoke({ calls: [{ name, args }, …] })` | The server partitions by parallel-safety: safe calls run concurrently, the rest run **in order**. Results are **re-indexed to input order**, so positional mapping onto your original call list is always safe. |
-| **Sequential (forced)** | Separate `invoke` calls, or `parallelSafe: false` per call | Use when call N's arguments depend on call N-1's result. A single bulk call cannot thread an output into a later input — you must make the first call, read its result, then issue the second. |
+| **Dependent (≥ 2.2.0)** | `{ "$ref": "<i>.data.<path>" }` as an argument value inside `calls` | Call N uses a value from earlier call i's result, in the same round trip. See below. |
+| **Sequential (forced)** | Separate `invoke` calls, or `parallelSafe: false` per call | Use when you need to *look at* a result before deciding the next call (and, on a server below 2.2.0, for any data dependency). |
 | **Parallel (forced)** | `parallelSafe: true` per call | Override the default for a write operation you know to be independent of the others in the same batch. |
 | **Composite** | one operation that internally orchestrates several steps | See §7 — the server does the sequencing, you make one call. |
 
@@ -108,10 +109,36 @@ Defaults, absent an explicit override: `permission: "read"` operations are paral
 `parallelSafe` value regardless of its permission — `describe_tool` reports the effective
 value, so read it rather than assuming from `permission` alone.
 
+### Dependent calls with `$ref` (≥ 2.2.0)
+
+```js
+invoke({ calls: [
+  { name: "searchAvailability", args: { date: "2026-12-01", partySize: 2, time: "18:00" } },
+  { name: "createReservation",  args: { slotId: { "$ref": "0.data.slots[0].id" },
+                                        name: "Dana", partySize: 2, idempotencyKey: "…" } },
+  { name: "getReservation",     args: { reservationId: { "$ref": "1.data.reservation.id" } } }
+] })
+```
+
+- A `$ref` is `<i>` (an **earlier** call's index) followed by `.key` and `[n]` steps into
+  that call's result, which starts with `data`. No filters, wildcards or functions.
+- **Narrow with the operation's own inputs** so `[0]` is the item you want: above,
+  `time` makes `slots[0]` the 18:00 slot. Never guess an index into an unfiltered list.
+- A call with a `$ref` waits for the call it points at. Calls without one run as before:
+  parallel-safe ones at once, writes in order.
+- The referenced call failed, or the path isn't there (an empty list, a missing key): the
+  call is **not run** and gets `DEPENDENCY_FAILED`, with `details` naming the ref. Calls
+  that depend on it fail the same way. Check each entry of `results`.
+- A ref to the same or a later call, or one that doesn't parse, makes the whole batch
+  `INVALID_INPUT` before anything runs. `$ref` in the single-call form is `INVALID_INPUT`.
+- Refs inside a nested `invoke`'s own `calls` belong to that inner batch.
+- Each write can carry its own `idempotencyKey`; the key covers the resolved arguments.
+
 Rules of thumb:
 - Batch every independent read into one bulk `invoke` call.
-- Never batch calls that have a data dependency on each other's result — use sequential
-  calls instead.
+- Put calls that depend on each other's results in one batch with `$ref`, rather than one
+  round trip each. Use separate calls only when you must read a result before choosing
+  the next call.
 - Mixing reads and writes in one bulk call is fine; ordering is still honored for the
   non-parallel-safe subset.
 - `load_tools`, `unload_tools`, and `describe_tool` all accept arrays of names — batch
@@ -353,6 +380,7 @@ Every error has the same shape (≥ 2.0.0):
 | `IDEMPOTENCY_IN_PROGRESS` | A call with this `idempotencyKey` is still running (≥ 2.1.0) | Wait a second, resend the same call. |
 | `IDEMPOTENCY_CONFLICT` | This `idempotencyKey` was used with other arguments (≥ 2.1.0) | Nothing ran. Use a new key for a new action. |
 | `INSUFFICIENT_CREDITS` | Out of credits; the call didn't run (≥ 1.4.0) | Wait `retryAfterMs`, then retry. Follow `credits.hint`. |
+| `DEPENDENCY_FAILED` | A `$ref`'s earlier call failed, or its path isn't in that result (≥ 2.2.0); this call wasn't run | Fix the earlier call or the path in `details`, then resend the batch. |
 | `FANOUT_LIMIT` | The request nested too deep or ran too many operations (≥ 1.4.0) | Flatten nested `invoke`s into one batch, or split the work. |
 | `UI_COMPONENT_NOT_FOUND` | No mounted component with that id (≥ 1.3.0) | It's probably on another tab. Set `app.nav`, then `ui_list`. |
 | `UI_INVALID_PATCH` | The merged state doesn't match the component's `stateSchema` | Fix the patch against `stateSchema`, retry once. |
@@ -375,7 +403,9 @@ Read the `message` field for those — don't blind-retry a code you don't recogn
 - Retrying a call whose error has `retryable: false` without changing anything.
 - Working out "today" or "tomorrow" from your own clock instead of `getContext`.
 - Sharing one cached capability manifest across two different credentials/roles.
-- Batching calls that have a data dependency into one bulk `invoke`.
+- Making one round trip per step when the steps only pass ids along (use `$ref`).
+- Guessing an index (`slots[3]`) into an unfiltered list instead of narrowing with the
+  operation's inputs.
 - Hand-orchestrating a multi-step sequence without first searching for a composite operation.
 - Calling a business operation and narrating its result when the user asked to *see* it on
   screen. Use `ui_set_state` instead.

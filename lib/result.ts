@@ -82,6 +82,7 @@ export const PROTOCOL_ERROR_CODES = {
   HANDLER_ERROR:         { retryable: true,  hint: "Unexpected server failure. Retry at most once; on a write, pass idempotencyKey so the retry can't write twice." },
   IDEMPOTENCY_CONFLICT:  { retryable: false, hint: "This idempotencyKey was already used with different arguments. Resend the original arguments, or use a new key for a new action." },
   IDEMPOTENCY_IN_PROGRESS: { retryable: true, hint: "A call with this idempotencyKey is still running. Wait a second, then resend the same call to get its result." },
+  DEPENDENCY_FAILED:     { retryable: false, hint: "This call used a $ref to an earlier call that failed or lacks that path; it was not run. Fix the earlier call or the path in details, then resend the batch." },
 } as const satisfies Record<string, { retryable: boolean; hint: string }>;
 
 export type ProtocolErrorCode = keyof typeof PROTOCOL_ERROR_CODES;

@@ -23,6 +23,37 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.2.0
+
+Dependent batches: a multi-step flow in one round trip. Additive; a batch without `$ref`
+runs exactly as before.
+
+- **`$ref` in `invoke({ calls })`.** Any argument value, at any depth, may be
+  `{ "$ref": "<i>.<path>" }`: a value from earlier call `i`'s Result, e.g.
+  `"0.data.slots[0].id"`. The path is `.key` and `[n]` steps only; no filters, wildcards
+  or functions. Selection belongs in the operation's own inputs (see `searchAvailability`
+  below), which keeps the grammar small for every implementation.
+- **Checked first.** A ref that doesn't parse, or points at the same or a later call,
+  makes the whole batch `INVALID_INPUT` with one `details` entry per bad ref
+  (`calls.<i>.args.<path>`); nothing runs. Refs can't form cycles. `$ref` in the
+  single-call form is `INVALID_INPUT`.
+- **Order.** A call with a `$ref` waits for the calls it refers to. Otherwise the plain
+  batch rules hold: parallel-safe calls run at once; the rest run in request order, after
+  the parallel-safe calls that don't depend on them.
+- **`DEPENDENCY_FAILED`** (new code, `retryable: false`): the referenced call failed, or
+  the path isn't in its result (an empty list, a missing key). The call isn't run; its
+  `details` name the ref and the reason. Calls depending on it fail the same way.
+- **Nesting.** Refs inside a nested `invoke`'s own `calls` belong to that inner batch.
+- **Unchanged:** fan-out limits (skipped calls don't count), the up-front credit charge,
+  and idempotency: each write keeps its own `idempotencyKey`, hashed over the resolved
+  arguments.
+- `invoke`'s description and its `calls[].args` schema document the syntax, so
+  `capabilityHash` changes for every role.
+
+Business operation (not a protocol change; it moves `capabilityHash` only):
+`searchAvailability` takes an optional `time` (HH:MM) and returns only the slot at that
+time, so `"0.data.slots[0].id"` is the slot the guest asked for.
+
 ## 2.1.0
 
 Idempotency keys: safe retries of writes. Additive; nothing an agent does today changes
