@@ -1,6 +1,6 @@
 # NavWebMcp protocol guide
 
-How an agent talks to a NavWebMcp server: connect, discover, call, recover from errors. This is the protocol at **2.6.0** (`lib/protocol.ts`). What changed in each version is in [`CHANGELOG.md`](../CHANGELOG.md), and the consumer-side rules an agent should follow are in the [agent skill](../skills/navwebmcp-agent/SKILL.md).
+How an agent talks to a NavWebMcp server: connect, discover, call, recover from errors. This is the protocol at **2.7.0** (`lib/protocol.ts`). What changed in each version is in [`CHANGELOG.md`](../CHANGELOG.md), and the consumer-side rules an agent should follow are in the [agent skill](../skills/navwebmcp-agent/SKILL.md).
 
 ```
 WebMCP          W3C Web Machine Learning CG draft standard (document.modelContext)
@@ -146,7 +146,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.6.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation, credits }] }
+        Platform-->>Agent: { protocolVersion: "2.7.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation, credits }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -332,6 +332,34 @@ invoke({ name: "book", args: { date: "2026-12-01", time: "18:00", partySize: 2, 
 | Two read results needed simultaneously | Path B batch — parallel dispatch |
 | Steps that only pass ids along | Path B batch with `$ref` — one round trip |
 | A write you might retry | Pass an `idempotencyKey` |
+| A long list, or only a few properties of each item | `limit` and `fields`, then `cursor` |
+
+**Paging and field selection (≥ 2.7.0).** The 17 list operations (the
+[Paged list](operations.md#paged-list-operations--270) in the operations reference) take
+three optional fields. **Without them nothing changes:** the full list comes back, as it
+always did.
+
+- `limit` (1–200): answer one page. When there is more, the data carries `nextCursor`.
+- `cursor`: the previous `nextCursor`, with the same filters as the first page. It
+  remembers the page size, so `limit` may be left out. The next page starts right after
+  the last item returned, so an item added or removed meanwhile doesn't repeat or skip one.
+  The cursor is signed and bound to the caller, the agent client, the operation and the
+  other arguments: a tampered one, or one sent with other filters, is `INVALID_INPUT` with
+  `details[0].path: "cursor"`. `fields` may change between pages.
+- `fields`: only these item properties; the item's id is always kept. An unknown name is
+  `INVALID_INPUT`.
+
+The list keeps its name (`reservations`, `tasks`, …), and `count` / `total` still counts
+every match, not the page. In the published `outputSchema` item properties other than the
+id are optional, because a projection leaves them out. `getCreditLedgers` returns 50 rows
+unless `limit` says otherwise; `queryAudit` keeps its own `limit` / `beforeSeq` paging.
+
+```js
+invoke({ name: "listAllReservations", args: { status: "pending", limit: 25, fields: ["name", "date", "time"] } })
+// → { reservations: [{ id, name, date, time }, …25], count: 140, nextCursor: "p1.eyJv…" }
+invoke({ name: "listAllReservations", args: { status: "pending", cursor: "p1.eyJv…" } })
+// → the next 25, all properties
+```
 
 ## 6. Compact text results (≥ 2.3.0)
 
@@ -453,6 +481,7 @@ This is deliberately independent of `package.json`'s version, which tracks the d
 | 2.4.0 | MCP 2026-07-28 (`server/discover`, stateless) alongside 2025-era clients; native tools answer bad arguments with `INVALID_INPUT` |
 | 2.5.0 | Smaller connect cost: no output schemas for the always-on tools in `tools/list`, shorter descriptions |
 | 2.6.0 | Confirmation previews and one-use tokens (`CONFIRMATION_STALE`), MCP elicitation, `dryRun` on every write, opt-in `REQUIRE_CONFIRMATION_TOKEN` |
+| 2.7.0 | Optional paging (`limit`, `cursor`, `nextCursor`) and field selection (`fields`) on the list operations |
 
 ## 10. WebMCP standard and polyfill
 

@@ -53,7 +53,7 @@ Every environment variable the app reads. All are optional: with none set, the a
 | `OP_DEADLINE_MS` | `15000` | Handler deadline before `HANDLER_TIMEOUT` (an operation may set its own `deadlineMs`) |
 | `MAX_BODY_BYTES` | `65536` | JSON request body cap |
 | `IDEMPOTENCY_TTL_SECONDS` | `86400` | How long an idempotent result is kept for replay |
-| `CONFIRMATION_SECRET` | `AUTH_SECRET`, then an insecure built-in default | Signs confirmation tokens (2.6.0). Must be the same on every instance |
+| `CONFIRMATION_SECRET` | `AUTH_SECRET`, then an insecure built-in default | Signs confirmation tokens (2.6.0) and list cursors (2.7.0). Must be the same on every instance |
 | `CONFIRMATION_TTL_SECONDS` | `300` | How long a confirmation token stays valid |
 | `REQUIRE_CONFIRMATION_TOKEN` | off | `true`: an agent's bare `confirm: true` is refused; it must use the preview's token (or MCP elicitation) |
 | `IDEMPOTENCY_PENDING_TTL_MS` | `300000` | How long a claim for a call still running blocks its key (covers an instance that died) |

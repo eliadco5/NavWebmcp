@@ -9,6 +9,7 @@ import { credits as creditsPort, type CallOutcome } from "@/lib/credits/port";
 import { bytesOf } from "@/lib/credits/policy";
 import type { CreditInfo } from "@/lib/result";
 import { registry } from "./registry";
+import { applyPage, checkFields, openCursor, takePageRequest, type OpenedCursor, type PageRequest } from "./paging";
 import { acceptsDryRun, type Actor, type CallMeta, type Channel, type Operation, type OperationContext } from "./types";
 import type { ActionPreview, ConfirmationInfo } from "@/lib/result";
 import {
@@ -275,6 +276,21 @@ export async function executeDetailed(
       delete data[DRY_RUN_FIELD];
       delete data[CONFIRMATION_TOKEN_FIELD];
     }
+    // 2.7.0 paging fields: the handler returns the full list, paged below.
+    let page: PageRequest | undefined;
+    let opened: OpenedCursor | undefined;
+    const cursorBinding = () => ({ userId: actor.userId, clientId: actor.agent?.clientId ?? "", operation: op.name, args: data });
+    if (op.listInfo) {
+      ({ args: data, page } = takePageRequest(data));
+      // Checked before the handler runs: a bad cursor or field name costs nothing.
+      const badFields = checkFields(op.listInfo, page.fields);
+      if (badFields) return finish("input", badFields);
+      if (page.cursor !== undefined) {
+        const c = await openCursor(page.cursor, cursorBinding());
+        if ("success" in c) return finish("input", c);
+        opened = c;
+      }
+    }
 
     // dryRun: the gates above ran, credits were admitted at read cost; now the
     // preview, never the handler, and no idempotency claim.
@@ -338,10 +354,14 @@ export async function executeDetailed(
       }
       throw err;
     }
-    if (result.success) checkOutput(op.name, op.outputSchema, result.data, op.openOutput);
+    if (result.success) checkOutput(op.name, op.listInfo?.strictOutput ?? op.outputSchema, result.data, op.openOutput);
     if (idem) {
       await settleIdempotency(idem, result);
       idem = undefined;
+    }
+    if (result.success && op.listInfo && page) {
+      result = await applyPage(op.listInfo, result.data as Record<string, unknown>, page, cursorBinding(), opened);
+      if (!result.success) return finish("input", result);
     }
     return finish("handler", result);
   } catch (err) {

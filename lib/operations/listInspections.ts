@@ -13,6 +13,7 @@ export const listInspections = defineOperation({
   permission: "read",
   roles: ["admin"],
   module: "housekeeping.inspections",
+  list: { key: "inspections", id: "id" },
   inputSchema: {
     tableId: Id().optional().describe("Filter inspections by table ID. Omit to return all."),
     result: z.enum(["pass", "fail"]).optional().describe("Filter by inspection result."),

@@ -13,6 +13,7 @@ export const listPayments = defineOperation({
   permission: "read",
   roles: ["admin"],
   module: "finance.payments",
+  list: { key: "payments", id: "paymentId" },
   inputSchema: {
     date: IsoDate().describe("Date in YYYY-MM-DD format"),
     method: PaymentMethodSchema

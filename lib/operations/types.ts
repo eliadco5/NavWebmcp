@@ -5,6 +5,7 @@ import { IDEMPOTENCY_KEY_FIELD, IdempotencyKeySchema, isIdempotentOp } from "@/l
 import {
   CONFIRMATION_TOKEN_FIELD, ConfirmationTokenSchema, DRY_RUN_FIELD, DryRunSchema, type ApprovedBy,
 } from "@/lib/confirmation/port";
+import { installList, type ListInfo, type ListSpec } from "./paging";
 
 export type { Role };
 export type Permission = "read" | "write";
@@ -146,6 +147,12 @@ export interface Operation<
     input: z.infer<z.ZodObject<TShape>>,
     ctx: OperationContext
   ) => Promise<Result<ActionPreview>>;
+  /** A list operation (2.7.0): `limit`, `cursor` and `fields` are published on
+   *  it and execute() pages the handler's full result. All optional for the
+   *  caller: without them the full list comes back, as before. */
+  list?: ListSpec;
+  /** Filled by defineOperation from `list`; read by execute(). */
+  listInfo?: ListInfo;
 }
 
 /** Writes that accept dryRun: every write that runs on the server (the same
@@ -169,6 +176,10 @@ export function defineOperation<
   }
   if (op.requiresConfirmation && !(CONFIRMATION_TOKEN_FIELD in op.inputSchema)) {
     (op.inputSchema as z.ZodRawShape)[CONFIRMATION_TOKEN_FIELD] = ConfirmationTokenSchema().optional();
+  }
+  // Optional pagination and field selection (2.7.0).
+  if (op.list && !op.listInfo) {
+    op.listInfo = installList(op.name, op.list, op.inputSchema, op.outputSchema);
   }
   return op;
 }

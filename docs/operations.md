@@ -1,6 +1,6 @@
 # Operations reference
 
-Every operation in the registry (73 at protocol 2.6.0: 8 navigation, 4 `ui_*` and 61 business operations), the module tree they live in, and how to call them from the browser console. How to discover and call them is in the [protocol guide](protocol.md); how to add one is in [development.md](development.md#adding-a-server-side-operation).
+Every operation in the registry (73 at protocol 2.7.0: 8 navigation, 4 `ui_*` and 61 business operations), the module tree they live in, and how to call them from the browser console. How to discover and call them is in the [protocol guide](protocol.md); how to add one is in [development.md](development.md#adding-a-server-side-operation).
 
 ## In-page WebMCP (browser console)
 
@@ -17,7 +17,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.6.0"
+document.modelContext.protocolVersion   // "2.7.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
@@ -54,6 +54,26 @@ ctrl.abort("user stopped")   // pending rejects with "user stopped"; toolcancel 
 If the caller cancels while a confirmation dialog is open, the operation is never sent to the server and returns `CANCELLED`.
 
 ## Operations catalogue
+
+### Paged list operations (≥ 2.7.0)
+
+These 17 take the optional `limit`, `cursor` and `fields` and answer `nextCursor` when
+there is another page ([protocol § 5](protocol.md#5-execute)). Without those fields they
+return the full list, as before.
+
+| Module | Paged operations |
+|---|---|
+| Reservation | `searchAvailability`, `listReservations`, `listAllReservations` |
+| CRM | `searchGuests`, `listCommunications` |
+| Front Office | `listFrontDeskReservations`, `listShiftNotes` |
+| Tasks | `searchTasks`, `getMyTasks` |
+| Housekeeping | `getTodaySchedule`, `listInspections` |
+| Finance | `listPayments` |
+| Support | `listBugReports` |
+| Admin | `getEntityHistory`, `listUserSessions`, `listAgentClients`, `getCreditLedgers` (50 rows by default) |
+
+`queryAudit` pages with its own `limit` and `beforeSeq`.
+
 
 **Always-on (12): always in `tools/list`.** Eight navigation and meta operations:
 

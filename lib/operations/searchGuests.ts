@@ -13,6 +13,7 @@ export const searchGuests = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "crm.guests",
+  list: { key: "guests", id: "guestId" },
   inputSchema: {
     query: ShortText().describe("Name or email search term"),
   },

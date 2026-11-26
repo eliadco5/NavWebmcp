@@ -12,6 +12,7 @@ export const listFrontDeskReservations = defineOperation({
   permission: "read",
   roles: ["support", "admin"],
   module: "frontoffice.checkin",
+  list: { key: "reservations", id: "reservationId" },
   inputSchema: {},
   outputSchema: {
     reservations: z.array(z.object({
@@ -21,6 +22,7 @@ export const listFrontDeskReservations = defineOperation({
       status: ReservationStatus,
       tableId: z.string().nullable(),
     })).describe("Today's reservations, plus undated front-desk ones"),
+    count: z.number().int().describe("How many, before paging"),
   },
   async handler(_input, _ctx) {
     // Front-desk-seeded reservations have no date (they're not tied to slot
@@ -38,6 +40,6 @@ export const listFrontDeskReservations = defineOperation({
         status: r.status,
         tableId: r.tableId ?? null,
       }));
-    return ok({ reservations });
+    return ok({ reservations, count: reservations.length });
   },
 });
