@@ -23,6 +23,24 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.3.0
+
+Compact text blocks on MCP: fewer tokens for the same result. Opt-in; the default is the
+indented JSON every client gets today.
+
+- **`format`: `"pretty"` (default) or `"compact"`.** Decides how the JSON in a tool
+  result's text block is written: `JSON.stringify(x, null, 2)` or `JSON.stringify(x)`.
+  Success data, errors, and the in-band credit refusals at the door all follow it.
+- **Chosen per connection** with the `X-NavWebMcp-Format` header or `?format=` on the MCP
+  URL (the header wins), so a user can set it once where the server is configured; a model
+  can't. **Per call**, `_meta["navwebmcp/format"]` overrides the connection, both ways.
+  Unknown values are ignored, never an error.
+- **Unchanged:** `structuredContent`, `_meta`, the `[credits]` and `[idempotency]` text
+  notes, credit charges (`bytesOf` already measures compact JSON), `/api/call` (already
+  compact) and the in-page WebMCP surface (returns objects, not text).
+- Why: indentation grows with nesting depth, so batch replies (2.2.0 `$ref` chains) paid
+  the most for it.
+
 ## 2.2.0
 
 Dependent batches: a multi-step flow in one round trip. Additive; a batch without `$ref`

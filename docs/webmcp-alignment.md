@@ -10,7 +10,7 @@ which was added on 2 Nov 2026 in
   native implementation
 - `lib/agentbridge.ts`, which registers our operations into whichever `modelContext` is
   present
-- NavWebMcp protocol **2.2.0** (`lib/protocol.ts`, `CHANGELOG.md`)
+- NavWebMcp protocol **2.3.0** (`lib/protocol.ts`, `CHANGELOG.md`)
 
 **The goal is alignment, not a clone.** Tools that AgentBridge registers must work on a
 native `modelContext` exactly as the spec describes. The polyfill is a development

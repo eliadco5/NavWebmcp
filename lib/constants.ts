@@ -17,6 +17,15 @@ export const AGENT_TOKEN_PREFIX = "ab1";
 export const CHANNEL_HEADER = "x-navwebmcp-channel";
 export const AGENT_HEADER = "x-navwebmcp-agent";
 
+// How MCP tool results are written in their text block (NavWebMcp >= 2.3.0):
+// "pretty" (2-space indented JSON, the default) or "compact" (no whitespace,
+// fewer tokens). Chosen per connection with this header or `?format=` on the
+// MCP URL, or per call with _meta["navwebmcp/format"]. structuredContent and
+// _meta are the same either way.
+export const FORMAT_HEADER = "x-navwebmcp-format";
+export const TEXT_FORMATS = ["pretty", "compact"] as const;
+export type TextFormat = (typeof TEXT_FORMATS)[number];
+
 // NavWebMcp credits over HTTP (docs/credits.md). `request` is the caller's
 // optional CreditRequest; the rest come back on every metered response.
 export const CREDIT_HEADERS = {

@@ -30,6 +30,10 @@
  * Usage:
  *   node scripts/bench.mjs [--flow=booking,checkin,journey,vip] [--lane=a,b,c,d] [--n=5]
  *                          [--headed] [--slowmo=250] [--demo] [--dev] [--verbose]
+ *                          [--format=pretty|compact]
+ *
+ *   --format: how the server writes MCP text blocks (NavWebMcp >= 2.3.0; sent as the
+ *   X-NavWebMcp-Format header on the MCP lanes). Default: the server's default (pretty).
  *
  * Requires a running server (npm run build && npm start, or --dev against `npm run dev`).
  */
@@ -57,6 +61,7 @@ const SLOWMO = parseInt(flag("slowmo", "0"), 10) || 0;
 const DEMO = Boolean(flag("demo", false));
 const DEV = Boolean(flag("dev", false));
 const VERBOSE = Boolean(flag("verbose", false));
+const FORMAT = flag("format", undefined);
 
 const BASE = process.env.BENCH_BASE ?? "http://localhost:3000";
 
@@ -165,7 +170,7 @@ async function connectMcpClient(bearerToken) {
   const transport = new StreamableHTTPClientTransport(
     new URL(`${BASE}/api/mcp`),
     {
-      requestInit: { headers: { Authorization: `Bearer ${bearerToken}` } },
+      requestInit: { headers: { Authorization: `Bearer ${bearerToken}`, ...(FORMAT && { "X-NavWebMcp-Format": String(FORMAT) }) } },
       fetch: countingFetch,
     }
   );
@@ -177,8 +182,8 @@ async function connectMcpClient(bearerToken) {
 }
 
 function mcpResultTokens(mcpResult) {
-  // MCP tool results carry { content: [{ type: "text", text: "<pretty-printed JSON>" }] }.
-  // The pretty-print whitespace is real wire cost the agent pays — measured as-is.
+  // MCP tool results carry { content: [{ type: "text", text: "<JSON>" }] }, indented
+  // unless --format=compact. The whitespace is real wire cost the agent pays — measured as-is.
   const text = mcpResult?.content?.map((c) => c.text ?? "").join("") ?? "";
   return Math.ceil(text.length / 4);
 }
@@ -908,7 +913,7 @@ async function writeBenchOutputs(allResults) {
   const fs = await import("fs");
   const path = await import("path");
   const outDir = path.resolve(process.cwd(), "docs");
-  const payload = { generatedAt: null, tokenModel: TOKEN_MODEL, buildMode: DEV ? "dev" : "prod", n: N, results: allResults };
+  const payload = { generatedAt: null, tokenModel: TOKEN_MODEL, buildMode: DEV ? "dev" : "prod", n: N, ...(FORMAT && { format: String(FORMAT) }), results: allResults };
   fs.writeFileSync(path.join(outDir, "bench-results.json"), JSON.stringify(payload, null, 2));
   fs.writeFileSync(path.join(outDir, "bench-data.js"), `window.BENCH = ${JSON.stringify(payload, null, 2)};\n`);
   console.log(`\nWrote docs/bench-results.json and docs/bench-data.js`);

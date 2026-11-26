@@ -1,6 +1,6 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
+import { formatFromRequest, formatText, registerMcpTools, withMcpAuthRole } from "@/lib/adapters/mcp";
 import { scopesForRole } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
 import { authenticateAgentToken, requestInfo } from "@/lib/management/auth";
@@ -94,11 +94,11 @@ async function gatedMcp(req: Request): Promise<Response> {
       const messages = await bodyMessages(req);
       if (messages.some((m) => m.method === "tools/call")) {
         const refused = await quickRefusal(key, "agent");
-        if (refused) return refusal(messages, refused.hint ?? "Out of credits; retry later.", refused.retryAfterMs);
+        if (refused) return refusal(messages, refused.hint ?? "Out of credits; retry later.", refused.retryAfterMs, formatFromRequest(req));
       }
       return lockedMcp(req);
     },
-    async (limit) => refusal(await bodyMessages(req), gateHint(limit), 1000)
+    async (limit) => refusal(await bodyMessages(req), gateHint(limit), 1000, formatFromRequest(req))
   );
 }
 
@@ -113,7 +113,7 @@ async function bodyMessages(req: Request): Promise<RpcMessage[]> {
   }
 }
 
-function refusal(messages: RpcMessage[], message: string, retryAfterMs?: number): Response {
+function refusal(messages: RpcMessage[], message: string, retryAfterMs?: number, format: "pretty" | "compact" = "pretty"): Response {
   const answer = (msg: RpcMessage) => {
     if (msg.id === undefined || msg.id === null) return null; // a notification: nothing to answer
     if (msg.method === "tools/call") {
@@ -121,7 +121,7 @@ function refusal(messages: RpcMessage[], message: string, retryAfterMs?: number)
         jsonrpc: "2.0",
         id: msg.id,
         result: {
-          content: [{ type: "text", text: JSON.stringify(fail("INSUFFICIENT_CREDITS", message).error, null, 2) }],
+          content: [{ type: "text", text: formatText(fail("INSUFFICIENT_CREDITS", message).error, format) }],
           isError: true,
           _meta: { "navwebmcp/credits": { ...(retryAfterMs !== undefined && { retryAfterMs }), hint: message } },
         },

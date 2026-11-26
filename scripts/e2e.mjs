@@ -28,8 +28,8 @@ async function login(username) {
   const cookie = (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
   return { token: body.agentToken, cookie };
 }
-async function mcp(token) {
-  const t = new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } });
+async function mcp(token, { query = "", headers = {} } = {}) {
+  const t = new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp${query}`), { requestInit: { headers: { Authorization: `Bearer ${token}`, ...headers } } });
   const c = new Client({ name: "e2e", version: "1.0.0" });
   await c.connect(t);
   return c;
@@ -164,6 +164,26 @@ const mr = miss.structuredContent?.results ?? [];
 check("an empty result → DEPENDENCY_FAILED, the write is not run", mr[1]?.error?.code === "DEPENDENCY_FAILED" && mr[1]?.error?.retryable === false, mr[1]);
 const single = await c.callTool({ name: "invoke", arguments: { name: "getWaitTime", args: { partySize: { $ref: "0.data.x" } } } });
 check("$ref in the single-call form → INVALID_INPUT", single.isError && text(single).code === "INVALID_INPUT", text(single));
+
+console.log("compact text format (2.3.0)");
+const fmtArgs = { name: "invoke", arguments: { name: "searchAvailability", args: { date, partySize: 2 } } };
+const prettyR = await c.callTool(fmtArgs);
+check("default connection: text block is indented JSON of structuredContent", prettyR.content[0].text === JSON.stringify(prettyR.structuredContent, null, 2));
+const perCall = await c.callTool({ ...fmtArgs, _meta: { "navwebmcp/format": "compact" } });
+check("per call: _meta navwebmcp/format compact → compact text", perCall.content[0].text === JSON.stringify(perCall.structuredContent));
+const cq = await mcp(alice.token, { query: "?format=compact" });
+const qR = await cq.callTool(fmtArgs);
+check("?format=compact on the URL → compact text, same structuredContent", qR.content[0].text === JSON.stringify(qR.structuredContent) && JSON.stringify(qR.structuredContent.slots.map((x) => x.id)) === JSON.stringify(prettyR.structuredContent.slots.map((x) => x.id)));
+check("compact text is shorter", qR.content[0].text.length < prettyR.content[0].text.length, { compact: qR.content[0].text.length, pretty: prettyR.content[0].text.length });
+const qErr = await cq.callTool({ name: "invoke", arguments: { name: "nope", args: {} } });
+check("compact connection: errors compact too", qErr.isError && !/\n/.test(qErr.content[0].text) && text(qErr).code === "UNKNOWN_TOOL", qErr.content[0].text);
+const qBack = await cq.callTool({ ...fmtArgs, _meta: { "navwebmcp/format": "pretty" } });
+check("per call: pretty overrides a compact connection", qBack.content[0].text === JSON.stringify(qBack.structuredContent, null, 2));
+await cq.close();
+const ch = await mcp(alice.token, { query: "?format=compact", headers: { "X-NavWebMcp-Format": "pretty" } });
+const hR = await ch.callTool(fmtArgs);
+check("the header wins over the URL", hR.content[0].text === JSON.stringify(hR.structuredContent, null, 2));
+await ch.close();
 await c.close();
 
 console.log("/api/call (UI + in-page surface)");
