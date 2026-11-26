@@ -125,4 +125,29 @@ describe.skipIf(!URL)('against a real Redis', () => {
     expect(second).toMatchObject({ success: true, idempotency: { replayed: true } })
     expect(second.data.task.taskId).toBe(first.data.task.taskId)
   })
+
+  it('confirmation: a token is accepted once across instances, even when two race', async () => {
+    await import('@/lib/operations/index')
+    await import('@/lib/confirmation')
+    const { execute } = await import('@/lib/operations/execute')
+    const { tasksStore } = await import('@/lib/seed/tasks')
+    const ctx = { userId: 'u_bob', role: 'admin' as const, token: '' }
+    const created = await execute('createTask', { title: `Live conf ${NS}`, department: 'Housekeeping', priority: 'low' }, ctx) as any
+    const taskId = created.data.task.taskId
+    const ask = await execute('deleteTask', { taskId }, ctx) as any
+    expect(ask.error.code).toBe('CONFIRMATION_REQUIRED')
+    const token = ask.error.confirmation.token
+    // Twenty "instances" with no in-process record of used tokens.
+    const { serverConfirmationPort: port } = await import('@/lib/confirmation')
+    const nonce = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).n
+    const results = await Promise.all(Array.from({ length: 20 }, async () => {
+      globalThis.__confirmationUsed = undefined
+      return port.consumeOnce(nonce, 60_000)
+    }))
+    expect(results.filter(Boolean)).toHaveLength(1)
+    // ...so the real call now finds it used.
+    const run = await execute('deleteTask', { taskId, confirmationToken: token }, ctx) as any
+    expect(run.error.code).toBe('CONFIRMATION_STALE')
+    expect(tasksStore().has(taskId)).toBe(true)
+  })
 })

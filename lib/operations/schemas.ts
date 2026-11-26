@@ -20,6 +20,10 @@ export const Id = () => z.string().min(1).max(64);
 export const ShortText = (max = 200) => z.string().max(max);
 export const LongText = () => z.string().max(2000);
 export const Money = () => z.number().positive().max(100_000);
+/** The `confirm` field of a requiresConfirmation op (optional since 2.6.0:
+ *  without it the call answers CONFIRMATION_REQUIRED with a preview and token). */
+export const Confirm = () =>
+  z.boolean().optional().describe("Omit first: you get a preview and confirmationToken to show the user");
 export const Points = () => z.number().int().positive().max(100_000);
 
 // ── Output entity schemas ─────────────────────────────────────────────────────

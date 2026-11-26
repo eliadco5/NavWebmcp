@@ -9,7 +9,13 @@ import { credits as creditsPort, type CallOutcome } from "@/lib/credits/port";
 import { bytesOf } from "@/lib/credits/policy";
 import type { CreditInfo } from "@/lib/result";
 import { registry } from "./registry";
-import type { Actor, CallMeta, Channel, OperationContext } from "./types";
+import { acceptsDryRun, type Actor, type CallMeta, type Channel, type Operation, type OperationContext } from "./types";
+import type { ActionPreview, ConfirmationInfo } from "@/lib/result";
+import {
+  CONFIRMATION_TOKEN_FIELD, DRY_RUN_FIELD, checkConfirmationToken, confirmationTokenRequired, mintConfirmationToken,
+  redeemConfirmationToken,
+  type ApprovedBy, type ConfirmationBinding,
+} from "@/lib/confirmation/port";
 import {
   IDEMPOTENCY_KEY_FIELD, canonicalArgs, idempotencyPendingTtlMs, idempotencyStore, idempotencyTtlMs,
   isIdempotentOp, scopeKey, sha256Hex, type IdempotencyRecord,
@@ -104,7 +110,7 @@ function normaliseFailure(result: Result<unknown>, meta: CallMeta): Result<unkno
 
 /** Where a call stopped. Lets a surface map gate failures to its own status
  *  codes (HTTP 404/403/429) without confusing them with a handler's own errors. */
-export type ExecuteStage = "credits" | "fanout" | "lookup" | "rbac" | "input" | "idempotency" | "handler";
+export type ExecuteStage = "credits" | "fanout" | "lookup" | "rbac" | "input" | "idempotency" | "confirmation" | "handler";
 
 /** Fan-out limits for one request (invoke batches, composites, invoke inside invoke). */
 export const FANOUT = {
@@ -169,6 +175,8 @@ export async function executeDetailed(
     idempotencyKey: undefined,
     idempotencyReplayed: undefined,
     childKeySeq: new Map(),
+    approvedBy: undefined,
+    dryRun: undefined,
   };
   const callCtx: OperationContext = { ...ctx, actor, meta };
 
@@ -259,6 +267,27 @@ export async function executeDetailed(
     }
     let data = parsed.data as Record<string, unknown>;
 
+    // 2.6.0 control fields: they steer execute() and never reach the handler.
+    const dryRun = acceptsDryRun(op) && data[DRY_RUN_FIELD] === true;
+    const presentedToken = op.requiresConfirmation ? data[CONFIRMATION_TOKEN_FIELD] : undefined;
+    if (DRY_RUN_FIELD in data || CONFIRMATION_TOKEN_FIELD in data) {
+      data = { ...data };
+      delete data[DRY_RUN_FIELD];
+      delete data[CONFIRMATION_TOKEN_FIELD];
+    }
+
+    // dryRun: the gates above ran, credits were admitted at read cost; now the
+    // preview, never the handler, and no idempotency claim.
+    if (dryRun) {
+      meta.dryRun = true;
+      const args = { ...data };
+      delete args[IDEMPOTENCY_KEY_FIELD];
+      const preview = await withDeadline(previewOf(op, args, callCtx), deadlineMs);
+      if (!preview.success) return finish("handler", preview);
+      const confirmation = op.requiresConfirmation ? await mintFor(op.name, args, actor) : undefined;
+      return finish("handler", { success: true, data: { dryRun: true, preview: preview.data, ...(confirmation && { confirmation }) } });
+    }
+
     // Idempotency (2.1.0): a keyed write runs at most once per (user, op, key).
     if (isIdempotentOp(op)) {
       const own = data[IDEMPOTENCY_KEY_FIELD];
@@ -276,6 +305,22 @@ export async function executeDetailed(
         if (!claim.claimed) return finish("idempotency", answerFromRecord(claim.record, argsHash, name, key, meta));
         idem = { scope, token: claim.token };
       }
+    }
+
+    // Confirmation (2.6.0). After the idempotency claim, so a keyed retry of a
+    // call that already ran replays without asking again (nothing runs twice).
+    if (op.requiresConfirmation) {
+      const gate = await confirmationGate(op, data, presentedToken, actor, meta, callCtx, deadlineMs);
+      if (!gate.approved) {
+        if (idem) {
+          await settleIdempotency(idem, null);
+          idem = undefined;
+        }
+        return finish("confirmation", gate.result);
+      }
+      meta.approvedBy = gate.approvedBy;
+      // The handler's own `confirm` check stays as a second guard; satisfy it.
+      if ("confirm" in op.inputSchema) data = { ...data, confirm: true };
     }
 
     const run = op.handler(data, callCtx) as Promise<Result<unknown>>;
@@ -365,4 +410,97 @@ async function settleIdempotency(claim: { scope: string; token: string }, result
   } catch (err) {
     console.warn("[idempotency] could not settle a claim:", err);
   }
+}
+
+// ── Confirmation and previews (NavWebMcp 2.6.0) ──────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyOp = Operation<any, any>;
+
+/** The arguments a token is bound to: everything but `confirm` itself (and the
+ *  control fields, already stripped), so confirm: true vs a token is the same call. */
+async function bindingFor(operation: string, args: Record<string, unknown>, actor: Actor): Promise<ConfirmationBinding> {
+  const bound = { ...args };
+  delete bound.confirm;
+  delete bound[IDEMPOTENCY_KEY_FIELD];
+  return {
+    userId: actor.userId,
+    clientId: actor.agent?.clientId ?? "",
+    operation,
+    argsHash: await sha256Hex(canonicalArgs(bound)),
+  };
+}
+
+async function mintFor(operation: string, args: Record<string, unknown>, actor: Actor) {
+  return mintConfirmationToken(await bindingFor(operation, args, actor));
+}
+
+/** The op's own preview, or a generic one naming the arguments. */
+async function previewOf(op: AnyOp, args: Record<string, unknown>, ctx: OperationContext): Promise<Result<ActionPreview>> {
+  if (op.preview) return op.preview(args, ctx);
+  const shown = { ...args };
+  delete shown.confirm;
+  const list = Object.entries(shown).map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
+  return { success: true, data: { summary: `${op.title}${list ? ` (${list})` : ""}.`, data: { operation: op.name, arguments: shown } } };
+}
+
+type Gate =
+  | { approved: true; approvedBy: ApprovedBy }
+  | { approved: false; result: Result<unknown> };
+
+/**
+ * Decide whether a destructive call may run, in this order:
+ *   1. a token the user approved through MCP elicitation (meta.elicitedTokens)
+ *   2. a confirmationToken passed with the call: valid → run; anything else →
+ *      CONFIRMATION_STALE with a fresh preview and token
+ *   3. confirm: true: a person in the UI always; anyone else unless
+ *      REQUIRE_CONFIRMATION_TOKEN=true
+ *   4. otherwise CONFIRMATION_REQUIRED with the preview and a token
+ * If the preview itself fails (NOT_FOUND, say), that failure is the answer.
+ */
+async function confirmationGate(
+  op: AnyOp,
+  data: Record<string, unknown>,
+  presentedToken: unknown,
+  actor: Actor,
+  meta: CallMeta,
+  ctx: OperationContext,
+  deadlineMs: number
+): Promise<Gate> {
+  const binding = await bindingFor(op.name, data, actor);
+
+  const elicited = meta.elicitation;
+  for (const t of elicited?.tokens ?? []) {
+    if (elicited!.approved) {
+      if ((await redeemConfirmationToken(t, binding)) === "ok") return { approved: true, approvedBy: "user-elicitation" };
+    } else if ((await checkConfirmationToken(t, binding)) === "ok") {
+      return { approved: false, result: fail("CONFIRMATION_DENIED", `The user declined: nothing was done (${op.name}).`) };
+    }
+  }
+
+  const ask = async (code: "CONFIRMATION_REQUIRED" | "CONFIRMATION_STALE", why: string): Promise<Gate> => {
+    const preview = await withDeadline(previewOf(op, data, ctx), deadlineMs);
+    if (!preview.success) return { approved: false, result: preview };
+    const confirmation: ConfirmationInfo = { preview: preview.data, ...(await mintConfirmationToken(binding)) };
+    return { approved: false, result: fail(code, `${why} ${preview.data.summary}`, { confirmation }) };
+  };
+
+  if (typeof presentedToken === "string") {
+    const check = await redeemConfirmationToken(presentedToken, binding);
+    if (check === "ok") return { approved: true, approvedBy: "confirmation-token" };
+    const why = {
+      mismatch: "The arguments changed since this token was issued.",
+      expired: "This confirmationToken has expired.",
+      used: "This confirmationToken was already used.",
+      invalid: "This confirmationToken is not valid for this call.",
+    }[check];
+    return ask("CONFIRMATION_STALE", `${why} Nothing was done. Needs approval again:`);
+  }
+
+  if (data.confirm === true) {
+    if (actor.type === "human") return { approved: true, approvedBy: "human" };
+    if (!confirmationTokenRequired()) return { approved: true, approvedBy: "asserted" };
+    return ask("CONFIRMATION_REQUIRED", "This server requires a confirmationToken; confirm: true alone is not accepted. Needs approval:");
+  }
+  return ask("CONFIRMATION_REQUIRED", "Nothing was done yet. Needs the user's approval:");
 }

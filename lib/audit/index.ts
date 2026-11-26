@@ -123,6 +123,8 @@ export function auditOperation(a: OperationAudit): Promise<AuditEvent | null> {
     reportedBy: a.reportedBy,
     ...(a.meta.idempotencyKey !== undefined && { idempotencyKey: a.meta.idempotencyKey }),
     ...(a.meta.idempotencyReplayed && { replayed: true as const }),
+    ...(a.meta.approvedBy && { approvedBy: a.meta.approvedBy }),
+    ...(a.meta.dryRun && { dryRun: true as const }),
   });
 }
 

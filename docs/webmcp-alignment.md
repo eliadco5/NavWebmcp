@@ -10,7 +10,7 @@ which was added on 2 Nov 2026 in
   native implementation
 - `lib/agentbridge.ts`, which registers our operations into whichever `modelContext` is
   present
-- NavWebMcp protocol **2.5.0** (`lib/protocol.ts`, `CHANGELOG.md`)
+- NavWebMcp protocol **2.6.0** (`lib/protocol.ts`, `CHANGELOG.md`)
 
 **The goal is alignment, not a clone.** Tools that AgentBridge registers must work on a
 native `modelContext` exactly as the spec describes. The polyfill is a development
@@ -75,7 +75,7 @@ data schema inside `data`.
 | `modelContext.protocolVersion` | `lib/agentbridge.ts` | Lets an agent detect which NavWebMcp version it's talking to |
 | `navigator.modelContext` lookup | `getModelContext()` | Earlier drafts attached `modelContext` to `navigator`. We check there first so we never shadow a native implementation |
 | `Result` envelope `{success, data \| error}` | Every operation | Gives one error vocabulary across WebMCP, MCP and `invoke` |
-| Confirmation flow (`requiresConfirmation`, `confirm: true`) | AgentBridge, ops | A human-in-the-loop step for destructive actions. The spec offers `consequentialHint`, which we also set |
+| Confirmation flow (`requiresConfirmation`, preview + `confirmationToken`, ≥ 2.6.0) | AgentBridge, ops | A human-in-the-loop step for destructive actions: the dialog shows the server's preview, and an approval re-sends the call with its one-use token. The spec offers `consequentialHint`, which we also set |
 | Progressive disclosure (`explore`, `search`, `describe_tool`, `invoke`, `load_tools`) | Meta ops | Keeps the tool list small. `describe_tool` returns `inputSchema` and `outputSchema` |
 | Role-based visibility | AgentBridge, MCP adapter | Each user's role decides which tools are registered |
 | Agent-operable UI components (`ui_list`, `ui_get_state`, `ui_set_state`, `ui_action`) | `lib/ui-components/`, `lib/ui-relay/`, `docs/ui-components.md` | Lets agents change what the user sees (filters, sort, tabs) through typed component state instead of the DOM. In the page, the four tools run against the live component registry (`runsInPage`) and never call `/api/call`. MCP clients reach the user's open tab through a server relay (1.3.0) |

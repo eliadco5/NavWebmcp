@@ -3,7 +3,7 @@ import { z } from "zod";
 import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { store } from "@/lib/store";
-import { Id, BillItemSchema } from "./schemas";
+import { Id, BillItemSchema, Confirm } from "./schemas";
 
 const MOCK_MENU_ITEMS = [
   { name: "Grilled Salmon", price: 28.5 },
@@ -29,15 +29,14 @@ export const checkOutGuest = defineOperation({
   title: "Check Out Guest",
   description:
     "Close a table: generate bill summary and mark table as available. " +
-    "This is a destructive action — confirmation is required. " +
-    "When calling via MCP, you MUST pass confirm: true to acknowledge the checkout.",
+    "Destructive: call without confirm first to get a preview and a confirmationToken.",
   permission: "write",
   requiresConfirmation: true,
   roles: ["support", "admin"],
   module: "frontoffice.checkout",
   inputSchema: {
     reservationId: Id().describe("Reservation ID to check out"),
-    confirm: z.boolean().describe("Must be true to confirm checkout. Pass confirm: true to proceed."),
+    confirm: Confirm(),
   },
   outputSchema: {
     reservationId: z.string(),
@@ -47,6 +46,16 @@ export const checkOutGuest = defineOperation({
     tax: z.number(),
     total: z.number(),
     generatedAt: z.string(),
+  },
+  async preview({ reservationId }) {
+    const r = store.getReservationById(reservationId);
+    if (!r) return fail("NOT_FOUND", `Reservation ${reservationId} not found`);
+    if (r.status !== "checked-in") return fail("INVALID_STATE", `Reservation must be checked-in to check out; current status: ${r.status}`);
+    if (!r.tableId) return fail("INVALID_STATE", "Reservation has no assigned table");
+    return ok({
+      summary: `Check out ${r.name} (reservation ${r.id}, party of ${r.partySize}): generate the bill and free table ${r.tableId}.`,
+      data: { reservationId: r.id, tableId: r.tableId, partySize: r.partySize },
+    });
   },
   async handler({ reservationId, confirm }, ctx) {
     if (!confirm) {

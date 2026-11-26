@@ -60,20 +60,21 @@ stays MINOR too. Making enforcement the default would be 3.0.0 (see open questio
 
 ## Overview
 
-In the order they ship. Day numbers are the original plan's; 2.3.0 went to an unplanned
-feature, and Day 6 moved ahead of Day 3 so confirmation can use MCP elicitation.
+In the order they ship. Day numbers are the original plan's; 2.3.0 and 2.5.0 went to
+unplanned features, and Day 6 moved ahead of Day 3 so confirmation can use MCP elicitation.
 
 | Day | Version | Status | Theme | Main agent win |
 |---|---|---|---|---|
 | 1 | 2.1.0 | Shipped (PR #24) | Idempotency keys | Safe retries of writes |
 | 2 | 2.2.0 | Shipped (PR #26) | Dependent batches | Multi-step flows in one round trip |
 | — | 2.3.0 | Shipped (PR #27) | Compact JSON in MCP text blocks (not in the plan) | Fewer tokens per result |
-| 6 | 2.4.0 | This PR | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks elicitation and Day 7 |
-| 3 | 2.5.0 | Next | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
-| 4 | 2.6.0 | | Pagination, filters, field selection | Lists stop eating the context window |
-| 5 | 2.7.0 | | Discovery quality | Find the right operation, and call it right, first time |
-| 7 | 2.8.0 | | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
-| 8 | 2.9.0 | | Least-privilege agent tokens | Safe to hand an agent a token |
+| 6 | 2.4.0 | Shipped (PR #28) | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks elicitation and Day 7 |
+| — | 2.5.0 | Shipped (PR #29) | Slim always-on tools (not in the plan) | Connect cost ~6,600 → ~2,000 tokens |
+| 3 | 2.6.0 | This PR | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
+| 4 | 2.7.0 | Next | Pagination, filters, field selection | Lists stop eating the context window |
+| 5 | 2.8.0 | | Discovery quality | Find the right operation, and call it right, first time |
+| 7 | 2.9.0 | | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
+| 8 | 2.10.0 | | Least-privilege agent tokens | Safe to hand an agent a token |
 | 9–10 | — | | Spec, conformance kit, package | NavWebMcp usable outside this repo |
 | Later | — | | Code mode, second implementation, real-LLM benchmark | Proof the protocol carries the claim |
 
@@ -137,7 +138,7 @@ mixed read and write ordering, plus a fan-out limit check.
 dependent batch, against today's 3 calls. Expected: one round trip, with token savings
 close to the `book` composite.
 
-## Day 3: Confirmation previews, tokens and dry-run (2.5.0)
+## Day 3: Confirmation previews, tokens and dry-run (2.6.0)
 
 **Problem:** the confirmation gate only proves the agent read the schema; the agent can
 send `confirm: true` on its own. There's also no way to check a write before asking the
@@ -176,7 +177,7 @@ snapshot before and after); audit records how each approval was given.
 **Measure:** e2e checks for each of the 6 destructive operations, and a stress scenario in
 which tokens are forged or replayed.
 
-## Day 4: Pagination, filters and field selection (2.6.0)
+## Day 4: Pagination, filters and field selection (2.7.0)
 
 **Problem:** `listAllReservations`, `listPayments`, `searchTasks` and the others return
 everything. Response size costs credits and context. Only one admin operation has a
@@ -200,7 +201,7 @@ a paged case per operation.
 **Measure:** response tokens for the list operations at the current seed size and at
 10× seed size.
 
-## Day 5: Discovery quality (2.7.0)
+## Day 5: Discovery quality (2.8.0)
 
 **Problem:** `search` only matches path globs, but agents think in intents ("refund a
 guest"). Agents also get arguments wrong on the first try, which costs a turn.
@@ -269,7 +270,7 @@ paths; a promoted tool shows up on a later request without any session state.
 **Measure:** `bench.mjs` and `credits-stress.mjs` before and after, to show no cost or
 latency regression from the migration.
 
-## Day 7: Events, skills over MCP and output safety (2.8.0)
+## Day 7: Events, skills over MCP and output safety (2.9.0)
 
 Builds on Day 6. Both extensions are opt-in: a server advertises them in
 `server/discover`, a client declares them per request, and nothing changes for a client
@@ -319,7 +320,7 @@ Use the MCP Inspector (it has partial Skills support) as a second, independent c
 against one that polls `listAllReservations`: calls, tokens and credits per detected
 change.
 
-## Day 8: Least-privilege agent tokens (2.9.0)
+## Day 8: Least-privilege agent tokens (2.10.0)
 
 **Problem:** an agent token carries the user's whole role for 8 hours.
 
@@ -371,8 +372,8 @@ fails; `getCapabilities` is filtered by scope.
 
 ## Open questions for you
 
-1. **Confirmation enforcement:** keep requiring tokens opt-in (2.x), or plan 3.0.0 with
-   tokens required by default?
+1. **Confirmation enforcement:** answered. Opt-in in 2.x (`REQUIRE_CONFIRMATION_TOKEN`),
+   shipped in 2.6.0.
 2. **`$ref` syntax:** plain paths only, or the small filter subset
    (`[?available==true]`)?
 3. **Ranked search:** BM25 only, or also embeddings (needs a model call or a bundled

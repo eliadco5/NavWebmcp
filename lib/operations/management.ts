@@ -10,7 +10,7 @@ import { defineOperation } from "./types";
 import { ok, fail } from "@/lib/result";
 import { management } from "@/lib/management/port";
 import { AuditQueryShape, UsageQueryShape } from "@/lib/management/queries";
-import { Id } from "./schemas";
+import { Id, Confirm } from "./schemas";
 import type { OperationContext } from "./types";
 
 function svc() {
@@ -337,10 +337,13 @@ export const revokeAgentClient = defineOperation({
   requiresConfirmation: true,
   inputSchema: {
     clientId: z.string().min(1).max(100).describe("Agent client id (from listAgentClients)"),
-    confirm: z.boolean().describe("Must be true"),
+    confirm: Confirm(),
   },
   outputSchema: { clientId: z.string(), revoked: z.boolean().describe("false if it was already revoked") },
   audit: { target: (input) => ({ type: "agentClient", id: String(input.clientId) }) },
+  async preview({ clientId }) {
+    return ok({ summary: `Revoke agent client ${clientId}: its token is rejected from its next call.`, data: { clientId } });
+  },
   async handler({ clientId, confirm }, ctx) {
     if (!confirm) return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to revoke this agent client.");
     const s = svc();
@@ -363,10 +366,13 @@ export const revokeSession = defineOperation({
   requiresConfirmation: true,
   inputSchema: {
     sessionId: Id().describe("Session id (from listUserSessions)"),
-    confirm: z.boolean().describe("Must be true"),
+    confirm: Confirm(),
   },
   outputSchema: { sessionId: z.string(), revoked: z.boolean().describe("false if it was already revoked") },
   audit: { target: (input) => ({ type: "session", id: String(input.sessionId) }) },
+  async preview({ sessionId }) {
+    return ok({ summary: `Revoke sign-in session ${sessionId}, and the agent tokens it authorised.`, data: { sessionId } });
+  },
   async handler({ sessionId, confirm }, ctx) {
     if (!confirm) return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to revoke this session.");
     const s = svc();
@@ -443,7 +449,7 @@ export const setClientCreditPolicy = defineOperation({
     refillPerSec: z.number().min(0).max(1000).optional().describe("Credits that trickle back per second"),
     frozen: z.boolean().optional().describe("true refuses every call; false lifts that"),
     reset: z.boolean().optional().describe("Drop the override: back to the defaults"),
-    confirm: z.boolean().describe("Must be true"),
+    confirm: Confirm(),
   },
   outputSchema: {
     principal: z.string(),
@@ -456,6 +462,16 @@ export const setClientCreditPolicy = defineOperation({
     }).nullable().describe("The override now in force; null after a reset"),
   },
   audit: { target: (input) => ({ type: input.kind === "agent" ? "agentClient" : "user", id: String(input.id) }) },
+  async preview({ kind, id, maxWindow, refillPerSec, frozen, reset }) {
+    const changes = reset
+      ? "reset to the defaults"
+      : [
+          maxWindow !== undefined && `maxWindow ${maxWindow}`,
+          refillPerSec !== undefined && `refillPerSec ${refillPerSec}`,
+          frozen !== undefined && (frozen ? "frozen (every call refused)" : "unfrozen"),
+        ].filter(Boolean).join(", ") || "no change";
+    return ok({ summary: `Change the credit policy of ${kind} ${id}: ${changes}.`, data: { kind, id, maxWindow, refillPerSec, frozen, reset } });
+  },
   async handler({ kind, id, maxWindow, refillPerSec, frozen, reset, confirm }, ctx) {
     if (!confirm) return fail("CONFIRMATION_REQUIRED", "Pass confirm: true to change this caller's credit policy.");
     if (!reset && maxWindow === undefined && refillPerSec === undefined && frozen === undefined) {

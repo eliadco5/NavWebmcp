@@ -649,6 +649,65 @@ async function main() {
     check("server still answers", await alive());
   }
 
+  if (should("S16")) {
+    scenario("S16", "Confirmation tokens forged and replayed (2.6.0): one token approves one call, once");
+    const b = await newAgent(bob.cookie, "s16");
+    const bases = BASE2 ? [BASE, BASE2] : [BASE];
+    const runId = Date.now().toString(36);
+    /** Retries only what credits refuse; everything else is the answer. */
+    const send = async (name, argsIn, base) => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const r = await mcp(b.token, "invoke", { name, args: argsIn }, { base });
+        if (r.code !== "INSUFFICIENT_CREDITS") return r;
+        await sleep(Math.min(3000, r.credits?.retryAfterMs ?? 500));
+      }
+      return { ok: false, code: "GAVE_UP" };
+    };
+    const errOf = (r) => { try { return JSON.parse(r.result.content[0].text); } catch { return {}; } };
+
+    // One token, 30 concurrent redemptions over every instance. revokeAgentClient's
+    // preview never fails, so every loser must be told the token is used.
+    const victim = await newAgent(bob.cookie, `s16-victim-${runId}`);
+    const ask = await send("revokeAgentClient", { clientId: victim.clientId });
+    const token = errOf(ask).confirmation?.token;
+    check("no confirm → CONFIRMATION_REQUIRED with a token", ask.code === "CONFIRMATION_REQUIRED" && Boolean(token), ask.code);
+    const storm = await Promise.all(Array.from({ length: 30 }, (_, i) => send("revokeAgentClient", { clientId: victim.clientId, confirmationToken: token }, bases[i % bases.length])));
+    const by = {};
+    for (const r of storm) { const k = r.ok ? "ran" : r.code ?? `HTTP_${r.status}`; by[k] = (by[k] ?? 0) + 1; }
+    metric("30 concurrent redemptions of one token", by);
+    check("exactly one redemption ran", (by.ran ?? 0) === 1, JSON.stringify(by));
+    check("every other one is CONFIRMATION_STALE", (by.CONFIRMATION_STALE ?? 0) === 29, JSON.stringify(by));
+
+    // Forged tokens: another task's id spliced into the body, the MAC kept, or garbage.
+    const task = await send("createTask", { title: `S16 ${runId}`, department: "Housekeeping", priority: "low" });
+    const taskId = task.result?.structuredContent?.task?.taskId;
+    const realAsk = await send("deleteTask", { taskId });
+    const real = errOf(realAsk).confirmation?.token ?? "c1.e30.x";
+    const [v, body, mac] = real.split(".");
+    const decoded = JSON.parse(Buffer.from(body, "base64url").toString());
+    const swapped = Buffer.from(JSON.stringify({ ...decoded, h: "0".repeat(64) })).toString("base64url");
+    const forgeries = [
+      `${v}.${swapped}.${mac}`,
+      `${v}.${body}.${mac.slice(0, -3)}AAA`,
+      `${v}.${Buffer.from(JSON.stringify({ ...decoded, u: "u_alice" })).toString("base64url")}.${mac}`,
+      "c1.e30.AAAA", "not-a-token", `${real}x`,
+    ];
+    const forged = await Promise.all(Array.from({ length: 30 }, (_, i) => send("deleteTask", { taskId, confirmationToken: forgeries[i % forgeries.length] }, bases[i % bases.length])));
+    const fby = {};
+    for (const r of forged) { const k = r.ok ? "ran" : r.code ?? `HTTP_${r.status}`; fby[k] = (fby[k] ?? 0) + 1; }
+    metric("30 forged tokens", fby);
+    check("no forged token runs anything", (fby.ran ?? 0) === 0 && (fby.CONFIRMATION_STALE ?? 0) === 30, JSON.stringify(fby));
+
+    // dryRun under load: previews only.
+    const dry = await Promise.all(Array.from({ length: 20 }, (_, i) => send("deleteTask", { taskId, dryRun: true }, bases[i % bases.length])));
+    check("20 concurrent dryRuns all preview", dry.every((r) => r.ok && r.result?.structuredContent?.dryRun === true), dry.map((r) => r.code ?? "ok").join(","));
+    const still = await send("deleteTask", { taskId });
+    check("the task is still there after the forgeries and dry runs", still.code === "CONFIRMATION_REQUIRED", still.code);
+    const done = await send("deleteTask", { taskId, confirmationToken: errOf(still).confirmation?.token });
+    check("the genuine token deletes it", done.ok && done.result?.structuredContent?.deleted === true, done.code);
+    check("server still answers", await alive());
+  }
+
   // ── Summary ──
   const all = results.scenarios.flatMap((s) => s.checks.map((c) => ({ ...c, scenario: s.id })));
   const failed = all.filter((c) => !c.ok);

@@ -1,7 +1,10 @@
 import { z } from "zod";
-import type { Result } from "@/lib/result";
+import type { ActionPreview, Result } from "@/lib/result";
 import type { Role } from "@/lib/auth";
 import { IDEMPOTENCY_KEY_FIELD, IdempotencyKeySchema, isIdempotentOp } from "@/lib/idempotency/port";
+import {
+  CONFIRMATION_TOKEN_FIELD, ConfirmationTokenSchema, DRY_RUN_FIELD, DryRunSchema, type ApprovedBy,
+} from "@/lib/confirmation/port";
 
 export type { Role };
 export type Permission = "read" | "write";
@@ -66,6 +69,15 @@ export interface CallMeta {
   /** Per call: how many nested writes of each op it has started, so derived
    *  child keys are stable across retries. Set by execute(). */
   childKeySeq?: Map<string, number>;
+  /** How this destructive call was approved (2.6.0). Set by execute(); per call. */
+  approvedBy?: ApprovedBy;
+  /** This call ran as a dryRun: preview only, nothing written. Per call. */
+  dryRun?: boolean;
+  /** The user's answer to an MCP elicitation for this request, and the
+   *  confirmation tokens it was about. Set by the MCP adapter; inherited by
+   *  nested calls, and each token still only matches the one call it was
+   *  minted for. */
+  elicitation?: { approved: boolean; tokens: readonly string[] };
 }
 
 export interface OperationContext {
@@ -126,7 +138,19 @@ export interface Operation<
     input: z.infer<z.ZodObject<TShape>>,
     ctx: OperationContext
   ) => Promise<Result<z.infer<z.ZodObject<TOutShape>>>>;
+  /** What the write would do, without doing it (2.6.0): shown on
+   *  CONFIRMATION_REQUIRED and returned by dryRun. A failure (NOT_FOUND, say)
+   *  is returned as is, so nobody is asked to approve an impossible action.
+   *  Optional: without one, a generic preview lists the arguments. */
+  preview?: (
+    input: z.infer<z.ZodObject<TShape>>,
+    ctx: OperationContext
+  ) => Promise<Result<ActionPreview>>;
 }
+
+/** Writes that accept dryRun: every write that runs on the server (the same
+ *  set that accepts idempotencyKey). */
+export const acceptsDryRun = isIdempotentOp;
 
 export function defineOperation<
   TShape extends z.ZodRawShape,
@@ -138,6 +162,13 @@ export function defineOperation<
   // check accepts it. execute() strips it before the handler runs.
   if (isIdempotentOp(op) && !(IDEMPOTENCY_KEY_FIELD in op.inputSchema)) {
     (op.inputSchema as z.ZodRawShape)[IDEMPOTENCY_KEY_FIELD] = IdempotencyKeySchema().optional();
+  }
+  // Previews and confirmation tokens (2.6.0), injected the same way.
+  if (acceptsDryRun(op) && !(DRY_RUN_FIELD in op.inputSchema)) {
+    (op.inputSchema as z.ZodRawShape)[DRY_RUN_FIELD] = DryRunSchema().optional();
+  }
+  if (op.requiresConfirmation && !(CONFIRMATION_TOKEN_FIELD in op.inputSchema)) {
+    (op.inputSchema as z.ZodRawShape)[CONFIRMATION_TOKEN_FIELD] = ConfirmationTokenSchema().optional();
   }
   return op;
 }

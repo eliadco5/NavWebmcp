@@ -133,14 +133,18 @@ export function chargeFor(
   let weight = weightOf(op);
   let estimatedOps = 0;
   if (op?.dispatchesOps) {
-    const single = typeof args.name === "string" ? [args.name] : [];
+    const single = typeof args.name === "string" ? [{ name: args.name, args: args.args }] : [];
     const batch = Array.isArray(args.calls)
-      ? (args.calls as unknown[]).map((c) => (c && typeof c === "object" ? (c as { name?: unknown }).name : undefined))
+      ? (args.calls as unknown[]).map((c) => (c && typeof c === "object" ? (c as { name?: unknown; args?: unknown }) : {}))
       : [];
-    const names = [...single, ...batch].filter((n): n is string => typeof n === "string");
+    const calls = [...single, ...batch].filter((c): c is { name: string; args?: unknown } => typeof c.name === "string");
     // Each dispatched op, plus whatever a composite among them runs itself.
-    estimatedOps = names.reduce((sum, n) => sum + 1 + (lookup(n)?.credits?.weight ?? 0), 0);
-    weight = Math.max(weight, names.reduce((sum, n) => sum + weightOf(lookup(n)), 0));
+    // A dryRun runs nothing underneath and pays read weight.
+    estimatedOps = calls.reduce((sum, c) => sum + 1 + (isDryRun(c.args) ? 0 : lookup(c.name)?.credits?.weight ?? 0), 0);
+    weight = Math.max(weight, calls.reduce((sum, c) => sum + (isDryRun(c.args) ? 1 : weightOf(lookup(c.name))), 0));
+  } else if (isDryRun(args) && op?.permission === "write") {
+    // dryRun (2.6.0): validation and a preview only, charged as a read.
+    weight = 1;
   } else if (op?.credits?.weight !== undefined) {
     // A composite declares the number of operations it runs as its weight.
     estimatedOps = op.credits.weight;
@@ -151,6 +155,10 @@ export function chargeFor(
   // calls sent one by one.
   const charge = REQUEST_COST + weight + Math.floor(bytesOf(args) / p.sizeUnit);
   return { charge, weight, estimatedOps };
+}
+
+function isDryRun(args: unknown): boolean {
+  return !!args && typeof args === "object" && (args as { dryRun?: unknown }).dryRun === true;
 }
 
 /** Fixed per-request overhead, paid once per top-level call. */

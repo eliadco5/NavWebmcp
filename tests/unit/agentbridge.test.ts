@@ -46,6 +46,18 @@ const adminOp = {
   handler: vi.fn().mockResolvedValue({ success: true, data: { result: "admin" } }),
 };
 
+/** What the server answers a destructive call (NavWebMcp 2.6.0): it runs with a
+ *  valid token (or confirm: true, unless `enforce`), otherwise it asks, with a
+ *  preview and a token. */
+const CONF = { preview: { summary: "Cancel reservation res_001." }, token: "tok_1", expiresAt: "2026-01-01T00:00:00Z" };
+function serverLike(opts: { enforce?: boolean } = {}) {
+  return vi.fn(async (input: Record<string, unknown>) =>
+    input.confirmationToken === CONF.token || (input.confirm === true && !opts.enforce)
+      ? { success: true, data: { cancelled: true } }
+      : { success: false, error: { code: "CONFIRMATION_REQUIRED", message: "Needs approval", retryable: false, confirmation: CONF } }
+  );
+}
+
 // ── constructor + instructions ────────────────────────────────────────────────
 
 describe("constructor + instructions", () => {
@@ -300,149 +312,109 @@ describe("call — validation", () => {
 // ── call — confirmation ───────────────────────────────────────────────────────
 
 describe("call — confirmation", () => {
-  it("returns CONFIRMATION_DENIED when confirmation handler returns false", async () => {
+  // Since 2.6.0 the server decides whether a destructive call may run. The
+  // bridge only asks the user when the server answers CONFIRMATION_REQUIRED,
+  // shows the server's preview, and re-sends with the token on approval.
+  const confirmFieldOp = {
+    ...fakeOp,
+    name: "confirmFieldOp",
+    permission: "write" as const,
+    requiresConfirmation: true,
+    inputSchema: { reservationId: z.string(), confirm: z.boolean().optional(), confirmationToken: z.string().optional() },
+  };
+
+  it("returns CONFIRMATION_DENIED when the user denies; the approved call never goes out", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
+    const handler = serverLike();
     const bridge = new AgentBridge({
       getUserId: () => "u_alice",
       getUserRole: () => "customer",
       onConfirmation: async () => false,
     });
-    bridge.register(writeOp);
-    const result = await bridge.call("writeOp", { value: "x" }) as { success: boolean; error: { code: string } };
+    bridge.register({ ...confirmFieldOp, handler });
+    const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean; error: { code: string } };
     expect(result.success).toBe(false);
     expect(result.error.code).toBe("CONFIRMATION_DENIED");
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("calls handler when confirmation handler returns true", async () => {
+  it("shows the server's preview, then re-sends the call with its token", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
-    const handler = vi.fn().mockResolvedValue({ success: true });
-    const bridge = new AgentBridge({
-      getUserId: () => "u_alice",
-      getUserRole: () => "customer",
-      onConfirmation: async () => true,
-    });
-    bridge.register({ ...writeOp, handler });
-    await bridge.call("writeOp", { value: "x" });
-    expect(handler).toHaveBeenCalled();
+    const handler = serverLike();
+    const onConfirmation = vi.fn().mockResolvedValue(true);
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer", onConfirmation });
+    bridge.register({ ...confirmFieldOp, handler });
+
+    const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean };
+
+    expect(onConfirmation).toHaveBeenCalledWith("confirmFieldOp", { reservationId: "res_001" }, CONF.preview);
+    expect(handler).toHaveBeenLastCalledWith({ reservationId: "res_001", confirmationToken: "tok_1" }, expect.anything(), expect.anything());
+    expect(result.success).toBe(true);
   });
 
   it("default confirmation handler auto-approves (no onConfirmation option)", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
-    const handler = vi.fn().mockResolvedValue({ success: true });
-    const bridge = new AgentBridge({
-      getUserId: () => "u_alice",
-      getUserRole: () => "customer",
-    });
-    bridge.register({ ...writeOp, handler });
-    await bridge.call("writeOp", { value: "x" });
-    expect(handler).toHaveBeenCalled();
+    const handler = serverLike();
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer" });
+    bridge.register({ ...confirmFieldOp, handler });
+    const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean };
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(result.success).toBe(true);
   });
 
-  // Regression: cancelReservation/cancelAnyReservation have a REQUIRED
-  // `confirm: boolean` in their own schema. Validating input before checking
-  // requiresConfirmation meant a caller who didn't already know to include it
-  // (e.g. a WebMCP agent calling document.modelContext.executeTool without
-  // reading the schema first) got INVALID_INPUT before the dialog ever showed
-  // — the action silently "did nothing" instead of prompting.
-  describe("ops whose own schema requires a confirm field", () => {
-    const confirmFieldOp = {
-      ...fakeOp,
-      name: "confirmFieldOp",
-      permission: "write" as const,
-      requiresConfirmation: true,
-      inputSchema: { reservationId: z.string(), confirm: z.boolean() },
-      handler: vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } }),
-    };
+  // A genuinely autonomous agent driving document.modelContext can never
+  // click a browser dialog: if it self-declares confirm: true and the server
+  // accepts that, no dialog appears.
+  it("no dialog when the caller passed confirm: true and the server accepts it", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const onConfirmation = vi.fn().mockResolvedValue(true);
+    const handler = serverLike();
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer", onConfirmation });
+    bridge.register({ ...confirmFieldOp, handler });
 
-    it("shows the confirmation dialog even when the caller omits confirm entirely", async () => {
-      const { AgentBridge } = await import("@/lib/agentbridge");
-      const onConfirmation = vi.fn().mockResolvedValue(true);
-      const bridge = new AgentBridge({
-        getUserId: () => "u_alice",
-        getUserRole: () => "customer",
-        onConfirmation,
-      });
-      bridge.register(confirmFieldOp);
+    const result = await bridge.call("confirmFieldOp", { reservationId: "res_001", confirm: true }) as { success: boolean };
 
-      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean };
+    expect(onConfirmation).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ reservationId: "res_001", confirm: true }, expect.anything(), expect.anything());
+    expect(result.success).toBe(true);
+  });
 
-      expect(onConfirmation).toHaveBeenCalledWith("confirmFieldOp", { reservationId: "res_001" });
-      expect(result.success).toBe(true);
-    });
+  it("REQUIRE_CONFIRMATION_TOKEN on the server: a bare confirm: true turns into a real dialog", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const onConfirmation = vi.fn().mockResolvedValue(true);
+    const handler = serverLike({ enforce: true });
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer", onConfirmation });
+    bridge.register({ ...confirmFieldOp, handler });
 
-    it("approving the dialog satisfies the schema's own confirm requirement", async () => {
-      const { AgentBridge } = await import("@/lib/agentbridge");
-      const handler = vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } });
-      const bridge = new AgentBridge({
-        getUserId: () => "u_alice",
-        getUserRole: () => "customer",
-        onConfirmation: async () => true,
-      });
-      bridge.register({ ...confirmFieldOp, handler });
+    const result = await bridge.call("confirmFieldOp", { reservationId: "res_001", confirm: true }) as { success: boolean };
 
-      await bridge.call("confirmFieldOp", { reservationId: "res_001" });
+    expect(onConfirmation).toHaveBeenCalledTimes(1);
+    // The retry carries the token instead of confirm.
+    expect(handler).toHaveBeenLastCalledWith({ reservationId: "res_001", confirmationToken: "tok_1" }, expect.anything(), expect.anything());
+    expect(result.success).toBe(true);
+  });
 
-      expect(handler).toHaveBeenCalledWith(
-        { reservationId: "res_001", confirm: true },
-        expect.anything(),
-        expect.anything()
-      );
-    });
+  it("a write the server runs without asking never shows a dialog", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const onConfirmation = vi.fn().mockResolvedValue(true);
+    const handler = vi.fn().mockResolvedValue({ success: true, data: { result: "written" } });
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer", onConfirmation });
+    bridge.register({ ...writeOp, handler });
+    await bridge.call("writeOp", { value: "x" });
+    expect(onConfirmation).not.toHaveBeenCalled();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 
-    it("denying the dialog still short-circuits before validation ever runs", async () => {
-      const { AgentBridge } = await import("@/lib/agentbridge");
-      const handler = vi.fn();
-      const bridge = new AgentBridge({
-        getUserId: () => "u_alice",
-        getUserRole: () => "customer",
-        onConfirmation: async () => false,
-      });
-      bridge.register({ ...confirmFieldOp, handler });
-
-      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001" }) as { success: boolean; error: { code: string } };
-
-      expect(result.success).toBe(false);
-      expect(result.error.code).toBe("CONFIRMATION_DENIED");
-      expect(handler).not.toHaveBeenCalled();
-    });
-
-    // A genuinely autonomous agent driving document.modelContext can never
-    // click a browser dialog — if it already self-declared approval via the
-    // op's own confirm field, trust it and skip the dialog entirely, exactly
-    // like the real MCP-over-HTTP surface already does for an external agent.
-    it("skips the dialog entirely when the caller already passed confirm: true", async () => {
-      const { AgentBridge } = await import("@/lib/agentbridge");
-      const onConfirmation = vi.fn().mockResolvedValue(true);
-      const handler = vi.fn().mockResolvedValue({ success: true, data: { cancelled: true } });
-      const bridge = new AgentBridge({
-        getUserId: () => "u_alice",
-        getUserRole: () => "customer",
-        onConfirmation,
-      });
-      bridge.register({ ...confirmFieldOp, handler });
-
-      const result = await bridge.call("confirmFieldOp", { reservationId: "res_001", confirm: true }) as { success: boolean };
-
-      expect(onConfirmation).not.toHaveBeenCalled();
-      expect(handler).toHaveBeenCalledWith({ reservationId: "res_001", confirm: true }, expect.anything(), expect.anything());
-      expect(result.success).toBe(true);
-    });
-
-    it("does NOT skip the dialog for an op with no confirm field of its own, even if the caller passes one", async () => {
-      const { AgentBridge } = await import("@/lib/agentbridge");
-      const onConfirmation = vi.fn().mockResolvedValue(true);
-      // writeOp's schema (from fakeOp) has no `confirm` field at all.
-      const bridge = new AgentBridge({
-        getUserId: () => "u_alice",
-        getUserRole: () => "customer",
-        onConfirmation,
-      });
-      bridge.register(writeOp);
-
-      await bridge.call("writeOp", { value: "x", confirm: true });
-
-      expect(onConfirmation).toHaveBeenCalled();
-    });
+  it("other failures pass through untouched (no dialog for NOT_FOUND)", async () => {
+    const { AgentBridge } = await import("@/lib/agentbridge");
+    const onConfirmation = vi.fn().mockResolvedValue(true);
+    const handler = vi.fn().mockResolvedValue({ success: false, error: { code: "NOT_FOUND", message: "nope", retryable: false } });
+    const bridge = new AgentBridge({ getUserId: () => "u_alice", getUserRole: () => "customer", onConfirmation });
+    bridge.register({ ...confirmFieldOp, handler });
+    const result = await bridge.call("confirmFieldOp", { reservationId: "missing" }) as { error: { code: string } };
+    expect(result.error.code).toBe("NOT_FOUND");
+    expect(onConfirmation).not.toHaveBeenCalled();
   });
 
   // Audits every requiresConfirmation op in the REAL registry (not a synthetic
@@ -597,7 +569,7 @@ describe("call — audit logging", () => {
       getUserRole: () => "customer",
       onConfirmation: async () => false,
     });
-    bridge.register(writeOp);
+    bridge.register({ ...writeOp, handler: serverLike() });
     await bridge.call("writeOp", { value: "x" });
     const entries = auditLog.getEntries();
     expect(entries.length).toBeGreaterThan(0);
@@ -836,7 +808,7 @@ describe("call — cancellation", () => {
 
   it("does not run the op if the caller cancelled while the confirmation dialog was open", async () => {
     const { AgentBridge } = await import("@/lib/agentbridge");
-    const handler = vi.fn().mockResolvedValue({ success: true, data: {} });
+    const handler = serverLike();
     const controller = new AbortController();
     const bridge = new AgentBridge({
       getUserId: () => "u1",
@@ -846,7 +818,8 @@ describe("call — cancellation", () => {
     bridge.register({ ...writeOp, name: "guarded", handler });
     const res = (await bridge.call("guarded", { value: "x" }, { signal: controller.signal })) as { error: { code: string } };
     expect(res.error.code).toBe("CANCELLED");
-    expect(handler).not.toHaveBeenCalled();
+    // Only the call that asked; the approved one never went out.
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it("execute() forwards the WebMCP signal to the handler", async () => {

@@ -199,6 +199,109 @@ check("the header wins over the URL", hR.content[0].text === JSON.stringify(hR.s
 await ch.close();
 await c.close();
 
+console.log("confirmation previews, tokens and dry-run (2.6.0)");
+{
+  const a = await mcp(alice.token);
+  const b = await mcp(bob.token);
+  const carolM = await login("carol");
+  const cc = await mcp(carolM.token);
+  const inv = (cl, name, args) => cl.callTool({ name: "invoke", arguments: { name, args } });
+  const err = (r) => (r.isError ? text(r) : {});
+  // A fresh open slot each time, walking forward through the days as they fill up.
+  let dayOffset = 2;
+  const bookOne = async (who) => {
+    for (let tries = 0; tries < 60; tries++, dayOffset++) {
+      const day = new Date(Date.now() + dayOffset * 86400000).toISOString().slice(0, 10);
+      const open = (await inv(a, "searchAvailability", { date: day, partySize: 2 })).structuredContent?.slots?.filter((s) => s.available) ?? [];
+      if (!open.length) continue;
+      const r = await inv(a, "createReservation", { slotId: open[0].id, name: `E2E conf ${who} ${run}`, partySize: 2 });
+      if (r.structuredContent?.reservation?.id) return r.structuredContent.reservation.id;
+    }
+    throw new Error(`no open slot for ${who}`);
+  };
+
+  // The six destructive business operations: ask → preview + token, dryRun writes nothing, the token runs it.
+  const created = (await inv(b, "createTask", { title: `E2E conf task ${run}`, department: "Housekeeping", priority: "low" })).structuredContent?.task?.taskId;
+  let payment;
+  for (let d = 0; d < 10 && !payment; d++) {
+    const day = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    const ps = (await inv(b, "listPayments", { date: day })).structuredContent?.payments ?? [];
+    payment = ps.find((p) => p.status === "completed" || p.status === "paid" || (p.status !== "refunded" && p.status !== "partial_refund"));
+  }
+  const toCheckOut = await bookOne("checkout");
+  const checkedIn = await inv(cc, "checkInGuest", { reservationId: toCheckOut });
+  const cases = [
+    { op: "cancelReservation", cl: a, args: { reservationId: await bookOne("cancel") }, re: /Cancel reservation/ },
+    { op: "cancelAnyReservation", cl: b, args: { reservationId: await bookOne("cancelAny") }, re: /any owner/ },
+    { op: "deleteTask", cl: b, args: { taskId: created }, re: /Permanently delete task/ },
+    { op: "applyNoShowFee", cl: b, args: { reservationId: await bookOne("fee"), feeAmount: 15, reason: "E2E no-show" }, re: /no-show fee of 15/ },
+    ...(payment ? [{ op: "issueRefund", cl: b, args: { paymentId: payment.paymentId, amount: 1, reason: "E2E refund" }, re: /Refund 1 of/ }] : []),
+    ...(!checkedIn.isError ? [{ op: "checkOutGuest", cl: cc, args: { reservationId: toCheckOut }, re: /Check out .* free table/ }] : []),
+  ];
+  check("all 6 destructive operations have a test target", cases.length === 6, { payment: Boolean(payment), checkedIn: checkedIn.isError ? text(checkedIn) : "ok" });
+  for (const k of cases) {
+    const ask = await inv(k.cl, k.op, k.args);
+    const e = err(ask);
+    check(`${k.op}: no confirm → CONFIRMATION_REQUIRED with preview and token`, e.code === "CONFIRMATION_REQUIRED" && k.re.test(e.confirmation?.preview?.summary ?? "") && /^c1\./.test(e.confirmation?.token ?? ""), e);
+    const dry = await inv(k.cl, k.op, { ...k.args, dryRun: true });
+    check(`${k.op}: dryRun → preview, charged as a read`, !dry.isError && dry.structuredContent?.dryRun === true && k.re.test(dry.structuredContent?.preview?.summary ?? "") && dry._meta?.["navwebmcp/credits"]?.charged <= 3, dry.structuredContent ?? text(dry));
+    const again = await inv(k.cl, k.op, k.args);
+    check(`${k.op}: dryRun wrote nothing (still asks)`, err(again).code === "CONFIRMATION_REQUIRED", err(again));
+    const run2 = await inv(k.cl, k.op, { ...k.args, confirmationToken: e.confirmation?.token });
+    check(`${k.op}: the token runs it`, !run2.isError, run2.structuredContent ?? text(run2));
+    const reuse = await inv(k.cl, k.op, { ...k.args, confirmationToken: e.confirmation?.token });
+    check(`${k.op}: the token works once`, reuse.isError && ["CONFIRMATION_STALE", "NOT_FOUND", "INVALID_STATE", "FEE_ALREADY_APPLIED"].includes(err(reuse).code), err(reuse));
+  }
+
+  // Binding: a token for one reservation doesn't cancel another.
+  const r1 = await bookOne("bind1");
+  const r2 = await bookOne("bind2");
+  const t1 = err(await inv(a, "cancelReservation", { reservationId: r1 })).confirmation?.token;
+  const swap = await inv(a, "cancelReservation", { reservationId: r2, confirmationToken: t1 });
+  check("a token for other arguments → CONFIRMATION_STALE with a new preview and token", err(swap).code === "CONFIRMATION_STALE" && err(swap).confirmation?.token && err(swap).confirmation.token !== t1, err(swap));
+  const forged = await inv(a, "cancelReservation", { reservationId: r2, confirmationToken: `${String(t1).slice(0, -4)}AAAA` });
+  check("a tampered token → CONFIRMATION_STALE", err(forged).code === "CONFIRMATION_STALE", err(forged));
+  const stolen = await inv(b, "cancelAnyReservation", { reservationId: r1, confirmationToken: t1 });
+  check("another user's token → CONFIRMATION_STALE", err(stolen).code === "CONFIRMATION_STALE", err(stolen));
+  const dt = (await a.callTool({ name: "describe_tool", arguments: { name: "cancelReservation" } })).structuredContent;
+  check("describe_tool: confirm optional; confirmationToken and dryRun published", !dt.inputSchema.required.includes("confirm") && "confirmationToken" in dt.inputSchema.properties && "dryRun" in dt.inputSchema.properties, dt.inputSchema);
+  const rdry = await inv(a, "getWaitTime", { partySize: 2, dryRun: true });
+  check("reads reject dryRun (strict input)", err(rdry).code === "INVALID_INPUT", err(rdry));
+
+  // MCP elicitation: only a 2026-07-28 client that declares it is asked.
+  const asked = [];
+  const t = new StreamableHTTPClientTransport(new URL(`${BASE}/api/mcp`), { requestInit: { headers: { Authorization: `Bearer ${alice.token}` } } });
+  const ce = new Client({ name: "e2e-elicit", version: "1.0.0" }, { capabilities: { elicitation: {} }, ...(ERA === "modern" ? { versionNegotiation: { mode: { pin: MODERN } } } : {}) });
+  ce.setRequestHandler("elicitation/create", async (req) => { asked.push(req.params.message); return { action: asked.length === 1 ? "accept" : "decline", content: { approve: true } }; });
+  await ce.connect(t);
+  const e1 = await bookOne("elicit1");
+  const yesE = await ce.callTool({ name: "invoke", arguments: { name: "cancelReservation", args: { reservationId: e1 } } });
+  if (ERA === "modern") {
+    check("elicitation: the user is asked with the preview; accepting runs it", asked.length === 1 && /Cancel reservation/.test(asked[0]) && !yesE.isError && yesE.structuredContent?.cancelled === true, { asked, r: yesE.structuredContent ?? text(yesE) });
+    const e2 = await bookOne("elicit2");
+    const noE = await ce.callTool({ name: "invoke", arguments: { name: "cancelReservation", args: { reservationId: e2 } } });
+    check("elicitation: declining → CONFIRMATION_DENIED", err(noE).code === "CONFIRMATION_DENIED", err(noE));
+  } else {
+    // Stateless 2025-era requests carry no client capabilities, so the token flow applies.
+    check("legacy era: no elicitation; CONFIRMATION_REQUIRED with a token instead", asked.length === 0 && err(yesE).code === "CONFIRMATION_REQUIRED" && err(yesE).confirmation?.token, err(yesE));
+  }
+  await ce.close();
+
+  // /api/call: a person's confirm: true still works; the WebMCP agent gets the preview.
+  const apiCall = (cookie, name, params, channel) => fetch(`${BASE}/api/call`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie, ...(channel && { "x-navwebmcp-channel": channel }) }, body: JSON.stringify({ name, params }) });
+  const h1 = await bookOne("ui");
+  const ui = await (await apiCall(alice.cookie, "cancelReservation", { reservationId: h1, confirm: true })).json();
+  check("/api/call: a person's confirm: true runs", ui.success === true, ui);
+  const h2 = await bookOne("webmcp");
+  const wres = await apiCall(alice.cookie, "cancelReservation", { reservationId: h2 }, "webmcp");
+  const wj = await wres.json();
+  check("/api/call: no confirm → 200 CONFIRMATION_REQUIRED with the preview", wres.status === 200 && wj.error?.code === "CONFIRMATION_REQUIRED" && /Cancel reservation/.test(wj.error?.confirmation?.preview?.summary ?? ""), { status: wres.status, wj });
+  const wrun = await (await apiCall(alice.cookie, "cancelReservation", { reservationId: h2, confirmationToken: wj.error?.confirmation?.token }, "webmcp")).json();
+  check("/api/call: the WebMCP dialog's token runs it", wrun.success === true, wrun);
+
+  await Promise.all([a.close(), b.close(), cc.close()]);
+}
+
 console.log("MCP transport (2026-07-28 upgrade)");
 const rpc = (body, headers = {}) => fetch(`${BASE}/api/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${alice.token}`, "Mcp-Method": body.method, ...headers }, body: JSON.stringify(body) });
 const parseRpc = async (res) => { const t = await res.text(); const line = t.split("\n").find((l) => l.startsWith("data:")); return JSON.parse(line ? line.slice(5) : t); };
