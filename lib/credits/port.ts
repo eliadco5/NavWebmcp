@@ -24,6 +24,8 @@ export interface CallOutcome {
   responseBytes: number;
   /** Operations actually executed underneath this call (invoke, composites). */
   nestedOps: number;
+  /** Answered from a stored idempotent result: charged the per-request cost only. */
+  replayed?: boolean;
 }
 
 export type Admission =

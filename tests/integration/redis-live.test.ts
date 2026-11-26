@@ -91,4 +91,38 @@ describe.skipIf(!URL)('against a real Redis', () => {
     expect(await getEnd('c_livex')).toMatchObject({ reason: 'revoked', by: 'u_bob' })
     expect((await listClients({ userId: 'u_alice' })).find((c) => c.clientId === 'c_livex')?.endReason).toBe('revoked')
   })
+
+  it('idempotency: concurrent claims on one key admit exactly one; done records replay; release frees', async () => {
+    const { serverIdempotencyStore: store } = await import('@/lib/idempotency')
+    const claims = await Promise.all(Array.from({ length: 20 }, () => store.claim('live-k', 'h1', 60_000)))
+    const won = claims.filter((c) => c.claimed)
+    expect(won).toHaveLength(1)
+    const token = (won[0] as { token: string }).token
+    expect(token.startsWith('r:')).toBe(true) // claimed in Redis, not the in-process fallback
+    for (const c of claims) if (!c.claimed) expect(c.record).toMatchObject({ state: 'pending', argsHash: 'h1' })
+
+    await store.release('live-k', 'r:someone-else') // not ours: ignored
+    await store.complete('live-k', token, { success: true, data: { n: 1 } }, 60_000)
+    const again = await store.claim('live-k', 'h1', 60_000)
+    expect(again).toMatchObject({ claimed: false, record: { state: 'done', result: { success: true, data: { n: 1 } } } })
+
+    const p = await store.claim('live-free', 'h2', 60_000)
+    expect(p.claimed).toBe(true)
+    await store.release('live-free', (p as { token: string }).token)
+    expect((await store.claim('live-free', 'h2', 60_000)).claimed).toBe(true)
+  })
+
+  it('idempotency: a keyed write through execute() replays from Redis after the in-process copy is gone', async () => {
+    await import('@/lib/operations/index')
+    await import('@/lib/idempotency')
+    const { execute } = await import('@/lib/operations/execute')
+    const ctx = { userId: 'u_carol', role: 'support' as const, token: '' }
+    const args = { title: 'Live idem', department: 'Housekeeping', priority: 'low', idempotencyKey: `live-${NS}` }
+    const first = await execute('createTask', args, ctx) as any
+    globalThis.__idempotencyMem = undefined // a second instance has no in-process record
+    const second = await execute('createTask', args, ctx) as any
+    expect(first.success).toBe(true)
+    expect(second).toMatchObject({ success: true, idempotency: { replayed: true } })
+    expect(second.data.task.taskId).toBe(first.data.task.taskId)
+  })
 })

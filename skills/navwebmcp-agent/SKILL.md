@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.0.0
+version: 2.1.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.0.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.1.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -215,6 +215,30 @@ confirmation is actually enforced:**
 - `CONFIRMATION_DENIED` means the user (or a UI-side confirmation dialog) explicitly
   refused. Stop. Do not retry the same call.
 
+## 10a. Safe retries with `idempotencyKey` (≥ 2.1.0)
+
+Every write the server marks `idempotent: true` (in `describe_tool` and `getCapabilities`;
+`idempotentHint` in MCP annotations) accepts an optional `idempotencyKey`:
+
+```js
+invoke({ name: "book", args: { date, time, partySize, name, idempotencyKey: "3f6c…" } })
+```
+
+- Make a new key (a UUID is fine) for each action the user asked for, and pass it on every
+  write. Keys are scoped to you and the operation, and kept for 24 hours.
+- Same key, same arguments → the first call's result, with
+  `idempotency: { key, replayed: true }` (on MCP also `_meta["navwebmcp/idempotency"]` and an
+  `[idempotency] …` note). Nothing runs again, and it costs the per-request credit only.
+- Same key, other arguments → `IDEMPOTENCY_CONFLICT`. Nothing runs. Use a new key for a new action.
+- The first call is still running → `IDEMPOTENCY_IN_PROGRESS` (`retryable: true`). Wait a
+  second and resend the same call.
+- A call that failed frees its key: fix the input and retry with the same key. That
+  includes `CONFIRMATION_REQUIRED`: re-call with `confirm: true` and the same key.
+- With a key, `HANDLER_TIMEOUT` is `retryable: true`: the server keeps the key until the
+  write really finishes, so resending the same call returns its outcome and never writes twice.
+- A keyed composite (`book`) passes derived keys to the writes it runs, so a retried
+  composite is idempotent end to end.
+
 ## 11. Operating the UI (≥ 1.3.0)
 
 Business operations return data **to you**. The user's screen does not change. When the
@@ -324,8 +348,10 @@ Every error has the same shape (≥ 2.0.0):
 | `CONFIRMATION_DENIED` | User explicitly refused | Stop. Never retry. |
 | `CANCELLED` | You cancelled the call (≥ 1.2.0); nothing was sent to the server | Nothing to undo. Re-issue only if you still want it. |
 | `VALIDATION_FAILED` | A composite's write could not be confirmed afterwards | Read the current state before retrying, so you don't repeat a write that landed. |
-| `HANDLER_ERROR` | Unhandled server-side failure (`retryable: true`) | Transient or a bug. Retry at most once. |
-| `HANDLER_TIMEOUT` | The operation didn't finish within the server's deadline (≥ 1.4.0) | It may still have taken effect. Read back before retrying a write. |
+| `HANDLER_ERROR` | Unhandled server-side failure (`retryable: true`) | Transient or a bug. Retry at most once, with the same `idempotencyKey` on a write. |
+| `HANDLER_TIMEOUT` | The operation didn't finish within the server's deadline (≥ 1.4.0) | With an `idempotencyKey` (≥ 2.1.0) it's `retryable: true`: resend the same call to get its outcome. Without one it may still have taken effect: read back before retrying a write. |
+| `IDEMPOTENCY_IN_PROGRESS` | A call with this `idempotencyKey` is still running (≥ 2.1.0) | Wait a second, resend the same call. |
+| `IDEMPOTENCY_CONFLICT` | This `idempotencyKey` was used with other arguments (≥ 2.1.0) | Nothing ran. Use a new key for a new action. |
 | `INSUFFICIENT_CREDITS` | Out of credits; the call didn't run (≥ 1.4.0) | Wait `retryAfterMs`, then retry. Follow `credits.hint`. |
 | `FANOUT_LIMIT` | The request nested too deep or ran too many operations (≥ 1.4.0) | Flatten nested `invoke`s into one batch, or split the work. |
 | `UI_COMPONENT_NOT_FOUND` | No mounted component with that id (≥ 1.3.0) | It's probably on another tab. Set `app.nav`, then `ui_list`. |

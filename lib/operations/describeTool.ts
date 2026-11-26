@@ -8,6 +8,7 @@ import type { Role } from "./types";
 import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
 import { ShortText, DescribedToolSchema } from "./schemas";
 import { creditCost } from "@/lib/credits/policy";
+import { isIdempotentOp } from "@/lib/idempotency/port";
 
 function describeOne(name: string, role: Role): z.infer<typeof DescribedToolSchema> {
   const op = getOpByName().get(name);
@@ -21,6 +22,7 @@ function describeOne(name: string, role: Role): z.infer<typeof DescribedToolSche
     permission: op.permission, roles: op.roles, module: op.module,
     requiresConfirmation: op.requiresConfirmation ?? false,
     parallelSafe: op.parallelSafe ?? (op.permission === "read"),
+    ...(isIdempotentOp(op) && { idempotent: true as const }),
     credits: creditCost(op),
     inputSchema: toJsonSchema(inputObject(op.inputSchema)),
     outputSchema: toJsonSchema(outputObject(op.outputSchema, op.openOutput)),

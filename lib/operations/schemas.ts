@@ -245,6 +245,7 @@ export const CapabilityToolSchema = z.object({
   permission: PermissionSchema,
   roles: z.array(RoleSchema),
   requiresConfirmation: z.boolean(),
+  idempotent: z.literal(true).optional().describe("Present on writes that accept idempotencyKey: retrying with the same key never writes twice"),
   credits: z.number().describe(CREDIT_COST_DESCRIPTION),
 });
 
@@ -258,6 +259,7 @@ export const DescribedToolSchema = z.object({
   module: z.string().optional(),
   requiresConfirmation: z.boolean().optional(),
   parallelSafe: z.boolean().optional(),
+  idempotent: z.literal(true).optional().describe("Present on writes that accept idempotencyKey: retrying with the same key never writes twice"),
   credits: z.number().optional().describe(CREDIT_COST_DESCRIPTION),
   inputSchema: z.record(z.unknown()).optional().describe("JSON Schema of the function's input"),
   outputSchema: z.record(z.unknown()).optional().describe("JSON Schema of the function's success data"),

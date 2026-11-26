@@ -201,7 +201,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.0.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "2.1.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -347,6 +347,23 @@ the same shape on every surface, so an agent can act on it without parsing prose
 `retryable` says whether re-sending the identical call can help. `details` lists each bad
 field for `INVALID_INPUT`. `requestId` and `callId` find the call in the audit trail. The
 codes and their defaults are in `PROTOCOL_ERROR_CODES` (`lib/result.ts`).
+
+**Safe retries (protocol ≥ 2.1.0).** Every server-side write accepts an optional
+`idempotencyKey` (1–128 chars), and says so with `idempotent: true` in `describe_tool` and
+`getCapabilities` (`idempotentHint` on MCP). Resending the same key with the same arguments
+returns the first result with `idempotency: { key, replayed: true }` and writes nothing
+again, for 24 hours, at a cost of 1 credit. The same key with other arguments is
+`IDEMPOTENCY_CONFLICT`; a call still running under it is `IDEMPOTENCY_IN_PROGRESS`
+(retryable). A failed call frees its key. With a key, a `HANDLER_TIMEOUT` becomes
+retryable: the server keeps the key until the write really finishes. Keys live in Redis
+when it is configured, so two instances never both run the same key
+(`lib/idempotency/`).
+
+```js
+invoke({ name: "book", args: { date: "2026-12-01", time: "18:00", partySize: 2, name: "Dana",
+                               idempotencyKey: "b7e0c6e4-…" } })
+// retry after a timeout or a dropped connection → same reservation, { idempotency: { replayed: true } }
+```
 
 | Situation | Use |
 |---|---|
@@ -1871,7 +1888,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.0.0"
+document.modelContext.protocolVersion   // "2.1.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool

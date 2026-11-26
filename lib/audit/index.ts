@@ -121,6 +121,8 @@ export function auditOperation(a: OperationAudit): Promise<AuditEvent | null> {
     output: redact(a.output, { keys: redactKeys }),
     durationMs: a.durationMs,
     reportedBy: a.reportedBy,
+    ...(a.meta.idempotencyKey !== undefined && { idempotencyKey: a.meta.idempotencyKey }),
+    ...(a.meta.idempotencyReplayed && { replayed: true as const }),
   });
 }
 

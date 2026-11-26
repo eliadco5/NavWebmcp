@@ -15,6 +15,8 @@ import "@/lib/telemetry";
 import "@/lib/management/service";
 // ...and credit metering for every top-level call (lib/credits/port.ts).
 import "@/lib/credits";
+// ...and the shared idempotency store for keyed writes (lib/idempotency/port.ts).
+import "@/lib/idempotency";
 import type { Actor } from "@/lib/operations/types";
 import { fail, type CreditInfo } from "@/lib/result";
 import { AGENT_HEADER, CHANNEL_HEADER, CREDIT_HEADERS } from "@/lib/constants";
@@ -119,5 +121,9 @@ const runLocked = withSharedState(async function runLocked(
 
   // Only gate failures change the HTTP status, as before; a handler's own
   // NOT_FOUND (e.g. unknown reservation id) is a normal 200 Result.
-  return Response.json(result, { status: STATUS[stage] ?? 200, headers: creditHeaders(credits) });
+  // A key already used with other arguments, or still running, is 409 (as for
+  // Idempotency-Key in HTTP APIs); a replay is a normal 200 and says so.
+  const status = stage === "idempotency" && !result.success ? 409 : STATUS[stage] ?? 200;
+  const headers = { ...creditHeaders(credits), ...(result.success && result.idempotency && { "Idempotent-Replayed": "true" }) };
+  return Response.json(result, { status, headers });
 });

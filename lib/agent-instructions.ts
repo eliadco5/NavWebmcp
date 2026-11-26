@@ -57,10 +57,13 @@ Business operations return data to YOU; the screen does not change. When the use
 - Write operations (permission: "write") require all parameters confirmed by the user before executing — except the view-only ui_* ops.
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.
 
+## Safe retries (idempotencyKey)
+Every write marked idempotent: true accepts an optional idempotencyKey (1–128 chars; a fresh UUID per action). Pass one on every write. Re-sending the same key with the same arguments returns the first result with idempotency: { replayed: true } and writes nothing again (for 24 h; charged 1 credit). Use a new key for a new action. A failed call frees its key, so fix the input and retry with it. The same key with other arguments is IDEMPOTENCY_CONFLICT.
+
 ## Credits (pacing)
 Calls cost credits by type, size and run time; credits come back with each response and refill over time. explore, search, describe_tool and getCapabilities show each function's base cost as \`credits\`. When a result carries credits.hint (or a "[credits]" note), follow it before your next call. Batch independent reads with invoke({ calls }) — it costs less than separate calls.
 
 ## Error codes
-UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_INPUT (fix the fields in details, retry once) · UNKNOWN_TOOL (try suggestions, else search) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once) · HANDLER_TIMEOUT (check whether it took effect before retrying) · INSUFFICIENT_CREDITS (wait retryAfterMs, then retry) · FANOUT_LIMIT (flatten or split the request).
+UNAUTHENTICATED (re-auth) · FORBIDDEN (don't retry) · INVALID_INPUT (fix the fields in details, retry once) · UNKNOWN_TOOL (try suggestions, else search) · CONFIRMATION_REQUIRED (ask, then confirm: true) · CONFIRMATION_DENIED (stop) · CANCELLED (you cancelled it; nothing was done) · HANDLER_ERROR (retry at most once, with the same idempotencyKey) · HANDLER_TIMEOUT (with an idempotencyKey: retryable, resend the same call to get its outcome; without one, check whether it took effect before retrying) · IDEMPOTENCY_IN_PROGRESS (the keyed call is still running: wait a second, resend the same call) · IDEMPOTENCY_CONFLICT (key reused with other arguments: use a new key) · INSUFFICIENT_CREDITS (wait retryAfterMs, then retry) · FANOUT_LIMIT (flatten or split the request).
 UI: UI_COMPONENT_NOT_FOUND (switch tabs via app.nav, ui_list) · UI_INVALID_PATCH (fix against stateSchema, retry once) · UI_STALE_STATE (ui_get_state, decide again) · UI_UNKNOWN_ACTION (use a listed action) · UI_NO_ACTIVE_PAGE (ask the user to open the app) · UI_TIMEOUT (ui_get_state to check).
 `.trim();
