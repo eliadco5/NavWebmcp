@@ -201,7 +201,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.3.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "2.4.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -226,7 +226,7 @@ sequenceDiagram
 
 `getContext` tells the agent who the user is and what page they're on. `getCapabilities` gives the role-scoped tool catalogue — name, permission level, and whether confirmation is required — without full input schemas, plus `protocolVersion` (the semver of the protocol contract, identical for every role) and `capabilityHash` (an 8-hex content hash of that role's tool set, used to cache-bust when the registry drifts). Together they answer: *who is this person and what are they allowed to do?* The agent has this before the first `explore` call, so it can skip irrelevant domains, identify every required parameter by inspecting schemas, and surface a single consolidated question rather than a sequential Q&A.
 
-This behaviour is enforced by the agent instructions delivered at connect time (MCP `initialize.instructions` / `document.modelContext.instructions`). See `lib/agent-instructions.ts`.
+This behaviour is enforced by the agent instructions delivered at connect time (MCP `server/discover` or `initialize.instructions` / `document.modelContext.instructions`). See `lib/agent-instructions.ts`.
 
 ---
 
@@ -1767,7 +1767,7 @@ Three protocol features work together to give the agent everything it needs befo
 
 **`getCapabilities`** — called on connect (in parallel with `getContext`), returns every operation the caller's role is allowed to invoke: name, permission level, and `requiresConfirmation` flag. No input schemas yet — this is cheap. The agent can rule out unauthorised tools immediately and build the full picture of what is possible before exploring anything.
 
-**Agent instructions** — delivered at connect time via `initialize.instructions` (MCP) and `document.modelContext.instructions` (WebMCP), both sourced from `lib/agent-instructions.ts`. The instructions contract:
+**Agent instructions** — delivered at connect time via `server/discover` / `initialize.instructions` (MCP) and `document.modelContext.instructions` (WebMCP), both sourced from `lib/agent-instructions.ts`. The instructions contract:
 1. Call `explore()` (and `describe_tool()`) to discover every required parameter before asking the user anything.
 2. Identify **all** missing information in one pass.
 3. Ask for all missing values in a **single message** — never a sequential Q&A.
@@ -1919,7 +1919,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.3.0"
+document.modelContext.protocolVersion   // "2.4.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool
@@ -2369,8 +2369,10 @@ docs/
 - **Next.js 15** (App Router, React 19)
 - **TypeScript 5**
 - **Zod** — runtime input validation, JSON Schema generation
-- **`@modelcontextprotocol/sdk`** — MCP server + transport
-- **`mcp-handler`** — Next.js MCP route handler
+- **`@modelcontextprotocol/server`** (MCP SDK v2) — MCP server; speaks the 2026-07-28
+  revision and, through its stateless fallback, 2025-era clients
+- **`mcp-handler`** 2.x — the Next.js route handler around it
+- **`@modelcontextprotocol/client`** (dev) — the client in `scripts/` (e2e, bench)
 - **`zod-to-json-schema`** — Zod → JSON Schema for WebMCP tool registration
 - **Playwright**, **Vitest** — benchmark and test harnesses
 

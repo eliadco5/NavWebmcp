@@ -2,12 +2,15 @@
 // MCP text-block format (NavWebMcp 2.3.0): "pretty" stays the default; "compact"
 // is chosen per connection (X-NavWebMcp-Format header or ?format= on the URL) or
 // per call (_meta["navwebmcp/format"]). Only whitespace differs.
-import { describe, it, expect, afterEach } from 'vitest'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { describe, it, expect, afterEach, beforeAll } from 'vitest'
+import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server'
+import { Client } from '@modelcontextprotocol/client'
 
 const TOKEN = 'tok_fmt'
+
+// The adapter's first import loads the whole registry and the MCP SDK; on a busy
+// machine that alone can pass the default 5 s test timeout. Pay it once, here.
+beforeAll(async () => { await import('@/lib/adapters/mcp') }, 60_000)
 let client: Client
 
 async function connect(req: Request) {

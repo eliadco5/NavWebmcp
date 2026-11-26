@@ -1,6 +1,6 @@
 ---
 name: navwebmcp-agent
-version: 2.3.0
+version: 2.4.0
 protocol: ">=2.0.0 <3.0.0"
 description: >
   How to drive a NavWebMcp server efficiently. Use when connected to a server
@@ -17,7 +17,7 @@ description: >
 
 # NavWebMcp agent guide
 
-NavWebMcp 2.x · skill revision 2.3.0. This document is valid for any server whose
+NavWebMcp 2.x · skill revision 2.4.0. This document is valid for any server whose
 `protocolVersion` satisfies `>=2.0.0 <3.0.0`. (On a 1.x server, a single `invoke` wraps
 the result twice and bad input may be `INVALID_ARGS`; see the 2.0.0 changelog.) If the server reports a version outside
 that range, trust its own `getCapabilities` / `describe_tool` output over this document —
@@ -32,7 +32,11 @@ WebMCP     — W3C Web Machine Learning CG draft standard (document.modelContext
 
 A NavWebMcp server exposes one operation registry over two possible surfaces — an MCP
 Streamable HTTP endpoint (Bearer-token auth) and/or an in-page `document.modelContext`
-(session auth) — with identical operation names and semantics on both. A reference
+(session auth) — with identical operation names and semantics on both. Since 2.4.0 the
+MCP endpoint speaks both the 2026-07-28 MCP revision (stateless, `server/discover`) and
+the 2025-era `initialize` handshake; nothing in this guide depends on which one your
+client uses. A natively called tool answers bad arguments with the same `INVALID_INPUT`
+(with `details`) as `invoke`. A reference
 implementation exists (AgentBridge), but this guide is server-agnostic: any conformant
 NavWebMcp server, in any language, behaves as described here.
 

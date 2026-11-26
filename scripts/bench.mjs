@@ -40,8 +40,7 @@
 
 import { performance } from "perf_hooks";
 import { chromium } from "playwright";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // ── CLI flags ──────────────────────────────────────────────────────────────────
 

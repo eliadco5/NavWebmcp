@@ -18,15 +18,10 @@ vi.mock('next/headers', () => ({
 let registry: any[]
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let schema: any
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let sdkToJson: (s: any, o: any) => Record<string, unknown>
-
 beforeEach(async () => {
   await import('@/lib/operations/index')
   registry = (await import('@/lib/operations/registry')).registry
   schema = await import('@/lib/schema')
-  // The exact converter McpServer uses for tools/list.
-  sdkToJson = (await import('@modelcontextprotocol/sdk/server/zod-json-schema-compat.js')).toJsonSchemaCompat
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,21 +32,13 @@ function walk(node: any, path: string, visit: (n: any, p: string) => void) {
 }
 
 describe('published JSON Schemas', () => {
-  it('WebMCP and MCP emit identical input and output schemas for every op', () => {
-    for (const op of registry) {
-      const input = schema.inputObject(op.inputSchema)
-      const output = schema.outputObject(op.outputSchema)
-      expect(sdkToJson(schema.inlineSchema(input), { strictUnions: true, pipeStrategy: 'input' }), `${op.name} input`)
-        .toEqual(schema.toJsonSchema(input))
-      expect(sdkToJson(schema.inlineSchema(output), { strictUnions: true, pipeStrategy: 'output' }), `${op.name} output`)
-        .toEqual(schema.toJsonSchema(output))
-    }
-  })
+  // Since the MCP SDK v2 (2.4.0), MCP publishes toJsonSchema()'s output itself, so
+  // the two surfaces can't drift; tests/unit/mcp-adapter.test.ts checks tools/list.
 
   it('no schema contains a $ref', () => {
     for (const op of registry) {
       for (const [kind, s] of [['input', schema.inputObject(op.inputSchema)], ['output', schema.outputObject(op.outputSchema)]]) {
-        const json = sdkToJson(schema.inlineSchema(s), { strictUnions: true })
+        const json = schema.toJsonSchema(s)
         walk(json, '', (n, p) => expect(n.$ref, `${op.name} ${kind}${p}`).toBeUndefined())
       }
     }

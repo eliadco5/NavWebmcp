@@ -23,6 +23,37 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.4.0
+
+The MCP surface moves to the MCP **2026-07-28** revision (mcp-handler 2.x on the MCP
+SDK v2). Clients on that revision connect natively; 2025-era clients keep working
+unchanged. Nothing changes for an agent beyond the two points marked **Observable**.
+
+- **Both MCP generations on `/api/mcp`.**
+  - 2026-07-28: stateless, with the protocol version, client info and client
+    capabilities in each request's `_meta`, and `server/discover` for the server's
+    identity, capabilities and instructions. A version the server doesn't speak gets
+    `UnsupportedProtocolVersionError`, listing the supported ones.
+  - 2025-era Streamable HTTP clients (the `initialize` handshake) are served by the
+    SDK's stateless fallback from the same handler. Same tools, schemas and results.
+  - `serverInfo.version` is still the NavWebMcp semver, and `AGENT_INSTRUCTIONS` is
+    still sent: in `server/discover` on 2026-07-28, in `initialize` before.
+- **Observable: native tools answer bad arguments with NavWebMcp's `INVALID_INPUT`.**
+  A natively called (promoted) tool used to be checked by the SDK first, which answered
+  a bare text line (since 1.1.0) without naming the field. Now `execute()` checks it, so
+  the error is `{ code: "INVALID_INPUT", retryable, details, hint, requestId, callId }`,
+  the same as on `invoke` and `/api/call`. `INVALID_INPUT` keeps its meaning.
+- **Observable: the old HTTP+SSE transport is gone.** `/api/sse` and `/api/message`
+  answer 404 (the transport was already switched off in 1.x config). GET on
+  `/api/mcp` is 405: serving is stateless, and nothing pushes yet (MCP Events is planned
+  for a later release). `subscriptions/listen` is refused.
+- **Unchanged:** every tool name, input and output JSON Schema (`tools/list` now
+  publishes exactly what `describe_tool` and WebMCP publish, from one converter),
+  `capabilityHash`, credits and their `_meta`, idempotency, `$ref` batches, the
+  `format` option, bearer-token auth, body limits and the audit trail.
+- Not a protocol change, but measured: per-call latency on the MCP lanes of
+  `scripts/bench.mjs` is roughly halved, with identical token counts.
+
 ## 2.3.0
 
 Compact text blocks on MCP: fewer tokens for the same result. Opt-in; the default is the

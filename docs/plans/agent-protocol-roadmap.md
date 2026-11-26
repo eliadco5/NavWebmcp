@@ -25,7 +25,7 @@ instead of inventing our own versions of them.
 
 | Upstream | Status | Where it lands here |
 |---|---|---|
-| Spec **2026-07-28** (stateless; `server/discover`; protocol version in each request's `_meta`) | Current revision | Day 6. We're on `@modelcontextprotocol/sdk` 1.26.0 and `mcp-handler` 1.1.0, which predate it |
+| Spec **2026-07-28** (stateless; `server/discover`; protocol version in each request's `_meta`) | Current revision | Day 6, shipped in 2.4.0 (`mcp-handler` 2.4, `@modelcontextprotocol/server` 2.4) |
 | [Events](https://modelcontextprotocol.io/extensions/events/overview) (`io.modelcontextprotocol/events`, SEP-3415) | Beta | Day 7, replaces our own push plan |
 | [Skills over MCP](https://modelcontextprotocol.io/extensions/skills/overview) (`io.modelcontextprotocol/skills`, SEP-2640) | Spec final; SDK and app support still being built | Day 7, serves `skills/navwebmcp-agent` |
 | Token binding to the client ([#1932](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1932)), agent identity for cloud agents ([#1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)) | Drafts | Day 8 aligns with them |
@@ -60,18 +60,22 @@ stays MINOR too. Making enforcement the default would be 3.0.0 (see open questio
 
 ## Overview
 
-| Day | Version | Theme | Main agent win |
-|---|---|---|---|
-| 1 | 2.1.0 | Idempotency keys | Safe retries of writes |
-| 2 | 2.2.0 | Dependent batches | Multi-step flows in one round trip |
-| 3 | 2.3.0 | Confirmation previews, tokens, dry-run | Real human-in-the-loop; check a plan before asking |
-| 4 | 2.4.0 | Pagination, filters, field selection | Lists stop eating the context window |
-| 5 | 2.5.0 | Discovery quality | Find the right operation, and call it right, first time |
-| 6 | 2.5.x | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks Day 7 |
-| 7 | 2.6.0 | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
-| 8 | 2.7.0 | Least-privilege agent tokens | Safe to hand an agent a token |
-| 9–10 | — | Spec, conformance kit, package | NavWebMcp usable outside this repo |
-| Later | — | Code mode, second implementation, real-LLM benchmark | Proof the protocol carries the claim |
+In the order they ship. Day numbers are the original plan's; 2.3.0 went to an unplanned
+feature, and Day 6 moved ahead of Day 3 so confirmation can use MCP elicitation.
+
+| Day | Version | Status | Theme | Main agent win |
+|---|---|---|---|---|
+| 1 | 2.1.0 | Shipped (PR #24) | Idempotency keys | Safe retries of writes |
+| 2 | 2.2.0 | Shipped (PR #26) | Dependent batches | Multi-step flows in one round trip |
+| — | 2.3.0 | Shipped (PR #27) | Compact JSON in MCP text blocks (not in the plan) | Fewer tokens per result |
+| 6 | 2.4.0 | This PR | MCP 2026-07-28 upgrade | Current MCP clients connect; unlocks elicitation and Day 7 |
+| 3 | 2.5.0 | Next | Confirmation previews, tokens, dry-run, elicitation | Real human-in-the-loop; check a plan before asking |
+| 4 | 2.6.0 | | Pagination, filters, field selection | Lists stop eating the context window |
+| 5 | 2.7.0 | | Discovery quality | Find the right operation, and call it right, first time |
+| 7 | 2.8.0 | | Events, skills over MCP, output safety | No polling; the skill comes from the server; prompt-injection-aware output |
+| 8 | 2.9.0 | | Least-privilege agent tokens | Safe to hand an agent a token |
+| 9–10 | — | | Spec, conformance kit, package | NavWebMcp usable outside this repo |
+| Later | — | | Code mode, second implementation, real-LLM benchmark | Proof the protocol carries the claim |
 
 ---
 
@@ -133,7 +137,7 @@ mixed read and write ordering, plus a fan-out limit check.
 dependent batch, against today's 3 calls. Expected: one round trip, with token savings
 close to the `book` composite.
 
-## Day 3: Confirmation previews, tokens and dry-run (2.3.0)
+## Day 3: Confirmation previews, tokens and dry-run (2.5.0)
 
 **Problem:** the confirmation gate only proves the agent read the schema; the agent can
 send `confirm: true` on its own. There's also no way to check a write before asking the
@@ -153,7 +157,12 @@ user.
 - **Opt-in enforcement:** with `REQUIRE_CONFIRMATION_TOKEN=true`, a bare `confirm: true`
   is refused (`CONFIRMATION_REQUIRED`, plus the preview and a token).
 - **MCP elicitation:** when the client advertises the elicitation capability, the server
-  asks the user directly with the preview text and confirms on their answer. This is the
+  asks the user directly with the preview text and confirms on their answer. On
+  2026-07-28 this is a multi round-trip request: the server answers the call with an
+  `InputRequiredResult` carrying `elicitation/create` and a signed `requestState` (our
+  confirmation token), and the client re-sends the call with the user's answer. Nothing
+  is held open, so it works on serverless. The SDK v2 that Day 6 moved to exports the
+  pieces (`inputRequired`, `createRequestStateCodec`); Day 3 is the first to use them. This is the
   only path where the server knows a person approved, and it's audited as
   `approvedBy: "user-elicitation"`.
 - **WebMCP:** the existing dialog in `app/providers.tsx` shows the preview text.
@@ -167,7 +176,7 @@ snapshot before and after); audit records how each approval was given.
 **Measure:** e2e checks for each of the 6 destructive operations, and a stress scenario in
 which tokens are forged or replayed.
 
-## Day 4: Pagination, filters and field selection (2.4.0)
+## Day 4: Pagination, filters and field selection (2.6.0)
 
 **Problem:** `listAllReservations`, `listPayments`, `searchTasks` and the others return
 everything. Response size costs credits and context. Only one admin operation has a
@@ -191,7 +200,7 @@ a paged case per operation.
 **Measure:** response tokens for the list operations at the current seed size and at
 10× seed size.
 
-## Day 5: Discovery quality (2.5.0)
+## Day 5: Discovery quality (2.7.0)
 
 **Problem:** `search` only matches path globs, but agents think in intents ("refund a
 guest"). Agents also get arguments wrong on the first try, which costs a turn.
@@ -216,7 +225,7 @@ guest"). Agents also get arguments wrong on the first try, which costs a turn.
 
 **Measure:** top-1 and top-3 accuracy on the query set, glob against BM25.
 
-## Day 6: MCP 2026-07-28 upgrade (2.5.x)
+## Day 6: MCP 2026-07-28 upgrade (2.4.0, shipped first)
 
 **Problem:** our MCP surface speaks the handshake-based revisions (`2025-11-25` and
 earlier). Current clients speak 2026-07-28, and both Events and Skills over MCP require
@@ -243,6 +252,16 @@ its own PR before anything is built on top of it.
 **Versioning:** if no NavWebMcp surface changes (manifest, meta-ops, envelope, error
 codes), this is a **PATCH**. If `server/discover` adds anything of ours, it's MINOR.
 
+**As shipped (2.4.0, MINOR):** natively called tools now answer bad arguments with
+NavWebMcp's `INVALID_INPUT` instead of the SDK's text line, which is observable.
+Two findings for later days:
+- The SDK v2 only converts **Zod 4** schemas itself. We stay on Zod 3 and hand it our own
+  JSON Schemas through `fromJsonSchema`, so `tools/list` now publishes exactly what
+  `describe_tool` does. A Zod 4 migration is optional, not needed.
+- `fromJsonSchema` compiles a validator immediately, and a server is built per request.
+  Each operation's SDK schemas are therefore built once per process; doing it per
+  request cut throughput about ninefold in the S13 soak.
+
 **Tests:** the existing MCP suites on both protocol generations; an unsupported version
 gets `UnsupportedProtocolVersionError` listing ours; `tools/list` matches across the two
 paths; a promoted tool shows up on a later request without any session state.
@@ -250,7 +269,7 @@ paths; a promoted tool shows up on a later request without any session state.
 **Measure:** `bench.mjs` and `credits-stress.mjs` before and after, to show no cost or
 latency regression from the migration.
 
-## Day 7: Events, skills over MCP and output safety (2.6.0)
+## Day 7: Events, skills over MCP and output safety (2.8.0)
 
 Builds on Day 6. Both extensions are opt-in: a server advertises them in
 `server/discover`, a client declares them per request, and nothing changes for a client
@@ -300,7 +319,7 @@ Use the MCP Inspector (it has partial Skills support) as a second, independent c
 against one that polls `listAllReservations`: calls, tokens and credits per detected
 change.
 
-## Day 8: Least-privilege agent tokens (2.7.0)
+## Day 8: Least-privilege agent tokens (2.9.0)
 
 **Problem:** an agent token carries the user's whole role for 8 hours.
 
@@ -361,9 +380,8 @@ fails; `getCapabilities` is filtered by scope.
 4. **Handshake clients:** keep serving the pre-2026-07-28 handshake after Day 6
    (planned), and if so, for how long?
 5. **Second implementation:** which stack, if any?
-6. **Order:** this plan puts safety first (Days 1, 3, 8). If token savings matter more for
-   a demo, Days 2 and 4 could move first. Day 6 could also move earlier, since every MCP
-   change after it lands on the new SDK anyway.
+6. **Order:** answered. Day 6 went before Day 3, so confirmation is built once, on the
+   new SDK, with elicitation.
 7. **Events retention:** how far back may a cursor resume (planned: 24 h, like
    idempotency records)? Longer means more Redis memory.
 8. **Enterprise-Managed Authorization:** now a stable extension. Worth a day after Day 8,
