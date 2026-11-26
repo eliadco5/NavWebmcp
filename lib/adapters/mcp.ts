@@ -17,8 +17,9 @@ import "@/lib/ui-relay/store";
 import type { Role } from "@/lib/auth";
 import type { Actor, CallMeta, Operation } from "@/lib/operations/types";
 import { executeDetailed, requestMeta } from "@/lib/operations/execute";
-import type { CreditInfo, ProtocolError } from "@/lib/result";
+import type { CreditInfo, IdempotencyInfo, ProtocolError } from "@/lib/result";
 import { creditCost } from "@/lib/credits/policy";
+import { isIdempotentOp } from "@/lib/idempotency/port";
 import { noteAgentSoftware } from "@/lib/management/sessions";
 // Also turns on the SOC2 audit trail for every call execute() runs.
 import { auditOperation } from "@/lib/audit";
@@ -28,6 +29,8 @@ import { observeCall } from "@/lib/telemetry";
 import "@/lib/management/service";
 // ...and credit metering for every top-level call (lib/credits/port.ts).
 import "@/lib/credits";
+// ...and the shared idempotency store for keyed writes (lib/idempotency/port.ts).
+import "@/lib/idempotency";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyOp = Operation<any, any>;
@@ -37,6 +40,8 @@ export function mcpAnnotations(op: AnyOp) {
     title: op.title,
     readOnlyHint: op.permission === "read" && !op.dispatchesOps,
     destructiveHint: op.requiresConfirmation === true || op.dispatchesOps === true,
+    // True since 2.1.0: a repeat with the same idempotencyKey has no further effect.
+    ...(isIdempotentOp(op) && { idempotentHint: true }),
   };
 }
 
@@ -54,9 +59,15 @@ function errorResult(error: ProtocolError, credits?: CreditInfo, hinted = false)
  *  still matches the tool's outputSchema. */
 export const CREDITS_META_KEY = "navwebmcp/credits";
 
-function creditsMeta(credits?: CreditInfo) {
-  return credits ? { _meta: { [CREDITS_META_KEY]: credits } } : {};
+function creditsMeta(credits?: CreditInfo, idempotency?: IdempotencyInfo) {
+  const meta: Record<string, unknown> = {};
+  if (credits) meta[CREDITS_META_KEY] = credits;
+  if (idempotency) meta[IDEMPOTENCY_META_KEY] = idempotency;
+  return Object.keys(meta).length > 0 ? { _meta: meta } : {};
 }
+
+/** On a replayed result (NavWebMcp 2.1.0): `{ key, replayed: true }`. */
+export const IDEMPOTENCY_META_KEY = "navwebmcp/idempotency";
 
 function hintBlock(credits: CreditInfo) {
   return { type: "text" as const, text: `[credits] ${credits.hint}` };
@@ -207,10 +218,14 @@ export function registerMcpTools(server: McpServer) {
           // (and for scripts/bench.mjs, which parses content[0].text).
           const content = [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }];
           if (hinted && credits) content.push(hintBlock(credits));
+          // A replay says so in a block the model reads; structuredContent stays the op's own data.
+          if (result.idempotency) {
+            content.push({ type: "text" as const, text: `[idempotency] Replayed the earlier result for idempotencyKey '${result.idempotency.key}'; nothing ran again.` });
+          }
           return {
             content,
             structuredContent: result.data as Record<string, unknown>,
-            ...creditsMeta(credits),
+            ...creditsMeta(credits, result.idempotency),
           };
         } finally {
           await flushCurrentSharedState();

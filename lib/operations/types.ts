@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Result } from "@/lib/result";
 import type { Role } from "@/lib/auth";
+import { IDEMPOTENCY_KEY_FIELD, IdempotencyKeySchema, isIdempotentOp } from "@/lib/idempotency/port";
 
 export type { Role };
 export type Permission = "read" | "write";
@@ -56,6 +57,15 @@ export interface CallMeta {
   /** Shared by every call of one request (by reference): how many operations
    *  ran underneath the top-level one. Set by execute(); caps fan-out. */
   fanout?: { count: number };
+  /** The idempotency key this call runs under (its own idempotencyKey, or one
+   *  derived from its parent's for a write inside a keyed composite). Set by
+   *  execute(); never inherited as-is. */
+  idempotencyKey?: string;
+  /** True when execute() answered from a stored result instead of running. */
+  idempotencyReplayed?: boolean;
+  /** Per call: how many nested writes of each op it has started, so derived
+   *  child keys are stable across retries. Set by execute(). */
+  childKeySeq?: Map<string, number>;
 }
 
 export interface OperationContext {
@@ -122,5 +132,12 @@ export function defineOperation<
   TShape extends z.ZodRawShape,
   TOutShape extends z.ZodRawShape,
 >(op: Operation<TShape, TOutShape>): Operation<TShape, TOutShape> {
+  // Idempotency keys (2.1.0) are injected here, once, rather than added to every
+  // write op's schema by hand: the field is published wherever the input schema
+  // is (MCP, describe_tool, getCapabilities' hash, WebMCP) and the strict-input
+  // check accepts it. execute() strips it before the handler runs.
+  if (isIdempotentOp(op) && !(IDEMPOTENCY_KEY_FIELD in op.inputSchema)) {
+    (op.inputSchema as z.ZodRawShape)[IDEMPOTENCY_KEY_FIELD] = IdempotencyKeySchema().optional();
+  }
   return op;
 }

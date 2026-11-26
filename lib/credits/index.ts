@@ -107,18 +107,22 @@ async function admitInner(req: AdmitRequest): Promise<Admission> {
       // Load scaled by this caller's share of recent traffic (pressure.ts).
       const load = pressureFor(principal.key);
       leave();
-      const cost = extraFor(outcome, estimatedOps, weight, p);
+      // An idempotent replay ran nothing: it pays the per-request cost only.
+      const cost = outcome.replayed
+        ? { extra: 0, sizeCost: 0, timeCost: 0, opsCost: 0 }
+        : extraFor(outcome, estimatedOps, weight, p);
+      const refund = outcome.replayed ? Math.max(0, reserved - REQUEST_COST) : 0;
       try {
         const now = Date.now();
         const s = await updateLedger(principal.key, (cur, override) => {
           const pp = effectiveProfile(base, override);
-          const r = settle(cur ?? freshLedger(pp, now), { reserved, holdId, extra: cost.extra, durationMs: outcome.durationMs, creditRequest: req.meta.creditRequest, pressure: load }, pp, now);
+          const r = settle(cur ?? freshLedger(pp, now), { reserved, holdId, extra: cost.extra, refund, durationMs: outcome.durationMs, creditRequest: req.meta.creditRequest, pressure: load }, pp, now);
           return { next: r.ledger, value: { ...r, pp } };
         });
         const info = {
           balance: Math.floor(s.ledger.balance),
           window: s.ledger.window,
-          charged: reserved + cost.extra,
+          charged: reserved + cost.extra - refund,
           granted: s.granted,
           ...(heldMs > 0 && { heldMs }),
         };

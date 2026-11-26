@@ -37,6 +37,8 @@ const SINGLETON_KEYS = [
   "__creditsGate",
   "__creditsLag",
   "__creditsRates",
+  "__idempotencyMem",
+  "__idempotencyPort",
 ] as const;
 
 beforeEach(() => {

@@ -599,6 +599,56 @@ async function main() {
     check("server still answers", await alive());
   }
 
+  if (should("S15")) {
+    scenario("S15", "Retry storm on writes: idempotency keys make retries safe (0 duplicate rows is a pass)");
+    const a = await newAgent(alice.cookie, "s15");
+    const day = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    const runId = Date.now().toString(36);
+    const bases = BASE2 ? [BASE, BASE2] : [BASE];
+    /** An agent that retries what the protocol says is retryable, with the same key. */
+    const retrying = async (name, argsIn, base) => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const r = await mcp(a.token, "invoke", { name, args: argsIn }, { base });
+        if (r.code === "INSUFFICIENT_CREDITS") { await sleep(Math.min(3000, r.credits?.retryAfterMs ?? 500)); continue; }
+        if (r.code === "IDEMPOTENCY_IN_PROGRESS") { await sleep(100); continue; }
+        const replayed = Boolean(r.result?.content?.some?.((c) => c.text?.startsWith("[idempotency]")));
+        return { ...r, replayed };
+      }
+      return { ok: false, code: "GAVE_UP" };
+    };
+
+    // 30 copies of one booking, fired at once, spread over every instance.
+    const name = `Storm ${runId}`;
+    const book = { date: day, time: "14:00", partySize: 2, name, idempotencyKey: `storm-${runId}` };
+    const storm = await Promise.all(Array.from({ length: 30 }, (_, i) => retrying("book", book, bases[i % bases.length])));
+    const by = {};
+    for (const r of storm) { const k = r.ok ? (r.replayed ? "replayed" : "ran") : r.code ?? `HTTP_${r.status}`; by[k] = (by[k] ?? 0) + 1; }
+    metric("30 concurrent retries of one keyed book", by);
+    check("every retry ends in the booking (ran once, the rest replayed)", storm.every((r) => r.ok), JSON.stringify(by));
+    check("the write ran exactly once", (by.ran ?? 0) === 1, JSON.stringify(by));
+    const ids = new Set(storm.filter((r) => r.ok).map((r) => r.result.structuredContent?.reservation?.id));
+    check("every answer names the same reservation", ids.size === 1, [...ids].join(","));
+    const mine = await mcp(a.token, "invoke", { name: "listReservations", args: {} });
+    const rows = (mine.result?.structuredContent?.reservations ?? []).filter((r) => r.name === name && r.status !== "cancelled");
+    check("0 duplicate rows: one reservation in the store", rows.length === 1, `${rows.length} rows`);
+
+    // Same key, other arguments: refused, nothing written.
+    const clash = await mcp(a.token, "invoke", { name: "book", args: { ...book, partySize: 3 } });
+    check("same key with other arguments → IDEMPOTENCY_CONFLICT", clash.code === "IDEMPOTENCY_CONFLICT", clash.code);
+
+    // A replay runs nothing, so it costs the per-request credit only.
+    const again = await retrying("book", book, BASE);
+    check("a later retry is a replay charged 1 credit", again.ok && again.replayed && again.credits?.charged === 1, JSON.stringify(again.credits));
+
+    // A failed keyed write releases its key: the corrected retry runs.
+    const fixKey = `fix-${runId}`;
+    const bad = await mcp(a.token, "invoke", { name: "createReservation", args: { slotId: "slot_missing", name: `Fix ${runId}`, partySize: 1, idempotencyKey: fixKey } });
+    const slot = (await mcp(a.token, "invoke", { name: "searchAvailability", args: { date: day, partySize: 1 } })).result?.structuredContent?.slots?.[0];
+    const good = await mcp(a.token, "invoke", { name: "createReservation", args: { slotId: slot?.id, name: `Fix ${runId}`, partySize: 1, idempotencyKey: fixKey } });
+    check("a failed keyed write (NOT_FOUND) frees the key; the fixed retry runs", bad.code === "NOT_FOUND" && good.ok, `${bad.code} then ${good.code ?? "ok"}`);
+    check("server still answers", await alive());
+  }
+
   // ── Summary ──
   const all = results.scenarios.flatMap((s) => s.checks.map((c) => ({ ...c, scenario: s.id })));
   const failed = all.filter((c) => !c.ok);

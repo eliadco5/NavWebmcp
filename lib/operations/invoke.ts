@@ -52,7 +52,10 @@ export const invoke = defineOperation({
     // Single call: no second envelope. A failed op fails invoke with the op's own
     // error, so `success` always means "the operation succeeded".
     if (name !== undefined) {
-      return (await runOne(name, (args ?? {}) as Record<string, unknown>, ctx)) as Result<{ results?: never }>;
+      const result = await runOne(name, (args ?? {}) as Record<string, unknown>, ctx);
+      // Relaying a replay: invoke ran nothing either, so it is charged as one too.
+      if (result.success && result.idempotency && ctx.meta) ctx.meta.idempotencyReplayed = true;
+      return result as Result<{ results?: never }>;
     }
     if (calls && calls.length > 0) {
       const results: Awaited<ReturnType<typeof runOne>>[] = new Array(calls.length);

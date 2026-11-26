@@ -23,6 +23,51 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.1.0
+
+Idempotency keys: safe retries of writes. Additive; nothing an agent does today changes
+unless it passes a key.
+
+- **`idempotencyKey` on every server-side write.** Each `permission: "write"` operation
+  accepts an optional `idempotencyKey` (1–128 chars). It is added centrally (in
+  `defineOperation`), so it is published in every input schema (MCP `tools/list`,
+  `describe_tool`, WebMCP) and the strict-input rule still holds. Not on reads, `invoke`
+  (its nested writes take their own keys) or the in-page `ui_*` ops. `execute()` strips
+  the key before the handler runs.
+- **Semantics.** A key is scoped to (user, operation, key). The server stores a SHA-256 of
+  the canonical arguments and, once the call succeeds, its full Result, for 24 h
+  (`IDEMPOTENCY_TTL_SECONDS`).
+  - Same key, same arguments: the stored Result, plus `idempotency: { key, replayed: true }`
+    on the envelope. The handler does not run.
+  - Same key, other arguments: `IDEMPOTENCY_CONFLICT` (new code, `retryable: false`).
+  - Same key while the first call still runs: `IDEMPOTENCY_IN_PROGRESS` (new code,
+    `retryable: true`).
+  - A call that fails (any error, including `CONFIRMATION_REQUIRED` and a thrown
+    `HANDLER_ERROR`) frees its key, so the corrected retry runs. Gate failures before the
+    handler (input, RBAC, credits) never claim it.
+  - `HANDLER_TIMEOUT` with a key keeps the key pending until the handler really finishes,
+    then stores its outcome. The error is then `retryable: true`, with a hint to resend the
+    same call. Without a key it is unchanged (`retryable: false`). A pending claim expires
+    after 5 min (`IDEMPOTENCY_PENDING_TTL_MS`) in case an instance dies.
+- **Storage.** Redis when `REDIS_URL` is set: the claim is one Lua script (read, else
+  write with a TTL), so exactly one instance runs a key; completion and release only
+  touch a claim they own. Per process otherwise, and while Redis is down (fail open, as for
+  the rest of shared state).
+- **Composites.** A write nested under a keyed call gets a derived key,
+  `<key>/<operation>#<n>`, so a retried `book` is idempotent end to end.
+- **Credits.** A top-level replay is charged the per-request cost (1) only; so is an
+  `invoke` single call that relays a replay.
+- **Manifest.** `describe_tool` and `getCapabilities` carry `idempotent: true` on these
+  operations (absent otherwise). MCP annotations gain `idempotentHint: true`.
+  `capabilityHash` changes for every role, since the write operations' input schemas grew.
+- **Surfaces.** MCP: a replay also carries `_meta["navwebmcp/idempotency"]` and an
+  `[idempotency] …` text block; `structuredContent` is the op's own data as before.
+  `POST /api/call`: a replay is HTTP 200 with `Idempotent-Replayed: true`;
+  `IDEMPOTENCY_CONFLICT` and `IDEMPOTENCY_IN_PROGRESS` are HTTP 409.
+- **Audit.** SOC2 events carry `idempotencyKey`, and `replayed: true` on a replay, so a
+  replayed create isn't mistaken for a second one.
+- **Hints.** `HANDLER_ERROR` and `HANDLER_TIMEOUT` now point at `idempotencyKey`.
+
 ## 2.0.0
 
 Fixes the contract traps that cost agents the most: the double envelope on `invoke`,

@@ -53,7 +53,14 @@ export interface ProtocolError {
   callId?: string;
 }
 
-export type Success<T> = { success: true; data: T; credits?: CreditInfo };
+/** On a Result that was replayed from an earlier call with the same
+ *  idempotencyKey (NavWebMcp ≥ 2.1.0): nothing ran again. Absent otherwise. */
+export interface IdempotencyInfo {
+  key: string;
+  replayed: true;
+}
+
+export type Success<T> = { success: true; data: T; credits?: CreditInfo; idempotency?: IdempotencyInfo };
 export type Failure = { success: false; error: ProtocolError; credits?: CreditInfo };
 export type Result<T> = Success<T> | Failure;
 
@@ -71,8 +78,10 @@ export const PROTOCOL_ERROR_CODES = {
   VALIDATION_FAILED:     { retryable: false, hint: "The write could not be confirmed afterwards. Read the current state before retrying, so you don't repeat a write that did land." },
   INSUFFICIENT_CREDITS:  { retryable: true,  hint: "Out of credits. Wait credits.retryAfterMs, then retry; batch calls with invoke({ calls }) to spend less." },
   FANOUT_LIMIT:          { retryable: false, hint: "The request nests or fans out too far. Flatten it into one invoke batch, or split it into several requests." },
-  HANDLER_TIMEOUT:       { retryable: false, hint: "The call ran out of time and may still have taken effect. Check the state before retrying." },
-  HANDLER_ERROR:         { retryable: true,  hint: "Unexpected server failure. Retry at most once." },
+  HANDLER_TIMEOUT:       { retryable: false, hint: "The call ran out of time and may still have taken effect. Check the state before retrying; pass idempotencyKey on writes so a retry is safe." },
+  HANDLER_ERROR:         { retryable: true,  hint: "Unexpected server failure. Retry at most once; on a write, pass idempotencyKey so the retry can't write twice." },
+  IDEMPOTENCY_CONFLICT:  { retryable: false, hint: "This idempotencyKey was already used with different arguments. Resend the original arguments, or use a new key for a new action." },
+  IDEMPOTENCY_IN_PROGRESS: { retryable: true, hint: "A call with this idempotencyKey is still running. Wait a second, then resend the same call to get its result." },
 } as const satisfies Record<string, { retryable: boolean; hint: string }>;
 
 export type ProtocolErrorCode = keyof typeof PROTOCOL_ERROR_CODES;

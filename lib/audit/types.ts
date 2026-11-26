@@ -44,6 +44,11 @@ export interface AuditEventBody {
   /** Set when the event was reported by the browser rather than observed by
    *  the server (in-page ui_* operations), so its content is client-asserted. */
   reportedBy?: "client";
+  /** The idempotency key the call ran under (NavWebMcp 2.1.0). */
+  idempotencyKey?: string;
+  /** Answered from the stored result of an earlier call with the same key:
+   *  nothing ran again, whatever `output` shows. */
+  replayed?: true;
 }
 
 /** A stored event: the body plus its link in the tamper-evident chain. */

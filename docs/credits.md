@@ -148,6 +148,9 @@ Step by step:
 charge = REQUEST_COST + weight + floor(requestBytes / sizeUnit)
 ```
 
+- **An idempotent replay (≥ 2.1.0) pays `REQUEST_COST` only.** It ran nothing, so the rest of
+  the reservation is handed back when it settles. The same goes for an `invoke` single call
+  that relays a replay.
 - **`REQUEST_COST` = 1**, paid once per top-level request. It is what makes one batch cheaper
   than the same calls sent one by one.
 - **`weight`:**
@@ -407,7 +410,7 @@ Credits meter work; these limits cap the shape of a single request.
 |---|---|---|
 | Nesting depth (`invoke` inside `invoke`, composites inside them) | 3 levels | The call that would nest deeper isn't run: `FANOUT_LIMIT` |
 | Operations run under one top-level call | 200 | Further nested calls aren't run: `FANOUT_LIMIT` |
-| Handler deadline | 15 s (`OP_DEADLINE_MS`, or `deadlineMs` on an operation) | `HANDLER_TIMEOUT`. The time is still charged. The handler may still finish in the background, so read back before retrying a write. |
+| Handler deadline | 15 s (`OP_DEADLINE_MS`, or `deadlineMs` on an operation) | `HANDLER_TIMEOUT`. The time is still charged. The handler may still finish in the background, so read back before retrying a write, or (≥ 2.1.0) pass an `idempotencyKey` and resend the same call. |
 | JSON request body (`/api/call`, `/api/ui/relay`, `/api/admin/credits`, `/api/login`, MCP) | 64 KB (`MAX_BODY_BYTES`). Sign-in is 4 KB, and the UI snapshot keeps its own 256 KB | HTTP 413 `PAYLOAD_TOO_LARGE`. Reading stops at the cap instead of buffering everything first. |
 | Failed sign-ins per IP **and username** | 10 per 5 min (`LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S`) | HTTP 429 `TOO_MANY_ATTEMPTS` + `Retry-After`. Only failures count. Someone guessing one account can't lock every other user behind the same IP (an office NAT) out. |
 | Requests in progress per caller, per instance (the **request gate**) | 8 per agent client, 16 per person (`CREDITS_MAX_INFLIGHT_AGENT`, `_HUMAN`) | Further requests are answered at once with `INSUFFICIENT_CREDITS` and a hint; nothing runs. Counted from arrival until the response is fully sent. |

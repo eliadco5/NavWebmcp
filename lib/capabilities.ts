@@ -4,6 +4,7 @@ import { roleSatisfies } from "@/lib/auth";
 import { PROTOCOL_VERSION } from "@/lib/protocol";
 import { creditCost } from "@/lib/credits/policy";
 import { inputObject, outputObject, toJsonSchema } from "@/lib/schema";
+import { isIdempotentOp } from "@/lib/idempotency/port";
 
 /** DJB2 hash over a string → 8-char hex. Stable across calls for the same input. */
 function djb2(s: string): string {
@@ -90,6 +91,8 @@ export interface CapabilityManifestTool {
   permission: "read" | "write";
   roles: Role[];
   requiresConfirmation: boolean;
+  /** Present (true) on writes that accept idempotencyKey (NavWebMcp 2.1.0). */
+  idempotent?: true;
   /** Credit cost of one call on its own (lib/credits/policy.ts creditCost). */
   credits: number;
 }
@@ -119,6 +122,7 @@ export function capabilityManifest(role: Role, registry: Operation<any, any>[]):
       permission: op.permission,
       roles: op.roles,
       requiresConfirmation: op.requiresConfirmation ?? false,
+      ...(isIdempotentOp(op) && { idempotent: true as const }),
       credits: creditCost(op),
     })),
   };

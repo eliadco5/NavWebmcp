@@ -10,6 +10,10 @@ import { bytesOf } from "@/lib/credits/policy";
 import type { CreditInfo } from "@/lib/result";
 import { registry } from "./registry";
 import type { Actor, CallMeta, Channel, OperationContext } from "./types";
+import {
+  IDEMPOTENCY_KEY_FIELD, canonicalArgs, idempotencyPendingTtlMs, idempotencyStore, idempotencyTtlMs,
+  isIdempotentOp, scopeKey, sha256Hex, type IdempotencyRecord,
+} from "@/lib/idempotency/port";
 
 /**
  * The single execution path for every operation call, whatever surface it came
@@ -100,7 +104,7 @@ function normaliseFailure(result: Result<unknown>, meta: CallMeta): Result<unkno
 
 /** Where a call stopped. Lets a surface map gate failures to its own status
  *  codes (HTTP 404/403/429) without confusing them with a handler's own errors. */
-export type ExecuteStage = "credits" | "fanout" | "lookup" | "rbac" | "input" | "handler";
+export type ExecuteStage = "credits" | "fanout" | "lookup" | "rbac" | "input" | "idempotency" | "handler";
 
 /** Fan-out limits for one request (invoke batches, composites, invoke inside invoke). */
 export const FANOUT = {
@@ -161,6 +165,10 @@ export async function executeDetailed(
     depth: nested ? (parentMeta.depth ?? 0) + 1 : 0,
     // One counter object per top-level call, shared by everything under it.
     fanout: nested ? parentMeta.fanout ?? { count: 0 } : { count: 0 },
+    // Per call, never inherited from the parent (set below for keyed writes).
+    idempotencyKey: undefined,
+    idempotencyReplayed: undefined,
+    childKeySeq: new Map(),
   };
   const callCtx: OperationContext = { ...ctx, actor, meta };
 
@@ -176,6 +184,7 @@ export async function executeDetailed(
         durationMs: performance.now() - started,
         responseBytes: bytesOf(result0),
         nestedOps: meta.fanout?.count ?? 0,
+        replayed: meta.idempotencyReplayed === true,
       });
       if (info) {
         const { hinted, ...rest } = info;
@@ -233,6 +242,8 @@ export async function executeDetailed(
   // Everything after admission is inside the try, so whatever throws, finish()
   // runs and the credits reserved above are always settled.
   const deadlineMs = op?.deadlineMs ?? defaultDeadlineMs();
+  // This call's idempotency claim, while it is open.
+  let idem: { scope: string; token: string } | undefined;
   try {
     if (!op) {
       return finish("lookup", fail("UNKNOWN_TOOL", `No operation named '${name}'.`, { suggestions: suggestOpNames(name, actor.role) }));
@@ -246,15 +257,112 @@ export async function executeDetailed(
       bad.error.hint = `Call describe_tool({ name: "${name}" }) for the exact input schema, fix the fields in details, then retry once.`;
       return finish("input", bad);
     }
-    const result = (await withDeadline(op.handler(parsed.data, callCtx), deadlineMs)) as Result<unknown>;
+    let data = parsed.data as Record<string, unknown>;
+
+    // Idempotency (2.1.0): a keyed write runs at most once per (user, op, key).
+    if (isIdempotentOp(op)) {
+      const own = data[IDEMPOTENCY_KEY_FIELD];
+      if (own !== undefined) {
+        data = { ...data };
+        delete data[IDEMPOTENCY_KEY_FIELD];
+      }
+      // Computed before any await, so sibling calls get their ordinals in call order.
+      const key = typeof own === "string" ? own : derivedChildKey(parentMeta, name, nested);
+      if (key !== undefined) {
+        meta.idempotencyKey = key;
+        const scope = await scopeKey(actor.userId, name, key);
+        const argsHash = await sha256Hex(canonicalArgs(data));
+        const claim = await idempotencyStore().claim(scope, argsHash, idempotencyPendingTtlMs());
+        if (!claim.claimed) return finish("idempotency", answerFromRecord(claim.record, argsHash, name, key, meta));
+        idem = { scope, token: claim.token };
+      }
+    }
+
+    const run = op.handler(data, callCtx) as Promise<Result<unknown>>;
+    let result: Result<unknown>;
+    try {
+      result = await withDeadline(run, deadlineMs);
+    } catch (err) {
+      if (err instanceof DeadlineExceeded && idem) {
+        // The write may still land. Keep the key pending until the handler
+        // really finishes, then store its outcome: a retry with the same key
+        // gets IDEMPOTENCY_IN_PROGRESS meanwhile and the real result after.
+        const claimed = idem;
+        idem = undefined;
+        void run.then((r) => settleIdempotency(claimed, r), () => settleIdempotency(claimed, null));
+      }
+      throw err;
+    }
     if (result.success) checkOutput(op.name, op.outputSchema, result.data, op.openOutput);
+    if (idem) {
+      await settleIdempotency(idem, result);
+      idem = undefined;
+    }
     return finish("handler", result);
   } catch (err) {
+    if (idem) await settleIdempotency(idem, null);
+    const keyed = meta.idempotencyKey !== undefined;
     if (err instanceof DeadlineExceeded) {
       // The handler may still finish in the background; the caller is told it
       // didn't complete in time, and the time is charged either way.
-      return finish("handler", fail("HANDLER_TIMEOUT", `'${name}' did not finish within ${Math.round(deadlineMs / 1000)} s. Check whether it took effect before retrying.`));
+      return finish("handler", keyed
+        ? fail("HANDLER_TIMEOUT", `'${name}' did not finish within ${Math.round(deadlineMs / 1000)} s and may still finish. Its outcome is kept under your idempotencyKey.`, {
+            retryable: true,
+            hint: "Resend the same call with the same idempotencyKey in a few seconds: you get its outcome, and it never writes twice.",
+          })
+        : fail("HANDLER_TIMEOUT", `'${name}' did not finish within ${Math.round(deadlineMs / 1000)} s. Check whether it took effect before retrying.`));
     }
-    return finish("handler", fail("HANDLER_ERROR", String(err)));
+    return finish("handler", keyed
+      ? fail("HANDLER_ERROR", String(err), { hint: "Unexpected server failure; nothing was stored under your idempotencyKey. Retry once with the same key and arguments." })
+      : fail("HANDLER_ERROR", String(err)));
+  }
+}
+
+/** A nested write under a keyed call gets a key derived from its parent's, so a
+ *  retried composite (book → createReservation) is idempotent end to end. The
+ *  ordinal tells apart two writes of the same op inside one parent call. */
+function derivedChildKey(parentMeta: CallMeta, name: string, nested: boolean): string | undefined {
+  if (!nested || parentMeta.idempotencyKey === undefined || !parentMeta.childKeySeq) return undefined;
+  const n = (parentMeta.childKeySeq.get(name) ?? 0) + 1;
+  parentMeta.childKeySeq.set(name, n);
+  return `${parentMeta.idempotencyKey}/${name}#${n}`;
+}
+
+/** The key is already taken: replay, conflict, or still running. */
+function answerFromRecord(
+  record: IdempotencyRecord,
+  argsHash: string,
+  name: string,
+  key: string,
+  meta: CallMeta
+): Result<unknown> {
+  if (record.argsHash !== argsHash) {
+    return fail("IDEMPOTENCY_CONFLICT", `idempotencyKey '${key}' was already used for '${name}' with different arguments; nothing was run.`, {
+      details: [{ path: IDEMPOTENCY_KEY_FIELD, message: "Already used with different arguments" }],
+    });
+  }
+  if (record.state !== "done" || !record.result) {
+    return fail("IDEMPOTENCY_IN_PROGRESS", `A call to '${name}' with idempotencyKey '${key}' is still running; nothing new was run.`);
+  }
+  meta.idempotencyReplayed = true;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { credits: _c, idempotency: _i, ...stored } = record.result as Result<unknown> & { idempotency?: unknown };
+  return { ...stored, idempotency: { key, replayed: true } } as Result<unknown>;
+}
+
+/** Store a success under the claim; release it on anything else, so a retry
+ *  (after fixing the input, say) runs again. Never throws. */
+async function settleIdempotency(claim: { scope: string; token: string }, result: Result<unknown> | null): Promise<void> {
+  try {
+    const store = idempotencyStore();
+    if (result?.success) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { credits: _c, ...stored } = result;
+      await store.complete(claim.scope, claim.token, stored, idempotencyTtlMs());
+    } else {
+      await store.release(claim.scope, claim.token);
+    }
+  } catch (err) {
+    console.warn("[idempotency] could not settle a claim:", err);
   }
 }

@@ -182,6 +182,8 @@ export interface SettleInput {
   holdId?: string;
   /** Cost beyond the reservation: response size, run time, unplanned nested ops. */
   extra: number;
+  /** Part of the reservation handed back (an idempotent replay pays the request cost only). */
+  refund?: number;
   durationMs: number;
   creditRequest?: number;
   /** 0..1 server load. */
@@ -219,8 +221,9 @@ export function settle(l0: Ledger, s: SettleInput, p: Profile, now: number): Set
   const extra = isNum(s.extra) && s.extra > 0 ? s.extra : 0;
   const durationMs = isNum(s.durationMs) ? s.durationMs : 0;
   const pressure = isNum(s.pressure) ? Math.min(1, Math.max(0, s.pressure)) : 0;
-  let balance = l.balance - extra;
-  const charged = s.reserved + extra;
+  const refund = isNum(s.refund) && s.refund > 0 ? Math.min(s.refund, s.reserved) : 0;
+  let balance = l.balance - extra + refund;
+  const charged = s.reserved + extra - refund;
 
   let window = l.window;
   let shrunk = false;
