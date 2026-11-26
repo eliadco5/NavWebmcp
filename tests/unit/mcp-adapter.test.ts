@@ -64,10 +64,13 @@ describe('tools/list', () => {
 
   it('input schemas reject unknown keys and contain no $ref', async () => {
     const { tools } = await client.listTools()
+    // A JSON-Schema $ref key, not the word in a description (invoke documents
+    // NavWebMcp's own batch $ref in its descriptions since 2.2.0).
+    const schemaRef = /"\$ref":/
     for (const t of tools) {
       expect(t.inputSchema.additionalProperties, t.name).toBe(false)
-      expect(JSON.stringify(t.inputSchema), t.name).not.toContain('$ref')
-      expect(JSON.stringify(t.outputSchema), t.name).not.toContain('$ref')
+      expect(JSON.stringify(t.inputSchema), t.name).not.toMatch(schemaRef)
+      expect(JSON.stringify(t.outputSchema), t.name).not.toMatch(schemaRef)
     }
   })
 })

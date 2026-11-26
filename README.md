@@ -201,7 +201,7 @@ sequenceDiagram
         Platform-->>Agent: { user: { id, displayName }, role, today: "2026-07-22", timezone: "UTC" }
     and
         Agent->>Platform: getCapabilities()
-        Platform-->>Agent: { protocolVersion: "2.1.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
+        Platform-->>Agent: { protocolVersion: "2.2.0", capabilityHash: "3f2a1b4c", tools: [{ name, permission, requiresConfirmation }] }
     end
 
     Note over Agent: Knows who the user is and what<br/>their role allows — before asking anything
@@ -331,6 +331,21 @@ invoke({
   ]
 })
 // → { "results": [ <availability>, <reservations> ] }  — one round-trip, two results
+```
+
+**Dependent batches (protocol ≥ 2.2.0).** A call can use an earlier call's result: any
+argument value may be `{ "$ref": "<i>.data.<path>" }`, with keys and `[n]` indexes only.
+The call waits for call `i`; if that call failed or the path isn't there, it isn't run and
+gets `DEPENDENCY_FAILED`. Selection happens in the operation's own inputs, so `[0]` is the
+right item:
+
+```js
+invoke({ calls: [
+  { name: "searchAvailability", args: { date: "2026-12-01", partySize: 2, time: "18:00" } },
+  { name: "createReservation",  args: { slotId: { "$ref": "0.data.slots[0].id" }, name: "Dana", partySize: 2 } },
+  { name: "getReservation",     args: { reservationId: { "$ref": "1.data.reservation.id" } } }
+] })
+// → the whole booking flow in one round trip
 ```
 
 A single `invoke` returns exactly the operation's own result, `{ success: true, data }` or
@@ -1888,7 +1903,7 @@ book.outputSchema   // anyOf: { success: true, data: { reservation, validated } 
 book.annotations    // { readOnlyHint: false, consequentialHint: false, untrustedContentHint: false }
 
 // Protocol version and instructions declared on this surface
-document.modelContext.protocolVersion   // "2.1.0"
+document.modelContext.protocolVersion   // "2.2.0"
 document.modelContext.instructions      // the AGENT_INSTRUCTIONS string
 
 // Call the composite book() tool

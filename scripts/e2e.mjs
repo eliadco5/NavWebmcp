@@ -135,6 +135,35 @@ const rd = await c.callTool({ name: "invoke", arguments: { name: "getWaitTime", 
 check("reads reject idempotencyKey (strict input)", rd.isError && text(rd).code === "INVALID_INPUT", text(rd));
 const t = (await c.listTools()).tools;
 check("tools/list annotations unchanged for reads (no idempotentHint)", !t.find((x) => x.name === "getContext")?.annotations?.idempotentHint, t.find((x) => x.name === "getContext")?.annotations);
+
+console.log("dependent batches (2.2.0)");
+const dInvoke = (await c.callTool({ name: "describe_tool", arguments: { name: "invoke" } })).structuredContent;
+check("describe_tool(invoke) documents $ref", /\$ref/.test(dInvoke.description) && /\$ref/.test(JSON.stringify(dInvoke.inputSchema)), dInvoke.description);
+const free = av.structuredContent.slots.filter((s) => s.available).map((s) => s.time);
+const want = free.find((tm) => tm !== keyed.time && tm !== free[0]) ?? free.at(-2) ?? free[0];
+const chainName = `E2E chain ${run}`;
+const chained = await c.callTool({ name: "invoke", arguments: { calls: [
+  { name: "searchAvailability", args: { date, partySize: 2, time: want } },
+  { name: "createReservation", args: { slotId: { $ref: "0.data.slots[0].id" }, name: chainName, partySize: 2, idempotencyKey: `e2e-chain-${run}` } },
+  { name: "getReservation", args: { reservationId: { $ref: "1.data.reservation.id" } } },
+] } });
+const cr = chained.structuredContent?.results ?? [];
+check("search → create → read in one batch, all succeed", !chained.isError && cr.length === 3 && cr.every((x) => x.success), cr);
+check("the batch booked the slot at the requested time", cr[0]?.data?.slots?.[0]?.time === want && cr[1]?.data?.reservation?.slotId === cr[0]?.data?.slots?.[0]?.id, { want, cr0: cr[0]?.data?.slots?.[0] });
+check("the read returned the reservation just created", cr[2]?.data?.reservation?.id === cr[1]?.data?.reservation?.id, cr[2]);
+const fwd = await c.callTool({ name: "invoke", arguments: { calls: [
+  { name: "getContext", args: {} },
+  { name: "getWaitTime", args: { partySize: { $ref: "1.data.x" } } },
+] } });
+check("forward $ref → isError INVALID_INPUT naming the arg", fwd.isError && text(fwd).code === "INVALID_INPUT" && text(fwd).details?.[0]?.path === "calls.1.args.partySize", text(fwd));
+const miss = await c.callTool({ name: "invoke", arguments: { calls: [
+  { name: "searchAvailability", args: { date, partySize: 2, time: "03:00" } },
+  { name: "createReservation", args: { slotId: { $ref: "0.data.slots[0].id" }, name: `E2E none ${run}`, partySize: 2 } },
+] } });
+const mr = miss.structuredContent?.results ?? [];
+check("an empty result → DEPENDENCY_FAILED, the write is not run", mr[1]?.error?.code === "DEPENDENCY_FAILED" && mr[1]?.error?.retryable === false, mr[1]);
+const single = await c.callTool({ name: "invoke", arguments: { name: "getWaitTime", args: { partySize: { $ref: "0.data.x" } } } });
+check("$ref in the single-call form → INVALID_INPUT", single.isError && text(single).code === "INVALID_INPUT", text(single));
 await c.close();
 
 console.log("/api/call (UI + in-page surface)");
