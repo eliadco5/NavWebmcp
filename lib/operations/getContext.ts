@@ -14,9 +14,8 @@ export const getContext = defineOperation({
   name: "getContext",
   title: "Get Context",
   description:
-    "Return the caller's context: who they are, their role, the platform's current date and time, and " +
-    "your current credit balance (calls cost credits by type, size and run time). " +
-    "Resolve relative dates (\"tomorrow\", \"tonight\") against `today` and `timezone`, never against your own clock.",
+    "Who the caller is, their role, the platform's now, today and timezone, and credits. " +
+    "Resolve \"tomorrow\" against today, never your own clock.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,

@@ -2,9 +2,9 @@
 
 This document explains the credit mechanism in full: why it exists, how a call is charged,
 how credits come back, what an agent sees, how admins control it, and where its limits
-are. The short version is in the README
-([Credits: flow control for agent traffic](../README.md#credits-flow-control-for-agent-traffic-navwebmcp-14)).
+are. [Section 0](#0-in-short) is the short version.
 
+- [0. In short](#0-in-short)
 - [1. The problem](#1-the-problem)
 - [2. The idea, borrowed from SMB](#2-the-idea-borrowed-from-smb)
 - [3. Vocabulary](#3-vocabulary)
@@ -23,6 +23,196 @@ are. The short version is in the README
 - [16. Design decisions](#16-design-decisions)
 - [17. Known limits](#17-known-limits)
 - [18. Code map and tests](#18-code-map-and-tests)
+
+---
+
+## 0. In short
+
+Agents can make the server slow for everyone. Before this, nothing limited:
+- how many calls one agent client had in flight;
+- how long its calls ran (a `ui_*` call over MCP waits up to 8 s for the user's tab);
+- how far one request fanned out: `invoke` takes 50 calls, and each can be another `invoke`,
+  so three levels is 125,000 operations;
+- how large a request body was.
+
+A per-minute rate limit doesn't fit this. It treats a 5 ms read like an 8 s wait and
+ignores how busy the server is. A daily quota limits the wrong thing. What's needed is
+**flow control**, and SMB2/3 (Windows file sharing) solved that with **credits**.
+
+### How it works
+
+Every agent client has a credit **balance** and a **window**, the most it may hold.
+
+1. **Each call is charged up front:** 1 per request, plus the operation's **weight**, plus
+   **size**.
+   - Weight is read 1, write 2; a composite costs the number of operations it runs (`book`
+     4); `invoke` costs what it will run.
+   - Size is 1 per 4 KB of arguments.
+   - Only the top-level call pays, before anything runs, so a composite is never cut off
+     halfway through its writes.
+2. **When it finishes, the real cost is settled.** Each full second it ran costs 1 more, and
+   a large result costs more. Long calls can leave the agent **in debt**.
+3. **Credits come back with the response**, normally what the call cost. The server hands
+   back **less when it is busy**. That is SMB's server-controlled `CreditResponse`, and it
+   makes heavy callers slow down by themselves.
+4. **The window adapts.** A long or debt-making call halves it; quick calls grow it, up to 64.
+   A slow trickle (2/s) refills the balance, so no agent is stuck at zero for good.
+
+If an agent is a little short, the server **holds** the call for up to 1.5 s and then runs
+it, so the agent just sees a slower call. Only if that's not enough is the call **refused**
+(`INSUFFICIENT_CREDITS`); nothing runs, and the refusal is audited.
+
+```mermaid
+flowchart LR
+    A["Agent call"] --> R{"Enough credits?<br/>charge = 1 + weight + size"}
+    R -->|yes| RUN["Run the operation"]
+    R -->|"a little short"| HOLD["Hold ≤ 1.5 s<br/>(backpressure)"] --> RUN
+    R -->|no| NO["INSUFFICIENT_CREDITS<br/>+ hint + retryAfterMs"]
+    RUN --> S["Settle: + run time + result size<br/>(may go into debt)"]
+    S --> G["Grant credits back<br/>scaled down under load<br/>window grows or halves"]
+    G --> OUT["Result<br/>(+ credits hint only if the agent<br/>should change course)"]
+```
+
+### Every function shows its cost
+
+Agents see the price before they call. Every function returned by `explore`, `search`,
+`describe_tool` and `getCapabilities` carries a `credits` attribute. On MCP, every tool in
+`tools/list` carries `_meta["navwebmcp/credits"] = { cost }`. The attribute is the cost of
+one call on its own, before size and run time:
+
+```jsonc
+// search({ pattern: "book" }) → one of functions[]
+{ "name": "book", "permission": "write", "module": "reservation.booking", "credits": 5 }
+```
+
+| Function | `credits` |
+|---|---|
+| any read (`getGuest`, `explore`, …) | 2 |
+| any write (`createTask`, …) | 3 |
+| `book`, `seatGuest` | 5 |
+| `hostVipGuest` | 8 |
+| `ui_list`, `ui_get_state` | 3 |
+| `ui_set_state`, `ui_action` | 4 |
+| `invoke` | 1, plus the weights of what it runs |
+
+A small, quick call is charged exactly the published number. The cost is part of the
+`capabilityHash`, so a cost change invalidates cached manifests.
+
+### Agents don't need to know any of this
+
+The server does the accounting. It tells the agent what it needs to know **inside the
+result the agent already reads**, and only when it matters. A steady-state call carries
+nothing extra and costs no extra tokens. When the balance is low, the agent is in debt, the
+window shrank, or the call was held or refused, the `Result` envelope gains a `credits`
+field with one plain-language sentence:
+
+```jsonc
+{
+  "success": true,
+  "data": { … },
+  "credits": {
+    "balance": 3, "window": 16, "charged": 7, "granted": 2,
+    "hint": "Credits low (3 of 16). That call cost 7 credits because it ran 4 s; wait ~3 s before the next call, or combine independent reads into one invoke({ calls: [...] }) batch."
+  }
+}
+```
+
+The mechanism is defined once, on the envelope, and each surface carries it its own way,
+the same transport-agnostic approach as the rest of NavWebMcp:
+
+| Surface | What a model reads | For protocol-aware clients |
+|---|---|---|
+| WebMCP (in-page) | `credits` in the returned Result | same |
+| MCP | an extra `[credits] …` text block, only when there's a hint | `_meta["navwebmcp/credits"]` on every result; send `_meta["navwebmcp/credits"] = { request: n }` to ask for more |
+| HTTP `/api/call` | `credits` in the body | `X-NavWebMcp-Credits-*` headers; refusal is `429` + `Retry-After` |
+
+Agents learn about it from two sentences in the server instructions (sent on every MCP
+`initialize`), from `getContext()`, which returns the current `credits` snapshot, and from
+the `invoke` description: one batch pays the per-request cost once, so it is cheaper than
+separate calls.
+
+### Who is metered
+
+| | Agents (MCP clients, the in-page agent) | People clicking in the UI | System |
+|---|---|---|---|
+| Window | 16, adapts between 2 and 64 | 128, between 32 and 512 | not metered |
+| Run time | charged, 1 per full second | not charged | — |
+
+### Admin controls
+
+- **Management tab → Access → Credits** lists every caller with its balance, window,
+  calls, credits spent and refusals, and has **Freeze** / **Unfreeze** buttons.
+- An admin's agent can call **`getCreditLedgers`** and **`setClientCreditPolicy`** (cap
+  the window, change the refill rate, freeze, or reset; requires confirmation).
+- Every change is in the audit trail as `admin.credit_policy_set`.
+
+### Limits that ship with it
+
+| Limit | Default | Error |
+|---|---|---|
+| Nesting depth (`invoke` in `invoke` in a composite) | 3 levels | `FANOUT_LIMIT` |
+| Operations under one top-level call | 200 | `FANOUT_LIMIT` |
+| Handler deadline | 15 s | `HANDLER_TIMEOUT` (time still charged) |
+| JSON request body | 64 KB | HTTP 413 |
+| Failed sign-ins per IP and username | 10 per 5 min | HTTP 429 |
+| Requests in progress per caller (the request gate) | 8 per agent, 16 per person | `INSUFFICIENT_CREDITS` at once, with a hint |
+| One request holding the instance's state lock | 30 s | lock passed on, event logged |
+| Malformed MCP body | — | HTTP 400, JSON-RPC `-32700` |
+
+Callers that are already out of credits, or over the gate, are turned away **at the door**:
+before the request queues for the instance, and before the MCP transport builds a server for
+it. A refusal costs about what any request costs the framework.
+
+### Configuration and limits
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CREDITS_ENABLED` | on | `false` switches metering off |
+| `CREDITS_CAPACITY` | `64` | Concurrent calls per instance at which grants drop to zero |
+| `CREDITS_AGENT_*`, `CREDITS_HUMAN_*` | see [docs](#15-configuration) | Any profile field, e.g. `CREDITS_AGENT_MAX_WINDOW=128` |
+| `OP_DEADLINE_MS` | `15000` | Handler deadline |
+| `MAX_BODY_BYTES` | `65536` | JSON body cap |
+| `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_S` | `10`, `300` | Sign-in throttle |
+| `CREDITS_MAX_INFLIGHT_AGENT`, `_HUMAN` | `8`, `16` | The request gate |
+| `STATE_LOCK_MAX_MS` | `30000` | State-lock watchdog |
+| `REDIS_COMMAND_TIMEOUT_MS`, `REDIS_SOCKET_TIMEOUT_MS` | `1000`, `3000` | A hung Redis is detected and skipped, never waited on |
+
+**Storage:**
+- **With Redis,** all instances share one ledger per caller, updated by compare-and-set
+  (`npm run test:redis` checks it).
+- **Without Redis,** limits apply per instance instead of switching off.
+
+### Tested to destruction
+
+Credits sit in front of every call, so if they break, the app is unreachable. They are tested
+at four levels:
+- **property-based fuzzing:** 480,000 random steps checked against six safety invariants;
+- **failure injection:** Redis hung, throwing, returning garbage or losing every race;
+  corrupt ledgers; never-ending requests;
+- **unit and integration** tests;
+- **a "Mad Max" stress harness** against real servers (`npm run test:stress`): floods,
+  fan-out bombs, long calls, slow clients, malformed bodies, many agents, two instances
+  sharing Redis, and Redis stopped and **frozen** mid-run.
+
+Testing found and fixed four ways to take the app down or starve every caller. Three were
+pre-existing:
+- **a 10-byte malformed MCP request** wedged the whole instance;
+- **a frozen Redis** hung every request;
+- **reservations leaked** by killed instances;
+- **a corrupt stored ledger.**
+
+Final run when credits shipped (1.4.0): **184 / 184** end-to-end checks, plus 979 automated tests (975 in the suite and 4 against a live Redis). While one agent
+floods at 40-way concurrency, other agents and people keep **100 %** success, and the flooder
+gets 93 of its 2,870 calls through. Full report: [credits-test-report.md](credits-test-report.md).
+
+**Known limits:**
+- **A raw request flood still costs CPU.** A refusal is as cheap as any request the framework
+  serves, but not free. Put a per-IP request limit at the edge (Vercel Firewall, a WAF or the
+  load balancer) in front of production.
+- **Proxies must overwrite the client IP header.** The sign-in throttle trusts
+  `x-forwarded-for`; Vercel overwrites it, other proxies must too.
+
+More in [17. Known limits](#17-known-limits).
 
 ---
 

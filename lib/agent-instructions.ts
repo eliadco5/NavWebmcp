@@ -53,7 +53,7 @@ Business operations return data to YOU; the screen does not change. When the use
 ## Reading results
 - A single invoke returns the function's own result: { success: true, data } or { success: false, error }. A batch returns { results }, one such result per call; check each.
 - Errors are { code, message, retryable, details?, hint?, suggestions?, requestId?, callId? }. Re-send the identical call only when retryable is true. Fix INVALID_INPUT from details; try UNKNOWN_TOOL's suggestions before searching. Follow hint when present.
-- A function's outputSchema (from describe_tool or tools/list) describes its success data. On MCP, read structuredContent when present; it is the same data as the text block.
+- A function's outputSchema (from describe_tool, or tools/list for loaded business functions) describes its success data. On MCP, read structuredContent when present; it is the same data as the text block.
 - Unknown parameters are rejected (INVALID_INPUT), not ignored: use the exact names from the input schema.
 - Write operations (permission: "write") require all parameters confirmed by the user before executing — except the view-only ui_* ops.
 - Every operation with requiresConfirmation: true has its own confirm parameter — describe_tool shows it. Omitting it (or passing false) returns CONFIRMATION_REQUIRED: ask the user, then re-call with confirm: true.

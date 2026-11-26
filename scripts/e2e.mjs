@@ -52,6 +52,9 @@ check(`serverInfo.version is ${VERSION}`, c.getServerVersion()?.version === VERS
 check("instructions mention today/timezone", /today/.test(c.getInstructions() ?? ""));
 const { tools } = await c.listTools();
 check("12 always-on tools (8 navigation + 4 ui_*)", tools.length === 12, tools.map((t) => t.name));
+check("always-on tools publish no outputSchema (2.5.0)", tools.every((t) => t.outputSchema === undefined), tools.filter((t) => t.outputSchema).map((t) => t.name));
+const connectTokens = Math.ceil(JSON.stringify(tools).length / 4);
+check("connect cost (tools/list) under 2,200 tokens", connectTokens <= 2200, connectTokens);
 
 console.log("getContext");
 const ctx = await c.callTool({ name: "getContext", arguments: {} });
@@ -102,6 +105,8 @@ const dt = await c.callTool({ name: "describe_tool", arguments: { name: "creatRe
 check("describe_tool UNKNOWN_TOOL carries suggestions", dt.structuredContent?.error === "UNKNOWN_TOOL" && dt.structuredContent?.suggestions?.includes("createReservation"), dt.structuredContent);
 const cap = await c.callTool({ name: "getCapabilities", arguments: {} });
 check(`protocolVersion ${VERSION} and 8-hex capabilityHash`, cap.structuredContent.protocolVersion === VERSION && /^[0-9a-f]{8}$/.test(cap.structuredContent.capabilityHash), cap.structuredContent);
+const dExplore = (await c.callTool({ name: "describe_tool", arguments: { name: "explore" } })).structuredContent;
+check("describe_tool still returns an always-on tool's outputSchema", dExplore?.outputSchema?.type === "object", dExplore?.outputSchema);
 
 console.log("confirmation gate");
 const book = await c.callTool({ name: "invoke", arguments: { name: "book", args: { date, time: av.structuredContent.slots.find((s) => s.available)?.time ?? "18:00", partySize: 2, name: "E2E" } } });

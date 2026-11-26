@@ -70,6 +70,12 @@ export function formatFromRequest(req: Request): TextFormat {
 /** Per call: params._meta["navwebmcp/format"] overrides the connection's format. */
 export const FORMAT_META_KEY = "navwebmcp/format";
 
+/** Whether tools/list carries the op's outputSchema on MCP: business operations
+ *  yes, the always-on navigation and ui_* tools no (NavWebMcp ≥ 2.5.0). */
+export function publishesOutputSchema(op: AnyOp): boolean {
+  return !op.alwaysOn;
+}
+
 /** Every failure, whatever its origin, goes out as the same ProtocolError shape. */
 function errorResult(error: ProtocolError, credits?: CreditInfo, hinted = false, format: TextFormat = "pretty") {
   const content = [{ type: "text" as const, text: formatText(error, format) }];
@@ -217,7 +223,10 @@ export function registerMcpTools(server: McpServer) {
         // Strict object (additionalProperties: false), as execute() enforces it.
         inputSchema: sdkSchemasOf(op).input,
         // The SDK requires structuredContent matching this on every non-error result.
-        outputSchema: sdkSchemasOf(op).output,
+        // Not published for the always-on tools (2.5.0): they're in every tools/list,
+        // their results are self-describing, and their output schemas were most of
+        // the connect cost. describe_tool still returns them on request.
+        ...(publishesOutputSchema(op) && { outputSchema: sdkSchemasOf(op).output }),
         annotations: mcpAnnotations(op),
         // The tool's credit cost on its own, for protocol-aware clients; the
         // same number explore/search/describe_tool/getCapabilities report.

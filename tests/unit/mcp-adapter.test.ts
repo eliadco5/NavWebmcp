@@ -40,11 +40,14 @@ afterEach(async () => {
 describe('tools/list', () => {
   beforeEach(async () => { await connect('admin', 'u_bob', ['getGuest', 'cancelReservation']) })
 
-  it('publishes an object outputSchema for every tool', async () => {
+  it('publishes an object outputSchema for every business tool, and none for the always-on tools (≥ 2.4.0)', async () => {
     const { tools } = await client.listTools()
     expect(tools.length).toBeGreaterThan(0)
+    const { registry } = await import('@/lib/operations/index')
+    const alwaysOn = new Set(registry.filter((op) => op.alwaysOn).map((op) => op.name))
     for (const t of tools) {
-      expect(t.outputSchema?.type, t.name).toBe('object')
+      if (alwaysOn.has(t.name)) expect(t.outputSchema, t.name).toBeUndefined()
+      else expect(t.outputSchema?.type, t.name).toBe('object')
     }
   })
 
@@ -69,7 +72,7 @@ describe('tools/list', () => {
     for (const t of tools) {
       expect(t.inputSchema.additionalProperties, t.name).toBe(false)
       expect(JSON.stringify(t.inputSchema), t.name).not.toMatch(schemaRef)
-      expect(JSON.stringify(t.outputSchema), t.name).not.toMatch(schemaRef)
+      expect(JSON.stringify(t.outputSchema ?? {}), t.name).not.toMatch(schemaRef)
     }
   })
 })
@@ -112,7 +115,7 @@ describe('tools/call', () => {
     expect(err.details).toEqual([expect.objectContaining({ path: 'guestId' })])
   })
 
-  it('tools/list publishes exactly the JSON Schemas describe_tool and WebMCP publish', async () => {
+  it('tools/list publishes exactly the JSON Schemas describe_tool and WebMCP publish (no output schema for always-on tools)', async () => {
     const { tools } = await client.listTools()
     const { registry } = await import('@/lib/operations/registry')
     const { inputObject, outputObject, toJsonSchema } = await import('@/lib/schema')
@@ -120,7 +123,9 @@ describe('tools/call', () => {
     for (const t of tools) {
       const op = registry.find((o) => o.name === t.name)!
       expect(t.inputSchema, `${t.name} input`).toEqual(strip(toJsonSchema(inputObject(op.inputSchema))))
-      expect(t.outputSchema, `${t.name} output`).toEqual(strip(toJsonSchema(outputObject(op.outputSchema, op.openOutput))))
+      // The always-on tools publish no output schema since 2.5.0 (connect cost); describe_tool still has it.
+      if (op.alwaysOn) expect(t.outputSchema, `${t.name} output`).toBeUndefined()
+      else expect(t.outputSchema, `${t.name} output`).toEqual(strip(toJsonSchema(outputObject(op.outputSchema, op.openOutput))))
     }
   })
 

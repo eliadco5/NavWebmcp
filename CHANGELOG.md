@@ -23,6 +23,30 @@ That moves `capabilityHash` only. `capabilityHash` is the registry-drift signal;
 Every `PROTOCOL_VERSION` change requires a heading here — enforced by
 `tests/unit/protocol.test.ts`.
 
+## 2.5.0
+
+A smaller connect cost. On MCP, `tools/list` for a new connection (the 12 always-on tools)
+falls from about **6,600 to about 2,000 tokens** (−70 %, measured as characters ÷ 4).
+
+- **No `outputSchema` for the always-on tools on MCP.** `explore`, `search`,
+  `describe_tool`, `invoke`, `load_tools`, `unload_tools`, `getContext`,
+  `getCapabilities` and the four `ui_*` tools no longer publish an output schema in
+  `tools/list`. Those schemas were most of the connect cost (`explore`'s recursive
+  module tree alone was about 1,500 tokens). The tools still return `structuredContent`,
+  and `describe_tool` still returns their output schema on request. Business operations
+  promoted with `load_tools` keep theirs. In-page WebMCP is unchanged.
+- **Shorter descriptions** for the same 12 tools and their parameters. The contract
+  is unchanged; the detail lives in `AGENT_INSTRUCTIONS` and the agent skill.
+- `capabilityHash` changes for every role, since the descriptions are part of the
+  fingerprint.
+- `tests/unit/mcp-connect-cost.test.ts` pins the connect cost under a 2,200-token budget.
+- What's left is mostly JSON-Schema structure in the input schemas (`type`,
+  `additionalProperties`, length limits) and the SDK's per-tool `execution` field.
+
+**Note for clients:** a client that validated an always-on tool's `structuredContent`
+against its published `outputSchema` now has none to validate against. That's allowed by
+MCP (`outputSchema` is optional), and the data is unchanged.
+
 ## 2.4.0
 
 The MCP surface moves to the MCP **2026-07-28** revision (mcp-handler 2.x on the MCP

@@ -9,11 +9,8 @@ export const explore = defineOperation({
   name: "explore",
   title: "Explore",
   description:
-    "Navigate the platform's module tree. " +
-    "No path → platform overview and top-level modules. " +
-    "Dot-path (e.g. 'reservation.booking') → sub-modules and functions. " +
-    "'x.*' → all descendants of x. '*' → entire tree. " +
-    "Array of paths → fetch multiple nodes in one call.",
+    "Browse the module tree. No path: top-level modules. 'a.b': its sub-modules and functions. " +
+    "'a.*' or '*': the whole subtree. An array: several paths at once.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
@@ -21,7 +18,7 @@ export const explore = defineOperation({
     path: z
       .union([ShortText(128), z.array(ShortText(128)).max(50)])
       .optional()
-      .describe("Module path(s). Omit for platform overview. Supports dot-paths, wildcards, or arrays."),
+      .describe("Dot-path, 'x.*', '*', or an array; omit for the overview"),
   },
   // Exactly one group of fields is present, depending on the form of `path`:
   // none → app/description/modules; one path → a node; "x.*" → nodes; array → results.

@@ -2,7 +2,7 @@
 
 > This is the normative spec. For a step-by-step build guide for other applications,
 > framework-agnostic code, and a worked example with real responses, see the
-> [README section](../README.md#agent-operable-ui-components-navwebmcp-13).
+> [build guide](ui-components-guide.md).
 
 ## Why
 

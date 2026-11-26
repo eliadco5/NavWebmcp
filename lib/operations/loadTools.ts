@@ -12,13 +12,12 @@ export const loadTools = defineOperation({
   name: "load_tools",
   title: "Load Tools",
   description:
-    "Promote functions to native MCP tools so they appear in tools/list with full schemas (Path A). " +
-    "Use when you'll call the same functions repeatedly. After calling, re-fetch tools/list.",
+    "Add functions to tools/list as native tools, for ones you'll call often. Re-fetch tools/list after.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
-    names: z.array(ShortText(128).min(1)).min(1).max(50).describe("Function names to promote to native tools"),
+    names: z.array(ShortText(128).min(1)).min(1).max(50).describe("Function names"),
   },
   outputSchema: {
     results: z.array(z.object({

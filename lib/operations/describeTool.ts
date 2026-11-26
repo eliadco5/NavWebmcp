@@ -33,15 +33,14 @@ export const describeTool = defineOperation({
   name: "describe_tool",
   title: "Describe Tool",
   description:
-    "Return the full input schema, output schema and metadata for one or more functions by name. " +
-    "Use after explore() to get exact parameters before invoking.",
+    "Full input and output schemas, and metadata, for one or more functions. Call before invoking one you haven't used.",
   permission: "read",
   roles: ["customer", "support", "admin"],
   alwaysOn: true,
   inputSchema: {
     name: z
       .union([ShortText(128).min(1), z.array(ShortText(128).min(1)).max(50)])
-      .describe("Function name or array of names to describe."),
+      .describe("A function name, or an array of names"),
   },
   // A single name returns one entry at the top level; an array returns { tools }.
   outputSchema: {
